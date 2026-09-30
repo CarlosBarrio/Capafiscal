@@ -87,6 +87,15 @@ def serialize_profile(database: Session) -> dict[str, Any]:
         "iban": profile.iban if profile else None,
         "bic": profile.bic if profile else None,
         "at_ep_rate": float(profile.at_ep_rate) if profile and profile.at_ep_rate is not None else 1.5,
+        "address": profile.address if profile else None,
+        "postal_code": profile.postal_code if profile else None,
+        "city": profile.city if profile else None,
+        "province": profile.province if profile else None,
+        "phone": profile.phone if profile else None,
+        "invoice_footer": profile.invoice_footer if profile else None,
+        "default_payment_days": profile.default_payment_days if profile else None,
+        "advisor_email": profile.advisor_email if profile else None,
+        "late_interest_rate": float(profile.late_interest_rate) if profile and profile.late_interest_rate is not None else None,
         "configured": bool(tax_ids),
         "all_tax_ids": tax_ids,
     }
@@ -145,6 +154,17 @@ def update_company_profile(
     if "at_ep_rate" in payload:
         value = payload["at_ep_rate"]
         profile.at_ep_rate = Decimal(str(value)) if value not in (None, "") else None
+
+    for field in ("address", "postal_code", "city", "province", "phone", "invoice_footer", "advisor_email"):
+        if field in payload:
+            setattr(profile, field, (payload[field] or "").strip() or None)
+
+    if "default_payment_days" in payload:
+        profile.default_payment_days = payload["default_payment_days"]
+
+    if "late_interest_rate" in payload:
+        value = payload["late_interest_rate"]
+        profile.late_interest_rate = Decimal(str(value)) if value not in (None, "") else None
 
     database.flush()
 

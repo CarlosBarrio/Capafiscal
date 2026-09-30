@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     )
     app_encryption_key: str = ""
 
+    # Envío de correo (bandeja de salida). Sin SMTP, los mensajes se
+    # descargan como borrador .eml y se abren en Outlook o Thunderbird.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_ssl: bool = False
+
+    # Automatizaciones programadas del agente (se desactivan en los tests).
+    enable_scheduler: bool = True
+
     model_config = SettingsConfigDict(
         env_file=PROJECT_DIR / ".env",
         env_file_encoding="utf-8",

@@ -17,6 +17,7 @@ TEST_ROOT = Path(tempfile.mkdtemp(prefix="capafiscal-tests-"))
 os.environ["DATA_DIR"] = str(TEST_ROOT / "data")
 os.environ["UPLOAD_DIR"] = str(TEST_ROOT / "uploads")
 os.environ["DATABASE_URL"] = f"sqlite:///{(TEST_ROOT / 'test.db').as_posix()}"
+os.environ["ENABLE_SCHEDULER"] = "false"
 os.environ.pop("COMPANY_TAX_ID", None)
 os.environ.pop("COMPANY_TAX_IDS", None)
 os.environ.pop("COMPANY_NAME", None)

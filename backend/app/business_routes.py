@@ -94,6 +94,15 @@ class CompanyUpdate(BaseModel):
     iban: str | None = Field(default=None, max_length=40)
     bic: str | None = Field(default=None, max_length=11)
     at_ep_rate: Decimal | None = Field(default=None, ge=0, le=10)
+    address: str | None = Field(default=None, max_length=255)
+    postal_code: str | None = Field(default=None, max_length=10)
+    city: str | None = Field(default=None, max_length=120)
+    province: str | None = Field(default=None, max_length=120)
+    phone: str | None = Field(default=None, max_length=30)
+    invoice_footer: str | None = Field(default=None, max_length=500)
+    default_payment_days: int | None = Field(default=None, ge=0, le=365)
+    advisor_email: str | None = Field(default=None, max_length=255)
+    late_interest_rate: Decimal | None = Field(default=None, ge=0, le=30)
 
 
 @router.get("/company", tags=["Mi empresa"])

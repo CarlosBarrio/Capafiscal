@@ -747,6 +747,21 @@ class CompanyProfile(Base):
         Numeric(5, 2),
         nullable=True,
     )
+    # Datos que aparecen en las facturas emitidas y en las cartas.
+    address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    province: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    invoice_footer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    default_payment_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Email de la gestoría o asesor externo (cierre trimestral).
+    advisor_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Interés de demora comercial (Ley 3/2004) vigente, en %.
+    late_interest_rate: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+    )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -1335,3 +1350,219 @@ class Payslip(Base):
     run: Mapped[PayrollRun] = relationship("PayrollRun", back_populates="payslips")
     employee: Mapped[Employee | None] = relationship("Employee")
 
+
+
+# ---------------------------------------------------------------------
+# VENTAS: clientes, facturas emitidas desde la aplicación y recurrentes
+# ---------------------------------------------------------------------
+
+
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    tax_id: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    payment_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Retención de IRPF que aplica este cliente (profesionales), en %.
+    withholding_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+
+class SalesInvoice(Base):
+    """Factura emitida desde CapaFiscal (borrador hasta que se emite)."""
+
+    __tablename__ = "sales_invoices"
+    __table_args__ = (
+        UniqueConstraint("series", "year", "number", name="uq_sales_invoice_number"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # F: ordinaria · R: rectificativa
+    series: Mapped[str] = mapped_column(String(5), nullable=False, default="F")
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    code: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    # DRAFT, ISSUED
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT", index=True)
+    # F1 completa, F2 simplificada, R1/R4 rectificativa (tipos Verifactu)
+    invoice_type: Mapped[str | None] = mapped_column(String(5), nullable=True)
+
+    customer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    customer_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    issue_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    operation_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    lines: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    withholding_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    subtotal: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    tax_total: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    withholding_total: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    total: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_terms: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    rectifies_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sales_invoices.id", ondelete="SET NULL"), nullable=True
+    )
+    rectification_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recurring_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recurring_invoices.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    # Enlace con el libro de facturas (impuestos, cobros, tesorería).
+    invoice_id: Mapped[int | None] = mapped_column(
+        ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True
+    )
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Registro de facturación (RD 1007/2023): huella encadenada.
+    record_timestamp: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    record_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    previous_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    qr_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    customer: Mapped[Customer | None] = relationship()
+    rectifies: Mapped[SalesInvoice | None] = relationship(remote_side="SalesInvoice.id")
+    invoice: Mapped[Invoice | None] = relationship()
+
+
+class RecurringInvoice(Base):
+    """Plantilla que el agente convierte en factura cada periodo."""
+
+    __tablename__ = "recurring_invoices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    lines: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    withholding_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # MONTHLY, QUARTERLY, YEARLY
+    frequency: Mapped[str] = mapped_column(String(20), nullable=False, default="MONTHLY")
+    next_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Emitir directamente (si no, deja borrador) y preparar el envío.
+    auto_issue: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    auto_send: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generated_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    customer: Mapped[Customer] = relationship()
+
+
+# ---------------------------------------------------------------------
+# BANDEJA DE SALIDA: mensajes que prepara el agente y aprueba una persona
+# ---------------------------------------------------------------------
+
+
+class OutboxMessage(Base):
+    __tablename__ = "outbox_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # DUNNING, INVOICE, PAYSLIP, DIGEST, ADVISOR, OTHER
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    # DRAFT, SENT, DISCARDED, FAILED
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT", index=True)
+    to_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    to_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    # [{"type": "sales_invoice", "id": 3, "filename": "F2026-0003.pdf"}]
+    attachments: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    entity_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Nivel de reclamación (1 recordatorio, 2 segundo aviso, 3 requerimiento).
+    level: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(80), nullable=False, default="agent")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("ix_outbox_entity", "entity_type", "entity_id"),)
+
+
+# ---------------------------------------------------------------------
+# REGISTRO DE JORNADA (art. 34.9 ET)
+# ---------------------------------------------------------------------
+
+
+class TimeEntry(Base):
+    __tablename__ = "time_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    work_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # Hora local (sin zona) de entrada y salida.
+    clock_in: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    clock_out: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # APP, MANUAL
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="APP")
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Las correcciones quedan trazadas con su motivo.
+    edit_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    edited_by: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    employee: Mapped[Employee] = relationship()
+
+
+# ---------------------------------------------------------------------
+# AUTOMATIZACIONES DEL AGENTE
+# ---------------------------------------------------------------------
+
+
+class AutomationSetting(Base):
+    __tablename__ = "automation_settings"
+
+    code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AutomationRun(Base):
+    __tablename__ = "automation_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    # SCHEDULE, MANUAL
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False, default="SCHEDULE")
+    # OK, NOTHING, ERROR
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

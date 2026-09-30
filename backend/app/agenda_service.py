@@ -245,6 +245,52 @@ def build_agenda(
             }
         )
 
+    # Mensajes que el agente ha preparado y esperan el visto bueno.
+    from app.outbox_service import outbox_counts
+
+    pending_messages = outbox_counts(database)["draft"]
+    if pending_messages:
+        items.append(
+            {
+                "code": "OUTBOX",
+                "kind": "outbox",
+                "level": "high",
+                "date": current_day.isoformat(),
+                "days_left": 0,
+                "title": f"{pending_messages} mensaje(s) listos para enviar",
+                "detail": "Facturas, reclamaciones de cobro o recibos que el agente ha redactado.",
+                "action": "Revísalos en la bandeja de salida y envíalos.",
+                "entity_type": "outbox",
+                "entity_id": 0,
+                "amount": None,
+                "tab": "salida",
+            }
+        )
+
+    # Registro de jornada: olvidos e incidencias.
+    from app.timesheet_service import timesheet_alerts
+
+    alerts = timesheet_alerts(database)
+    if alerts:
+        people = sorted({alert["employee_name"] for alert in alerts})
+        forgotten = sum(1 for alert in alerts if alert["kind"] == "forgotten")
+        items.append(
+            {
+                "code": "TIMESHEET",
+                "kind": "timesheet",
+                "level": "high" if forgotten else "normal",
+                "date": current_day.isoformat(),
+                "days_left": 0,
+                "title": f"{len(alerts)} incidencia(s) en el registro de jornada",
+                "detail": ("Fichajes sin salida, jornadas largas o días sin registro · " + ", ".join(people[:3]) + ("…" if len(people) > 3 else "")),
+                "action": "Corrígelas en Jornada (queda constancia del motivo).",
+                "entity_type": "timesheet",
+                "entity_id": 0,
+                "amount": None,
+                "tab": "jornada",
+            }
+        )
+
     # Nómina del mes sin preparar a partir del día 20.
     from sqlalchemy import select
 
