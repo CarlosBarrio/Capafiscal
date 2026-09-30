@@ -1,0 +1,336 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+  <title>CapaFiscal · Gestión de facturas</title>
+  <link
+    rel="stylesheet"
+    href="/static/style.css?v=41"
+  >
+</head>
+<body>
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand">
+      <div class="brand-mark">CF</div>
+      <div class="brand-text">
+        <span class="brand-name">CapaFiscal</span>
+        <span class="brand-tagline">
+          Gestión administrativa para pymes
+        </span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <label for="fileInput" class="btn-solid-light">
+        Subir documento
+      </label>
+      <input
+        type="file"
+        id="fileInput"
+        accept=".pdf,.txt,application/pdf,text/plain"
+        hidden
+      >
+      <nav class="nav-tabs" id="navTabs">
+        <button
+          type="button"
+          class="nav-tab active"
+          data-tab="panel"
+        >
+          Panel
+        </button>
+        <button
+          type="button"
+          class="nav-tab"
+          data-tab="facturas"
+        >
+          Facturas
+          <span class="tab-count" id="cntFacturas">0</span>
+        </button>
+        <button
+          type="button"
+          class="nav-tab"
+          data-tab="actividad"
+        >
+          Actividad
+          <span class="tab-count" id="cntActivity">0</span>
+        </button>
+        <button
+          type="button"
+          class="nav-tab"
+          data-tab="conectores"
+        >
+          Conectores
+        </button>
+        <button
+          type="button"
+          class="nav-tab"
+          data-tab="informes"
+        >
+          Informes
+        </button>
+      </nav>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <!-- PANEL -->
+  <section class="tab-panel active" id="tab-panel">
+    <div class="section-title">
+      <h1 id="greetingLine">
+        Resumen de documentación
+      </h1>
+      <p>
+        Información calculada a partir de documentos reales.
+      </p>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi kpi-risk">
+        <span class="kpi-value" id="mRisks">0</span>
+        <span class="kpi-label">
+          documentos para revisar
+        </span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-value" id="mIva">0 €</span>
+        <span class="kpi-label">
+          IVA aprobado
+        </span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-value" id="mSpend">0 €</span>
+        <span class="kpi-label">
+          gasto aprobado
+        </span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-value" id="mPending">0</span>
+        <span class="kpi-label">
+          documentos pendientes
+        </span>
+      </div>
+
+      <div
+        id="openRisksPanel"
+        class="open-risks-card hidden"
+      >
+        <div class="open-risks-header">
+          <span class="open-risks-icon">⚠️</span>
+          <div>
+            <h3>Documentos para revisar</h3>
+            <p id="openRisksText">
+              No hay incidencias abiertas.
+            </p>
+          </div>
+          <div id="openRisksList"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Bandeja de revisión</h2>
+        <span class="card-sub" id="reviewInboxSub">
+          Tareas persistentes pendientes
+        </span>
+      </div>
+      <div id="inboxList" class="tasks-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Últimos documentos</h2>
+        <span class="card-sub">
+          Documentos incorporados al sistema
+        </span>
+      </div>
+      <div id="recentDocuments"></div>
+    </div>
+  </section>
+
+  <!-- FACTURAS -->
+  <section class="tab-panel" id="tab-facturas">
+    <div class="section-title">
+      <h1>Facturas</h1>
+      <p>
+        Documentos recibidos, extraídos, revisados y aprobados.
+      </p>
+    </div>
+    <div
+      id="documentsList"
+      class="documents-list"
+    ></div>
+  </section>
+
+  <!-- ACTIVIDAD -->
+  <section class="tab-panel" id="tab-actividad">
+    <div class="section-title">
+      <h1>Actividad y trazabilidad</h1>
+      <p>
+        Historial persistente de cargas, correcciones,
+        decisiones y procesos realizados en CapaFiscal.
+      </p>
+    </div>
+
+    <div class="activity-summary-grid">
+      <div class="activity-summary-card">
+        <strong id="activityTotal">0</strong>
+        <span>eventos recientes</span>
+      </div>
+      <div class="activity-summary-card activity-success">
+        <strong id="activityDecisions">0</strong>
+        <span>decisiones</span>
+      </div>
+      <div class="activity-summary-card activity-warning">
+        <strong id="activityCorrections">0</strong>
+        <span>correcciones</span>
+      </div>
+      <div class="activity-summary-card activity-danger">
+        <strong id="activityErrors">0</strong>
+        <span>incidencias</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="activity-toolbar">
+        <label>
+          Tipo
+          <select id="activityEntityFilter">
+            <option value="">Todos</option>
+            <option value="document">Documentos</option>
+            <option value="invoice">Facturas</option>
+            <option value="task">Tareas</option>
+            <option value="connector">Conectores</option>
+          </select>
+        </label>
+
+        <label>
+          Buscar
+          <input
+            type="search"
+            id="activitySearch"
+            placeholder="Acción, usuario o contenido…"
+            autocomplete="off"
+          >
+        </label>
+
+        <label class="activity-checkbox">
+          <input
+            type="checkbox"
+            id="activityImportantOnly"
+          >
+          Solo decisiones e incidencias
+        </label>
+
+        <button
+          type="button"
+          class="btn-ghost"
+          id="refreshActivityButton"
+        >
+          Actualizar
+        </button>
+      </div>
+
+      <div
+        id="activityList"
+        class="activity-list"
+        aria-live="polite"
+      ></div>
+    </div>
+  </section>
+
+  <!-- CONECTORES -->
+  <section class="tab-panel" id="tab-conectores">
+    <div class="section-title">
+      <h1>Conectores</h1>
+      <p>
+        Fuentes autorizadas para incorporar documentos.
+      </p>
+    </div>
+    <div id="connectorsList"></div>
+  </section>
+
+  <!-- INFORMES -->
+  <section class="tab-panel" id="tab-informes">
+    <div class="section-title">
+      <h1>Informes</h1>
+      <p>
+        Resumen calculado a partir de facturas aprobadas.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Resumen de facturas</h2>
+      </div>
+      <div class="taxhealth-metrics">
+        <div>
+          <span id="txCount">0</span>
+          <p>facturas aprobadas</p>
+        </div>
+        <div>
+          <span id="txBase">0 €</span>
+          <p>base imponible</p>
+        </div>
+        <div class="tax-iva">
+          <span id="txIva">0 €</span>
+          <p>IVA soportado</p>
+        </div>
+        <div>
+          <span id="txTotal">0 €</span>
+          <p>total gasto</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Actividad del sistema</h2>
+          <span class="card-sub" id="roiNote"></span>
+        </div>
+
+        <div class="roi-metrics">
+          <div class="roi-item">
+            <strong id="roiDocs">0</strong>
+            <span>documentos procesados</span>
+          </div>
+          <div class="roi-item">
+            <strong id="roiRisks">0</strong>
+            <span>documentos para revisar</span>
+          </div>
+          <div class="roi-item roi-hero">
+            <strong id="roiHours">—</strong>
+            <span>tiempo ahorrado</span>
+          </div>
+          <div class="roi-item roi-hero">
+            <strong id="roiCost">—</strong>
+            <span>coste evitado</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <span>
+      CapaFiscal · Gestión administrativa para pymes
+    </span>
+    <span class="footer-note">
+      Los datos extraídos deben revisarse antes de utilizarse
+      fiscalmente.
+    </span>
+  </div>
+</footer>
+
+<div id="appMessages" class="app-messages"></div>
+
+<script src="/static/app.js?v=41"></script>
+<script src="/static/activity.js?v=1"></script>
+</body>
+</html>

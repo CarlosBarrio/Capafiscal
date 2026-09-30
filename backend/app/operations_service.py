@@ -1,0 +1,1172 @@
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import func
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
+
+from app.models import AuditEvent
+from app.models import Document
+from app.models import Invoice
+from app.models import Task
+
+
+UTC = timezone.utc
+
+OPEN_TASK_STATUSES = {
+    "OPEN",
+    "IN_PROGRESS",
+}
+
+ACTIVE_DOCUMENT_STATUSES = {
+    "RECEIVED",
+    "PROCESSING",
+    "NEEDS_REVIEW",
+    "READY_FOR_APPROVAL",
+    "FAILED",
+}
+
+RISK_SEVERITY_ORDER = {
+    "CRITICAL": 0,
+    "HIGH": 1,
+    "MEDIUM": 2,
+    "LOW": 3,
+}
+
+
+@dataclass
+class RiskItem:
+    code: str
+    severity: str
+    title: str
+    explanation: str
+    recommended_action: str
+    entity_type: str
+    entity_id: int
+    document_id: int | None = None
+    invoice_id: int | None = None
+    supplier_name: str | None = None
+    amount: Decimal | None = None
+    confidence: int | None = None
+    created_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "severity": self.severity,
+            "title": self.title,
+            "explanation": self.explanation,
+            "recommended_action": self.recommended_action,
+            "entity_type": self.entity_type,
+            "entity_id": self.entity_id,
+            "document_id": self.document_id,
+            "invoice_id": self.invoice_id,
+            "supplier_name": self.supplier_name,
+            "amount": decimal_to_number(self.amount),
+            "confidence": self.confidence,
+            "created_at": (
+                self.created_at.isoformat()
+                if self.created_at is not None
+                else None
+            ),
+        }
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def decimal_to_number(value: Decimal | None) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def safe_text(value: str | None) -> str:
+    return (value or "").strip()
+
+
+def load_documents_with_invoices(database: Session) -> list[Document]:
+    statement = (
+        select(Document)
+        .options(
+            selectinload(Document.invoice).selectinload(
+                Invoice.tax_lines
+            )
+        )
+        .order_by(
+            Document.created_at.desc(),
+            Document.id.desc(),
+        )
+    )
+    return list(database.scalars(statement).all())
+
+
+def severity_from_document(
+    document: Document,
+) -> str:
+    invoice = document.invoice
+
+    if document.status == "FAILED":
+        return "CRITICAL"
+
+    if document.requires_ocr:
+        return "HIGH"
+
+    if invoice is None:
+        return "HIGH"
+
+    if invoice.duplicate_status == "STRONG":
+        return "HIGH"
+
+    if invoice.validation_status == "MISMATCH":
+        return "HIGH"
+
+    if invoice.validation_status == "INCOMPLETE":
+        return "MEDIUM"
+
+    if invoice.duplicate_status == "PROBABLE":
+        return "MEDIUM"
+
+    if invoice.confidence < 60:
+        return "HIGH"
+
+    if invoice.confidence < 80:
+        return "MEDIUM"
+
+    return "LOW"
+
+
+def build_document_risks(
+    document: Document,
+) -> list[RiskItem]:
+    risks: list[RiskItem] = []
+    invoice = document.invoice
+
+    supplier_name = (
+        invoice.supplier_name
+        if invoice is not None
+        else None
+    )
+
+    invoice_id = invoice.id if invoice is not None else None
+    amount = invoice.total if invoice is not None else None
+    confidence = invoice.confidence if invoice is not None else None
+
+    common = {
+        "entity_type": "document",
+        "entity_id": document.id,
+        "document_id": document.id,
+        "invoice_id": invoice_id,
+        "supplier_name": supplier_name,
+        "amount": amount,
+        "confidence": confidence,
+        "created_at": document.updated_at or document.created_at,
+    }
+
+    if document.status == "FAILED":
+        risks.append(
+            RiskItem(
+                code="DOCUMENT_PROCESSING_FAILED",
+                severity="CRITICAL",
+                title="Error al procesar documento",
+                explanation=(
+                    document.failure_reason
+                    or "La extracción automática no pudo completarse."
+                ),
+                recommended_action=(
+                    "Abre el documento, revisa el archivo original "
+                    "y ejecuta un reprocesamiento."
+                ),
+                **common,
+            )
+        )
+        return risks
+
+    if document.requires_ocr:
+        risks.append(
+            RiskItem(
+                code="OCR_REQUIRED",
+                severity="HIGH",
+                title="Documento pendiente de OCR",
+                explanation=(
+                    "El documento no contiene texto seleccionable "
+                    "suficiente para extraer sus datos de forma fiable."
+                ),
+                recommended_action=(
+                    "Revisar el archivo, ejecutar OCR o completar "
+                    "los campos manualmente."
+                ),
+                **common,
+            )
+        )
+
+    if invoice is None:
+        risks.append(
+            RiskItem(
+                code="DOCUMENT_NOT_IDENTIFIED",
+                severity="HIGH",
+                title="Documento no identificado como factura",
+                explanation=(
+                    "El sistema ha procesado el documento, pero no "
+                    "ha encontrado señales suficientes para clasificarlo "
+                    "como factura."
+                ),
+                recommended_action=(
+                    "Clasifica el documento manualmente o revisa si "
+                    "requiere OCR."
+                ),
+                **common,
+            )
+        )
+        return risks
+
+    if invoice.duplicate_status == "STRONG":
+        risks.append(
+            RiskItem(
+                code="STRONG_DUPLICATE",
+                severity="HIGH",
+                title="Posible factura duplicada",
+                explanation=(
+                    "Existe otra factura con el mismo NIF/CIF de proveedor "
+                    "y el mismo número de factura."
+                ),
+                recommended_action=(
+                    "Compara ambos documentos antes de aprobar o "
+                    "contabilizar la factura."
+                ),
+                **common,
+            )
+        )
+    elif invoice.duplicate_status == "PROBABLE":
+        risks.append(
+            RiskItem(
+                code="PROBABLE_DUPLICATE",
+                severity="MEDIUM",
+                title="Posible duplicado por importe y fecha",
+                explanation=(
+                    "Existe otra factura del mismo proveedor con la "
+                    "misma fecha e importe."
+                ),
+                recommended_action=(
+                    "Comprueba si corresponde a una factura distinta "
+                    "o a un duplicado."
+                ),
+                **common,
+            )
+        )
+
+    if invoice.validation_status == "MISMATCH":
+        risks.append(
+            RiskItem(
+                code="AMOUNT_MISMATCH",
+                severity="HIGH",
+                title="Los importes de la factura no cuadran",
+                explanation=(
+                    "La base imponible, el IVA, las retenciones o el "
+                    "recargo no coinciden con el total extraído."
+                ),
+                recommended_action=(
+                    "Revisar base, IVA y total antes de aprobar."
+                ),
+                **common,
+            )
+        )
+
+    if invoice.validation_status == "INCOMPLETE":
+        missing_fields = [
+            item.get("field")
+            for item in invoice.validation_messages
+            if item.get("code") == "required_field_missing"
+        ]
+        readable_fields = ", ".join(
+            field for field in missing_fields if field
+        )
+
+        risks.append(
+            RiskItem(
+                code="INCOMPLETE_INVOICE",
+                severity="MEDIUM",
+                title="Factura con campos pendientes",
+                explanation=(
+                    "Faltan datos obligatorios para validar la factura."
+                    + (
+                        f" Campos detectados: {readable_fields}."
+                        if readable_fields
+                        else ""
+                    )
+                ),
+                recommended_action=(
+                    "Completa los campos pendientes y guarda la revisión."
+                ),
+                **common,
+            )
+        )
+
+    if invoice.confidence < 60:
+        risks.append(
+            RiskItem(
+                code="VERY_LOW_CONFIDENCE",
+                severity="HIGH",
+                title="Extracción con baja confianza",
+                explanation=(
+                    f"La confianza global de extracción es del "
+                    f"{invoice.confidence}%."
+                ),
+                recommended_action=(
+                    "Verifica todos los datos clave contra el documento "
+                    "original."
+                ),
+                **common,
+            )
+        )
+    elif invoice.confidence < 80:
+        risks.append(
+            RiskItem(
+                code="LOW_CONFIDENCE",
+                severity="MEDIUM",
+                title="Extracción requiere validación",
+                explanation=(
+                    f"La confianza global de extracción es del "
+                    f"{invoice.confidence}%."
+                ),
+                recommended_action=(
+                    "Revisa los campos con menor confianza antes de "
+                    "aprobar la factura."
+                ),
+                **common,
+            )
+        )
+
+    if invoice.invoice_date is not None:
+        today = datetime.now().date()
+
+        if invoice.invoice_date > today:
+            risks.append(
+                RiskItem(
+                    code="FUTURE_INVOICE_DATE",
+                    severity="LOW",
+                    title="Fecha de factura futura",
+                    explanation=(
+                        "La fecha extraída es posterior a la fecha actual."
+                    ),
+                    recommended_action=(
+                        "Comprueba si la fecha se ha extraído correctamente."
+                    ),
+                    **common,
+                )
+            )
+
+    return risks
+
+
+def list_open_risks(
+    database: Session,
+    *,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    documents = load_documents_with_invoices(database)
+
+    risks: list[RiskItem] = []
+
+    for document in documents:
+        if document.status in {
+            "APPROVED",
+            "REJECTED",
+            "EXPORTED",
+        }:
+            continue
+
+        risks.extend(build_document_risks(document))
+
+    risks.sort(
+        key=lambda risk: (
+            RISK_SEVERITY_ORDER.get(risk.severity, 99),
+            risk.created_at or utc_now(),
+        )
+    )
+
+    return [
+        risk.to_dict()
+        for risk in risks[:limit]
+    ]
+
+
+def build_agent_catalog(
+    database: Session,
+) -> list[dict[str, Any]]:
+    documents = load_documents_with_invoices(database)
+    risks = list_open_risks(database, limit=500)
+
+    open_tasks_statement = (
+        select(func.count(Task.id))
+        .where(Task.status.in_(OPEN_TASK_STATUSES))
+    )
+    open_tasks = int(
+        database.scalar(open_tasks_statement) or 0
+    )
+
+    documents_today = sum(
+        1
+        for document in documents
+        if document.created_at.date() == datetime.now().date()
+    )
+
+    processed_documents = sum(
+        1
+        for document in documents
+        if document.extraction_status == "COMPLETED"
+    )
+
+    failed_documents = sum(
+        1
+        for document in documents
+        if document.status == "FAILED"
+    )
+
+    high_risks = sum(
+        1
+        for risk in risks
+        if risk["severity"] in {"CRITICAL", "HIGH"}
+    )
+
+    return [
+        {
+            "id": "documental",
+            "name": "Agente documental",
+            "icon": "📄",
+            "status": (
+                "attention"
+                if failed_documents > 0
+                else "active"
+            ),
+            "status_label": (
+                "Requiere atención"
+                if failed_documents > 0
+                else "Activo"
+            ),
+            "description": (
+                "Recibe documentos, extrae información, identifica "
+                "facturas y prepara los datos para revisión."
+            ),
+            "metric_label": "Documentos procesados",
+            "metric_value": processed_documents,
+            "detail": (
+                f"{documents_today} documento(s) incorporado(s) hoy."
+            ),
+        },
+        {
+            "id": "riesgos",
+            "name": "Agente de riesgos",
+            "icon": "⚠️",
+            "status": (
+                "attention"
+                if high_risks > 0
+                else "active"
+            ),
+            "status_label": (
+                "Prioridades detectadas"
+                if high_risks > 0
+                else "Sin riesgos críticos"
+            ),
+            "description": (
+                "Detecta descuadres, duplicados, baja confianza, "
+                "campos pendientes y errores operativos."
+            ),
+            "metric_label": "Riesgos abiertos",
+            "metric_value": len(risks),
+            "detail": (
+                f"{high_risks} riesgo(s) de prioridad alta o crítica."
+            ),
+        },
+        {
+            "id": "revision",
+            "name": "Agente de revisión",
+            "icon": "✅",
+            "status": (
+                "attention"
+                if open_tasks > 0
+                else "active"
+            ),
+            "status_label": (
+                "Decisiones pendientes"
+                if open_tasks > 0
+                else "Bandeja al día"
+            ),
+            "description": (
+                "Convierte excepciones del procesamiento documental "
+                "en tareas humanas priorizadas."
+            ),
+            "metric_label": "Tareas abiertas",
+            "metric_value": open_tasks,
+            "detail": (
+                "Las tareas se sincronizan automáticamente con "
+                "el estado de cada documento."
+            ),
+        },
+        {
+            "id": "outlook",
+            "name": "Agente de correo",
+            "icon": "✉️",
+            "status": "pending",
+            "status_label": "Configuración disponible",
+            "description": (
+                "Importa adjuntos PDF desde Outlook mediante "
+                "Microsoft Graph cuando la cuenta está autorizada."
+            ),
+            "metric_label": "Modo",
+            "metric_value": "Graph / manual",
+            "detail": (
+                "La conexión depende de las credenciales OAuth "
+                "configuradas en el entorno."
+            ),
+        },
+        {
+            "id": "assistant",
+            "name": "Asistente fiscal",
+            "icon": "💬",
+            "status": "beta",
+            "status_label": "Beta controlada",
+            "description": (
+                "Responde sobre los documentos, facturas, riesgos "
+                "y tareas registradas en CapaFiscal."
+            ),
+            "metric_label": "Fuentes",
+            "metric_value": "Datos internos",
+            "detail": (
+                "No presenta modelos ni sustituye la revisión "
+                "de un asesor fiscal."
+            ),
+        },
+    ]
+
+
+def build_today_dashboard(
+    database: Session,
+) -> dict[str, Any]:
+    documents = load_documents_with_invoices(database)
+    risks = list_open_risks(database, limit=20)
+    agents = build_agent_catalog(database)
+
+    today = datetime.now().date()
+
+    documents_today = [
+        document
+        for document in documents
+        if document.created_at.date() == today
+    ]
+
+    processed_today = [
+        document
+        for document in documents_today
+        if document.extraction_status == "COMPLETED"
+    ]
+
+    pending_documents = [
+        document
+        for document in documents
+        if document.status in ACTIVE_DOCUMENT_STATUSES
+    ]
+
+    open_tasks_statement = (
+        select(Task)
+        .where(Task.status.in_(OPEN_TASK_STATUSES))
+        .options(
+            selectinload(Task.document).selectinload(
+                Document.invoice
+            )
+        )
+        .order_by(
+            Task.priority.asc(),
+            Task.created_at.asc(),
+        )
+        .limit(8)
+    )
+    tasks = list(database.scalars(open_tasks_statement).all())
+
+    recommendation: dict[str, Any]
+
+    if risks:
+        first_risk = risks[0]
+        recommendation = {
+            "title": first_risk["title"],
+            "message": first_risk["explanation"],
+            "action": first_risk["recommended_action"],
+            "severity": first_risk["severity"],
+            "document_id": first_risk["document_id"],
+        }
+    elif tasks:
+        first_task = tasks[0]
+        recommendation = {
+            "title": "Hay una decisión pendiente",
+            "message": (
+                first_task.reason
+                or "Existe una tarea pendiente de revisión."
+            ),
+            "action": "Abre la bandeja de revisión y resuelve la tarea.",
+            "severity": "MEDIUM",
+            "document_id": first_task.document_id,
+        }
+    else:
+        recommendation = {
+            "title": "Situación bajo control",
+            "message": (
+                "No hay riesgos críticos ni tareas abiertas "
+                "en este momento."
+            ),
+            "action": (
+                "Puedes revisar las últimas facturas o conectar "
+                "una nueva fuente documental."
+            ),
+            "severity": "LOW",
+            "document_id": None,
+        }
+
+    activity_statement = (
+        select(AuditEvent)
+        .order_by(
+            AuditEvent.created_at.desc(),
+            AuditEvent.id.desc(),
+        )
+        .limit(8)
+    )
+    activity = list(database.scalars(activity_statement).all())
+
+    return {
+        "generated_at": utc_now().isoformat(),
+        "headline": (
+            "Tu administrativo digital ha revisado "
+            "la actividad disponible."
+        ),
+        "metrics": {
+            "documents_today": len(documents_today),
+            "processed_today": len(processed_today),
+            "pending_documents": len(pending_documents),
+            "open_risks": len(risks),
+            "open_tasks": len(tasks),
+        },
+        "recommendation": recommendation,
+        "risks": risks[:5],
+        "tasks": [
+            {
+                "id": task.id,
+                "task_type": task.task_type,
+                "status": task.status,
+                "priority": task.priority,
+                "reason": task.reason,
+                "document_id": task.document_id,
+                "invoice_id": task.invoice_id,
+                "supplier_name": (
+                    task.document.invoice.supplier_name
+                    if task.document
+                    and task.document.invoice
+                    else None
+                ),
+            }
+            for task in tasks
+        ],
+        "agents": agents,
+        "recent_activity": [
+            {
+                "id": event.id,
+                "action": event.action,
+                "entity_type": event.entity_type,
+                "entity_id": event.entity_id,
+                "actor": event.actor,
+                "event_data": event.event_data,
+                "created_at": event.created_at.isoformat(),
+            }
+            for event in activity
+        ],
+    }
+
+
+def build_monthly_impact(
+    database: Session,
+) -> dict[str, Any]:
+    now = utc_now()
+    month_start = now.replace(
+        day=1,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+    document_statement = (
+        select(Document)
+        .where(Document.created_at >= month_start)
+        .options(selectinload(Document.invoice))
+    )
+    documents = list(database.scalars(document_statement).all())
+
+    processed = [
+        document
+        for document in documents
+        if document.extraction_status == "COMPLETED"
+    ]
+
+    approved = [
+        document
+        for document in documents
+        if document.status == "APPROVED"
+    ]
+
+    risk_documents = [
+        document
+        for document in documents
+        if document.status in {
+            "NEEDS_REVIEW",
+            "FAILED",
+        }
+    ]
+
+    tasks_statement = (
+        select(Task)
+        .where(Task.created_at >= month_start)
+    )
+    tasks = list(database.scalars(tasks_statement).all())
+
+    resolved_tasks = [
+        task
+        for task in tasks
+        if task.status == "RESOLVED"
+    ]
+
+    minutes_per_processed_document = 7
+    minutes_per_risk_prevented = 12
+    hourly_cost = Decimal("25.00")
+
+    saved_minutes = (
+        len(processed) * minutes_per_processed_document
+        + len(risk_documents) * minutes_per_risk_prevented
+    )
+
+    saved_hours = Decimal(saved_minutes) / Decimal("60")
+    estimated_cost = saved_hours * hourly_cost
+
+    return {
+        "period": now.strftime("%m/%Y"),
+        "documents_received": len(documents),
+        "documents_processed": len(processed),
+        "documents_approved": len(approved),
+        "risks_detected": len(risk_documents),
+        "tasks_created": len(tasks),
+        "tasks_resolved": len(resolved_tasks),
+        "estimated_hours_saved": round(float(saved_hours), 1),
+        "estimated_cost_saved": round(float(estimated_cost), 2),
+        "calculation_note": (
+            "Estimación operativa: 7 minutos por documento procesado "
+            "y 12 minutos adicionales por incidencia detectada, "
+            "valorados a 25 €/hora. No representa ahorro garantizado."
+        ),
+    }
+
+
+def connector_catalog(
+    database: Session,
+) -> list[dict[str, Any]]:
+    documents = load_documents_with_invoices(database)
+
+    manual_documents = sum(
+        1
+        for document in documents
+        if document.source == "manual_upload"
+    )
+
+    outlook_documents = sum(
+        1
+        for document in documents
+        if document.source in {
+            "outlook",
+            "outlook_graph",
+            "email",
+        }
+        or (
+            document.source_provider
+            and "outlook" in document.source_provider.lower()
+        )
+    )
+
+    return [
+        {
+            "id": "manual_upload",
+            "name": "Carga manual",
+            "icon": "⬆️",
+            "category": "Documental",
+            "status": "active",
+            "status_label": "Activo",
+            "description": (
+                "Carga directa de documentos PDF y TXT con "
+                "procesamiento y deduplicación por SHA-256."
+            ),
+            "documents_found": manual_documents,
+            "action": "upload",
+            "action_label": "Subir documento",
+        },
+        {
+            "id": "outlook",
+            "name": "Microsoft Outlook",
+            "icon": "✉️",
+            "category": "Correo",
+            "status": "available",
+            "status_label": "Disponible",
+            "description": (
+                "Conexión mediante Microsoft Graph para importar "
+                "adjuntos PDF desde el buzón autorizado."
+            ),
+            "documents_found": outlook_documents,
+            "action": "outlook",
+            "action_label": "Gestionar Outlook",
+        },
+        {
+            "id": "gmail",
+            "name": "Gmail",
+            "icon": "📨",
+            "category": "Correo",
+            "status": "planned",
+            "status_label": "Próximamente",
+            "description": (
+                "Conector previsto mediante Gmail API con permisos "
+                "mínimos y lectura de adjuntos documentales."
+            ),
+            "documents_found": 0,
+            "action": "none",
+            "action_label": "Planificado",
+        },
+        {
+            "id": "bank_csv",
+            "name": "CSV bancario",
+            "icon": "🏦",
+            "category": "Finanzas",
+            "status": "planned",
+            "status_label": "Próximamente",
+            "description": (
+                "Importación asistida de movimientos bancarios CSV "
+                "para tesorería y conciliación futura."
+            ),
+            "documents_found": 0,
+            "action": "none",
+            "action_label": "Planificado",
+        },
+        {
+            "id": "dehu",
+            "name": "DEHú / AEAT",
+            "icon": "🏛️",
+            "category": "Notificaciones",
+            "status": "validation",
+            "status_label": "Validación legal y técnica",
+            "description": (
+                "La integración oficial requiere alta, certificados, "
+                "apoderamiento y validación operativa previa."
+            ),
+            "documents_found": 0,
+            "action": "none",
+            "action_label": "Pendiente",
+        },
+    ]
+
+
+def assistant_answer(
+    database: Session,
+    question: str,
+) -> dict[str, Any]:
+    normalized_question = safe_text(question).lower()
+
+    if not normalized_question:
+        return {
+            "answer": (
+                "Puedo ayudarte con documentos, facturas, riesgos, "
+                "tareas pendientes, IVA soportado y actividad reciente."
+            ),
+            "sources": [],
+            "mode": "internal_data",
+            "warning": (
+                "Respuesta basada exclusivamente en datos internos "
+                "de CapaFiscal."
+            ),
+        }
+
+    documents = load_documents_with_invoices(database)
+    risks = list_open_risks(database, limit=100)
+
+    invoices = [
+        document.invoice
+        for document in documents
+        if document.invoice is not None
+    ]
+
+    approved_invoices = [
+        invoice
+        for invoice in invoices
+        if invoice.review_status == "APPROVED"
+    ]
+
+    open_tasks_statement = (
+        select(Task)
+        .where(Task.status.in_(OPEN_TASK_STATUSES))
+        .options(
+            selectinload(Task.document).selectinload(
+                Document.invoice
+            )
+        )
+        .order_by(Task.created_at.asc())
+    )
+    open_tasks = list(
+        database.scalars(open_tasks_statement).all()
+    )
+
+    def source_for_invoice(invoice: Invoice) -> dict[str, Any]:
+        return {
+            "type": "invoice",
+            "document_id": invoice.document_id,
+            "invoice_id": invoice.id,
+            "label": (
+                f"{invoice.supplier_name or 'Proveedor sin identificar'} · "
+                f"{decimal_to_number(invoice.total) or 0:.2f} "
+                f"{invoice.currency or 'EUR'}"
+            ),
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "riesgo",
+            "riesgos",
+            "problema",
+            "problemas",
+            "descuadre",
+            "duplicad",
+            "urgente",
+        )
+    ):
+        if not risks:
+            return {
+                "answer": (
+                    "No tengo riesgos abiertos en documentos que sigan "
+                    "pendientes de revisión."
+                ),
+                "sources": [],
+                "mode": "internal_data",
+                "warning": (
+                    "Respuesta basada en reglas internas; no es un "
+                    "dictamen fiscal o legal."
+                ),
+            }
+
+        top_risks = risks[:5]
+
+        return {
+            "answer": (
+                f"He detectado {len(risks)} riesgo(s) abierto(s). "
+                f"El más prioritario es: "
+                f"{top_risks[0]['title']}."
+            ),
+            "sources": [
+                {
+                    "type": "risk",
+                    "document_id": risk["document_id"],
+                    "label": (
+                        f"{risk['severity']} · {risk['title']}"
+                    ),
+                }
+                for risk in top_risks
+            ],
+            "mode": "internal_data",
+            "warning": (
+                "Respuesta basada en reglas internas; no sustituye "
+                "la revisión profesional."
+            ),
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "pendiente",
+            "tarea",
+            "tareas",
+            "revisar",
+            "bandeja",
+        )
+    ):
+        if not open_tasks:
+            return {
+                "answer": (
+                    "La bandeja está al día: no hay tareas abiertas "
+                    "de revisión."
+                ),
+                "sources": [],
+                "mode": "internal_data",
+                "warning": (
+                    "Respuesta basada en datos internos de CapaFiscal."
+                ),
+            }
+
+        return {
+            "answer": (
+                f"Tienes {len(open_tasks)} tarea(s) abierta(s). "
+                f"La primera prioridad es: "
+                f"{open_tasks[0].reason or 'Revisar documento'}."
+            ),
+            "sources": [
+                {
+                    "type": "task",
+                    "task_id": task.id,
+                    "document_id": task.document_id,
+                    "label": (
+                        task.reason
+                        or f"Tarea de revisión #{task.id}"
+                    ),
+                }
+                for task in open_tasks[:5]
+            ],
+            "mode": "internal_data",
+            "warning": (
+                "Respuesta basada en datos internos de CapaFiscal."
+            ),
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "iva",
+            "impuesto",
+            "impuestos",
+            "soportado",
+        )
+    ):
+        tax_total = sum(
+            (
+                invoice.tax_total
+                or Decimal("0.00")
+            )
+            for invoice in approved_invoices
+        )
+
+        subtotal = sum(
+            (
+                invoice.subtotal
+                or Decimal("0.00")
+            )
+            for invoice in approved_invoices
+        )
+
+        return {
+            "answer": (
+                f"Según las facturas aprobadas, tienes "
+                f"{float(tax_total):.2f} € de IVA soportado "
+                f"sobre una base de {float(subtotal):.2f} €. "
+                "Este cálculo no incluye facturas pendientes, "
+                "emitidas ni ajustes fiscales externos."
+            ),
+            "sources": [
+                source_for_invoice(invoice)
+                for invoice in approved_invoices[:8]
+            ],
+            "mode": "internal_data",
+            "warning": (
+                "Es una estimación operativa y no un borrador oficial "
+                "de modelo tributario."
+            ),
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "gasto",
+            "gastos",
+            "cuánto",
+            "cuanto",
+            "total",
+            "proveedor",
+            "factura",
+            "facturas",
+        )
+    ):
+        total_amount = sum(
+            (
+                invoice.total
+                or Decimal("0.00")
+            )
+            for invoice in approved_invoices
+        )
+
+        supplier_counter = Counter(
+            safe_text(invoice.supplier_name)
+            for invoice in approved_invoices
+            if safe_text(invoice.supplier_name)
+        )
+
+        most_common = supplier_counter.most_common(3)
+
+        supplier_text = (
+            ", ".join(
+                f"{name} ({count})"
+                for name, count in most_common
+            )
+            if most_common
+            else "sin proveedores identificados"
+        )
+
+        return {
+            "answer": (
+                f"El gasto aprobado registrado es de "
+                f"{float(total_amount):.2f} €. "
+                f"Proveedores más frecuentes: {supplier_text}."
+            ),
+            "sources": [
+                source_for_invoice(invoice)
+                for invoice in approved_invoices[:8]
+            ],
+            "mode": "internal_data",
+            "warning": (
+                "Solo se incluyen facturas aprobadas registradas "
+                "en CapaFiscal."
+            ),
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "resumen",
+            "situación",
+            "situacion",
+            "hoy",
+            "estado",
+            "ayuda",
+        )
+    ):
+        return {
+            "answer": (
+                f"Ahora mismo hay {len(documents)} documento(s) "
+                f"registrado(s), {len(risks)} riesgo(s) abierto(s), "
+                f"{len(open_tasks)} tarea(s) pendiente(s) y "
+                f"{len(approved_invoices)} factura(s) aprobada(s)."
+            ),
+            "sources": [],
+            "mode": "internal_data",
+            "warning": (
+                "Resumen construido a partir de datos internos "
+                "de CapaFiscal."
+            ),
+        }
+
+    return {
+        "answer": (
+            "Todavía no tengo una respuesta específica para esa "
+            "consulta. Puedo ayudarte con: riesgos, tareas, facturas, "
+            "gasto aprobado, IVA soportado o un resumen de situación."
+        ),
+        "sources": [],
+        "mode": "internal_data",
+        "warning": (
+            "El asistente está en beta y utiliza exclusivamente "
+            "datos internos disponibles."
+        ),
+    }
