@@ -84,6 +84,9 @@ def serialize_profile(database: Session) -> dict[str, Any]:
         "activity": profile.activity if profile else None,
         "email": profile.email if profile else None,
         "hourly_cost": float(hourly_cost(database)),
+        "iban": profile.iban if profile else None,
+        "bic": profile.bic if profile else None,
+        "at_ep_rate": float(profile.at_ep_rate) if profile and profile.at_ep_rate is not None else 1.5,
         "configured": bool(tax_ids),
         "all_tax_ids": tax_ids,
     }
@@ -124,6 +127,24 @@ def update_company_profile(
         profile.hourly_cost = (
             Decimal(str(value)) if value not in (None, "") else None
         )
+
+    if "iban" in payload:
+        from app.payroll_service import iban_is_valid
+        from app.payroll_service import normalize_iban
+
+        value = normalize_iban(payload["iban"])
+
+        if value and not iban_is_valid(value):
+            raise ValueError("El IBAN de la empresa no es válido.")
+
+        profile.iban = value or None
+
+    if "bic" in payload:
+        profile.bic = (payload["bic"] or "").strip().upper() or None
+
+    if "at_ep_rate" in payload:
+        value = payload["at_ep_rate"]
+        profile.at_ep_rate = Decimal(str(value)) if value not in (None, "") else None
 
     database.flush()
 

@@ -201,6 +201,86 @@ def build_agenda(
             }
         )
 
+    # Equipo: altas, bajas, fines de contrato.
+    from app.team_service import build_team_overview
+
+    # Se agrupan por persona para no inundar la agenda: una línea por
+    # empleado con la fecha más urgente y el resumen de lo pendiente.
+    grouped: dict[int, list[dict]] = {}
+    for alert in build_team_overview(database, today=current_day)["alerts"]:
+        grouped.setdefault(alert["employee_id"], []).append(alert)
+
+    for employee_id, alerts in grouped.items():
+        alerts.sort(key=lambda alert: alert["due_date"] or current_day.isoformat())
+        first = alerts[0]
+        due = date.fromisoformat(first["due_date"]) if first["due_date"] else current_day
+        remaining = days_until(due, current_day)
+
+        if remaining > horizon_days:
+            continue
+
+        overdue = any(alert["status"] == "overdue" for alert in alerts)
+
+        if len(alerts) == 1:
+            title = f"{first['title']} · {first['employee_name']}"
+            detail = f"Fecha límite: {format_day(due)}."
+        else:
+            title = f"{len(alerts)} trámites de personal pendientes · {first['employee_name']}"
+            detail = f"El más urgente: {first['title'][:1].lower() + first['title'][1:]} ({format_day(due)})."
+
+        items.append(
+            {
+                "code": "TEAM_CHECK",
+                "kind": "team",
+                "level": "overdue" if overdue else level_for(remaining),
+                "date": due.isoformat(),
+                "days_left": remaining,
+                "title": title,
+                "detail": detail,
+                "action": "Abre la ficha en Equipo y complétalo.",
+                "entity_type": "employee",
+                "entity_id": employee_id,
+                "amount": None,
+                "tab": "equipo",
+            }
+        )
+
+    # Nómina del mes sin preparar a partir del día 20.
+    from sqlalchemy import select
+
+    from app.models import Employee
+    from app.models import PayrollRun
+
+    has_staff = database.scalar(select(Employee.id).where(Employee.annual_salary.is_not(None)).limit(1))
+    run_exists = database.scalar(
+        select(PayrollRun.id).where(
+            PayrollRun.year == current_day.year,
+            PayrollRun.month == current_day.month,
+        )
+    )
+
+    if has_staff and not run_exists and current_day.day >= 20:
+        from app.calendar_es import last_day_of_month
+
+        due = last_day_of_month(current_day.year, current_day.month)
+        remaining = days_until(due, current_day)
+        items.append(
+            {
+                "code": "PAYROLL_PENDING",
+                "kind": "payroll",
+                "level": level_for(remaining),
+                "date": due.isoformat(),
+                "days_left": remaining,
+                "title": "Preparar las nóminas del mes",
+                "detail": f"Las nóminas se pagan antes del {format_day(due)}.",
+                "action": "Genera el borrador en Nóminas, revisa variables y apruébalo.",
+                "entity_type": "payroll",
+                "entity_id": current_day.year * 100 + current_day.month,
+                "amount": None,
+                "tab": "nominas",
+            }
+        )
+
     items.sort(key=lambda item: (LEVEL_ORDER.get(item["level"], 9), item["date"]))
 
     return {

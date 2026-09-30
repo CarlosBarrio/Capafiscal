@@ -371,6 +371,36 @@ def build_model_130(
 # Modelos 111 y 115 (retenciones practicadas)
 # -------------------------------------------------------------------
 
+def payroll_withholdings(
+    database: Session,
+    year: int,
+    quarter: int,
+) -> dict[str, Any]:
+    """Rendimientos del trabajo de nóminas aprobadas del trimestre."""
+    from app.models import PayrollRun
+
+    months = range((quarter - 1) * 3 + 1, quarter * 3 + 1)
+    runs = database.scalars(
+        select(PayrollRun).where(
+            PayrollRun.year == year,
+            PayrollRun.month.in_(list(months)),
+            PayrollRun.status.in_({"APPROVED", "PAID"}),
+        )
+    ).all()
+
+    employees = set()
+    gross = ZERO
+    irpf = ZERO
+
+    for run in runs:
+        for payslip in run.payslips:
+            employees.add(payslip.employee_id or payslip.employee_name)
+            gross += money(payslip.gross)
+            irpf += money(payslip.irpf)
+
+    return {"recipients": len(employees), "gross": gross, "irpf": irpf, "runs": len(runs)}
+
+
 def _withholding_model(
     database: Session,
     *,
@@ -404,6 +434,11 @@ def _withholding_model(
     )
 
     model = "115" if rent else "111"
+    payroll = (
+        payroll_withholdings(database, year, quarter)
+        if not rent
+        else {"recipients": 0, "gross": ZERO, "irpf": ZERO, "runs": 0}
+    )
 
     boxes = (
         [
@@ -413,11 +448,16 @@ def _withholding_model(
         ]
         if rent
         else [
+            {"box": "01", "label": "Rendimientos del trabajo: nº perceptores", "value": payroll["recipients"], "is_count": True},
+            {"box": "02", "label": "Rendimientos del trabajo: importe de las percepciones", "value": as_float(payroll["gross"])},
+            {"box": "03", "label": "Rendimientos del trabajo: retenciones", "value": as_float(payroll["irpf"])},
             {"box": "07", "label": "Actividades económicas: nº perceptores", "value": len(recipients), "is_count": True},
             {"box": "08", "label": "Actividades económicas: importe de las percepciones", "value": as_float(base)},
-            {"box": "09", "label": "Actividades económicas: retenciones", "value": as_float(withheld), "highlight": True},
+            {"box": "09", "label": "Actividades económicas: retenciones", "value": as_float(withheld)},
+            {"box": "28", "label": "Total liquidación (03 + 09)", "value": as_float(withheld + payroll["irpf"]), "highlight": True},
         ]
     )
+    withheld_total = withheld + payroll["irpf"]
 
     return {
         "model": model,
@@ -426,9 +466,9 @@ def _withholding_model(
         "quarter": quarter,
         "period_label": f"{quarter}T {year}",
         "boxes": boxes,
-        "result": as_float(withheld),
-        "outcome": "A ingresar" if withheld > 0 else "Sin retenciones en el periodo",
-        "applies": bool(invoices),
+        "result": as_float(withheld_total),
+        "outcome": "A ingresar" if withheld_total > 0 else "Sin retenciones en el periodo",
+        "applies": bool(invoices) or payroll["runs"] > 0,
         "invoices": [
             {
                 "invoice_id": invoice.id,
@@ -446,8 +486,9 @@ def _withholding_model(
             + (
                 "de alquiler de inmuebles."
                 if rent
-                else "de profesionales. Las retenciones de nóminas no están "
-                "en CapaFiscal y deben sumarse (casillas 01 a 06)."
+                else "de profesionales y las de nóminas aprobadas en "
+                "CapaFiscal. Añade retenciones en especie o de otros "
+                "rendimientos si los hubiera."
             )
         ),
     }
@@ -589,12 +630,27 @@ def build_tax_calendar(
         ).all()
     ]
 
+    from app.models import PayrollRun
+
+    payroll_periods = {
+        (run_year, (run_month - 1) // 3 + 1)
+        for run_year, run_month in database.execute(
+            select(PayrollRun.year, PayrollRun.month).where(
+                PayrollRun.status.in_({"APPROVED", "PAID"})
+            )
+        ).all()
+    }
+
     def has_activity(period_year: int, period: int) -> bool:
         if period == 0:
-            return any(value.year == period_year for value in invoice_dates)
+            return any(value.year == period_year for value in invoice_dates) or any(
+                run_year == period_year for run_year, _quarter in payroll_periods
+            )
 
         start, end = quarter_range(period_year, period)
-        return any(start <= value <= end for value in invoice_dates)
+        return any(start <= value <= end for value in invoice_dates) or (
+            (period_year, period) in payroll_periods
+        )
 
     entries: list[dict[str, Any]] = []
 
@@ -629,7 +685,9 @@ def build_tax_calendar(
                 "period_year": period_year,
                 "period": period,
                 "period_label": (
-                    f"{period}T {period_year}"
+                    f"{period}P {period_year}"
+                    if model == "202"
+                    else f"{period}T {period_year}"
                     if period
                     else f"Anual {period_year}"
                 ),

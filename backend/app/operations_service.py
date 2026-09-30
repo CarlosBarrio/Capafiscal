@@ -1024,6 +1024,51 @@ def assistant_answer(
     if any(
         keyword in normalized_question
         for keyword in (
+            "equipo", "plantilla", "empleado", "trabajador", "vacaciones",
+            "nomina", "nómina", "sueldo", "personal", "organigrama",
+        )
+    ):
+        from app.team_service import build_team_overview
+
+        overview = build_team_overview(database)
+
+        if not overview["headcount"] and not overview["incoming"]:
+            return {
+                "answer": "Aún no hay personas dadas de alta en Equipo.",
+                "sources": [],
+                "mode": "internal_data",
+                "warning": "Añade tu plantilla en la sección Equipo.",
+            }
+
+        answer = (
+            f"Tienes {overview['headcount']} persona(s) en plantilla "
+            f"({str(overview['fte']).replace('.', ',')} jornadas completas)"
+            + (f" y {overview['incoming']} incorporación(es) próxima(s)" if overview["incoming"] else "")
+            + f". Coste anual estimado: {format_eur(overview['annual_cost'])}."
+        )
+
+        if overview["absent_today"]:
+            answer += " Hoy no están: " + ", ".join(
+                f"{item['employee_name']} ({item['kind_label'].lower()})"
+                for item in overview["absent_today"]
+            ) + "."
+
+        if overview["alerts"]:
+            first = overview["alerts"][0]
+            answer += (
+                f" Pendiente urgente: {first['title'].lower()} de {first['employee_name']}."
+            )
+
+        return {
+            "answer": answer,
+            "sources": [],
+            "mode": "internal_data",
+            "warning": "Costes estimados con los parámetros de cotización configurados.",
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
             "notificacion",
             "notificación",
             "requerimiento",

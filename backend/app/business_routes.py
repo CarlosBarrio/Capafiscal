@@ -91,6 +91,9 @@ class CompanyUpdate(BaseModel):
     activity: str | None = Field(default=None, max_length=255)
     email: str | None = Field(default=None, max_length=255)
     hourly_cost: Decimal | None = Field(default=None, ge=0, le=1000)
+    iban: str | None = Field(default=None, max_length=40)
+    bic: str | None = Field(default=None, max_length=11)
+    at_ep_rate: Decimal | None = Field(default=None, ge=0, le=10)
 
 
 @router.get("/company", tags=["Mi empresa"])

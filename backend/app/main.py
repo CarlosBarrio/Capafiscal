@@ -55,6 +55,7 @@ from app.operations_service import list_open_risks
 from app.extractor import CATEGORY_ACCOUNTS
 from app.business_routes import router as business_router
 from app.outlook_connector import router as outlook_router
+from app.team_routes import router as team_router
 from app.reports_service import apply_document_filters
 from app.reports_service import build_ledger_rows
 from app.reports_service import build_payments_overview
@@ -290,6 +291,7 @@ app = FastAPI(
 
 app.include_router(outlook_router)
 app.include_router(business_router)
+app.include_router(team_router)
 
 app.add_middleware(
     CORSMiddleware,

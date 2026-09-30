@@ -662,6 +662,80 @@ def expected_date(invoice: Invoice) -> date:
     return date.today()
 
 
+def payroll_movements(database: Session, current_day: date) -> list[dict[str, Any]]:
+    """Pago de nóminas aprobadas y de seguros sociales (TC1)."""
+    from app.calendar_es import last_day_of_month
+    from app.calendar_es import next_business_day as next_working_day
+    from app.models import PayrollRun
+    from app.payroll_service import period_label
+    from app.payroll_service import run_totals
+
+    movements: list[dict[str, Any]] = []
+    runs = database.scalars(
+        select(PayrollRun)
+        .where(PayrollRun.status.in_({"APPROVED", "PAID"}))
+        .options(selectinload(PayrollRun.payslips))
+    ).all()
+
+    for run in runs:
+        totals = run_totals(run)
+
+        if run.status == "APPROVED":
+            pay_day = last_day_of_month(run.year, run.month)
+            movements.append(
+                {
+                    "date": max(pay_day, current_day).isoformat(),
+                    "original_date": pay_day.isoformat(),
+                    "overdue": pay_day < current_day,
+                    "type": "payroll",
+                    "label": f"Nóminas · {period_label(run)} (líquido)",
+                    "amount": -totals["net"],
+                    "document_id": None,
+                    "estimated_date": False,
+                }
+            )
+
+        # Seguros sociales: último día del mes siguiente.
+        following_month = run.month % 12 + 1
+        following_year = run.year + (1 if run.month == 12 else 0)
+        ss_due = last_day_of_month(following_year, following_month)
+
+        while not next_working_day(ss_due) == ss_due:
+            ss_due -= timedelta(days=1)
+
+        if ss_due >= current_day:
+            movements.append(
+                {
+                    "date": ss_due.isoformat(),
+                    "original_date": ss_due.isoformat(),
+                    "overdue": False,
+                    "type": "social_security",
+                    "label": f"Seguros sociales · {period_label(run)}",
+                    "amount": -(totals["ss_employee"] + totals["ss_employer"]),
+                    "document_id": None,
+                    "estimated_date": False,
+                }
+            )
+
+    return movements
+
+
+def payroll_cost_by_month(database: Session) -> dict[str, Decimal]:
+    from app.models import PayrollRun
+
+    costs: dict[str, Decimal] = defaultdict(lambda: ZERO)
+
+    for run in database.scalars(
+        select(PayrollRun)
+        .where(PayrollRun.status.in_({"APPROVED", "PAID"}))
+        .options(selectinload(PayrollRun.payslips))
+    ).all():
+        key = f"{run.year}-{run.month:02d}"
+        costs[key] += sum((money(payslip.company_cost) for payslip in run.payslips), ZERO)
+
+    return costs
+
+
 def build_cashflow_forecast(
     database: Session,
     *,
@@ -726,6 +800,8 @@ def build_cashflow_forecast(
                     "estimated_date": False,
                 }
             )
+
+    movements.extend(payroll_movements(database, current_day))
 
     in_horizon = [
         movement
@@ -808,8 +884,8 @@ def build_cashflow_forecast(
         "warnings": warnings,
         "note": (
             "Previsión con facturas aprobadas pendientes (vencimiento o, si "
-            "no lo hay, fecha de factura + 30 días) e impuestos estimados. "
-            "No incluye nóminas ni gastos sin factura."
+            "no lo hay, fecha de factura + 30 días), nóminas aprobadas, "
+            "seguros sociales e impuestos estimados. No incluye gastos sin factura."
         ),
     }
 
@@ -850,9 +926,18 @@ def build_business_health(
 
     income = sum((money(i.subtotal) for i in in_period if is_issued(i)), ZERO)
     expenses = sum((money(i.subtotal) for i in in_period if not is_issued(i)), ZERO)
+    payroll_months = payroll_cost_by_month(database)
+    payroll_cost = sum(
+        (
+            amount
+            for key, amount in payroll_months.items()
+            if date_from.strftime("%Y-%m") <= key <= date_to.strftime("%Y-%m")
+        ),
+        ZERO,
+    )
     vat_out = sum((money(i.tax_total) for i in in_period if is_issued(i)), ZERO)
     vat_in = sum((money(i.tax_total) for i in in_period if not is_issued(i)), ZERO)
-    result = income - expenses
+    result = income - expenses - payroll_cost
 
     # Serie de los últimos 12 meses hasta el final del periodo.
     months: list[dict[str, Any]] = []
@@ -877,12 +962,14 @@ def build_business_health(
             ),
             ZERO,
         )
+        month_payroll = payroll_months.get(key, ZERO)
         months.append(
             {
                 "month": key,
                 "income": float(month_income),
-                "expenses": float(month_expenses),
-                "result": float(month_income - month_expenses),
+                "expenses": float(month_expenses + month_payroll),
+                "payroll": float(month_payroll),
+                "result": float(month_income - month_expenses - month_payroll),
             }
         )
 
@@ -945,6 +1032,12 @@ def build_business_health(
             "sin cobrar."
         )
 
+    if income and payroll_cost and payroll_cost / income >= Decimal("0.5"):
+        insights.append(
+            f"El coste de personal supone el {payroll_cost / income * 100:.0f} % "
+            "de tus ingresos del periodo."
+        )
+
     if not income:
         insights.append(
             "No hay facturas emitidas en el periodo: súbelas para ver "
@@ -959,6 +1052,7 @@ def build_business_health(
         "date_to": date_to.isoformat(),
         "income": float(income),
         "expenses": float(expenses),
+        "payroll_cost": float(payroll_cost),
         "result": float(result),
         "margin": round(float(result / income * 100), 1) if income else None,
         "vat_output": float(vat_out),
@@ -985,6 +1079,7 @@ def build_business_health(
         "insights": insights,
         "note": (
             "Ingresos y gastos por base imponible de facturas aprobadas "
-            "(sin IVA). Es una visión de gestión, no contabilidad oficial."
+            "(sin IVA) más el coste de las nóminas aprobadas. Es una visión "
+            "de gestión, no contabilidad oficial."
         ),
     }

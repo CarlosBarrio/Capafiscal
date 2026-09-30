@@ -739,6 +739,14 @@ class CompanyProfile(Base):
         Numeric(8, 2),
         nullable=True,
     )
+    # Cuenta de cargo para pagar nóminas por SEPA.
+    iban: Mapped[str | None] = mapped_column(String(34), nullable=True)
+    bic: Mapped[str | None] = mapped_column(String(11), nullable=True)
+    # Tipo de AT/EP según CNAE (tarifa de primas), por defecto 1,50 %.
+    at_ep_rate: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+    )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -1015,4 +1023,315 @@ class ComplianceItem(Base):
         default=utc_now,
         onupdate=utc_now,
     )
+
+
+# -------------------------------------------------------------------
+# Equipo
+# -------------------------------------------------------------------
+
+class Employee(Base):
+    __tablename__ = "employees"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    first_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    last_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    tax_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    ss_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    job_title: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    department: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+    manager_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    termination_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    contract_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # INDEFINIDO, TEMPORAL, PRACTICAS, FORMACION, FIJO_DISCONTINUO
+    contract_type: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="INDEFINIDO",
+    )
+    workday_percent: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=100,
+    )
+    annual_salary: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+    payments_per_year: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=14,
+    )
+    irpf_rate: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+    )
+    children: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    contribution_group: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    collective_agreement: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    iban: Mapped[str | None] = mapped_column(String(34), nullable=True)
+
+    # PENDIENTE_ALTA, ALTA, BAJA
+    ss_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="PENDIENTE_ALTA",
+    )
+    ss_registered_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ss_deregistered_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    vacation_days: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=22,
+    )
+    skills: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Casillas manuales del checklist de incorporación: {código: fecha}
+    checklist: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    documents: Mapped[list[EmployeeDocument]] = relationship(
+        "EmployeeDocument",
+        back_populates="employee",
+        cascade="all, delete-orphan",
+        order_by="EmployeeDocument.id.desc()",
+    )
+    assignments: Mapped[list[ProjectAssignment]] = relationship(
+        "ProjectAssignment",
+        back_populates="employee",
+        cascade="all, delete-orphan",
+    )
+
+
+class EmployeeDocument(Base):
+    __tablename__ = "employee_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # CV, CONTRATO, ALTA_SS, BAJA_SS, DNI, MODELO_145, NOMINA,
+    # CERTIFICADO, OTRO
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_filename: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        unique=True,
+    )
+    mime_type: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    employee: Mapped[Employee] = relationship(
+        "Employee",
+        back_populates="documents",
+    )
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # ACTIVE, PAUSED, DONE
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="ACTIVE",
+    )
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    assignments: Mapped[list[ProjectAssignment]] = relationship(
+        "ProjectAssignment",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+
+
+class ProjectAssignment(Base):
+    __tablename__ = "project_assignments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    allocation_percent: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=100,
+    )
+
+    project: Mapped[Project] = relationship("Project", back_populates="assignments")
+    employee: Mapped[Employee] = relationship("Employee", back_populates="assignments")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "employee_id",
+            name="uq_assignment_project_employee",
+        ),
+    )
+
+
+class Absence(Base):
+    __tablename__ = "absences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # VACACIONES, BAJA_IT, PERMISO, ASUNTOS_PROPIOS, OTRO
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    employee: Mapped[Employee] = relationship("Employee")
+
+
+# -------------------------------------------------------------------
+# Nóminas
+# -------------------------------------------------------------------
+
+class PayrollRun(Base):
+    __tablename__ = "payroll_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    # DRAFT, APPROVED, PAID
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="DRAFT",
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    paid_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+
+    payslips: Mapped[list[Payslip]] = relationship(
+        "Payslip",
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="Payslip.id.asc()",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("year", "month", name="uq_payroll_run_period"),
+    )
+
+
+class Payslip(Base):
+    __tablename__ = "payslips"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("payroll_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    employee_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Variables del mes introducidas por la empresa.
+    overtime: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+    bonus: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+    advance: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+
+    gross: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    contribution_base: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=0,
+    )
+    ss_employee: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    irpf_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=0)
+    irpf: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    net: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    ss_employer: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    company_cost: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    # Detalle de conceptos (devengos, deducciones y cuotas).
+    lines: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    run: Mapped[PayrollRun] = relationship("PayrollRun", back_populates="payslips")
+    employee: Mapped[Employee | None] = relationship("Employee")
 
