@@ -15,7 +15,7 @@
   >
   <link
     rel="stylesheet"
-    href="/static/style.css?v=85"
+    href="/static/style.css?v=90"
   >
 </head>
 <body>
@@ -80,6 +80,9 @@
       <div class="nav-group">
         <button type="button" class="nav-tab active" data-tab="panel">
           <svg class="icon"><use href="#i-home"/></svg><span class="nav-label">Hoy</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="expedientes">
+          <svg class="icon"><use href="#i-archive"/></svg><span class="nav-label">Expedientes</span><span class="tab-count tab-count-alert hidden" id="cntCases">0</span>
         </button>
         <button type="button" class="nav-tab" data-tab="asistente">
           <svg class="icon"><use href="#i-sparkles"/></svg><span class="nav-label">Asistente</span>
@@ -212,6 +215,8 @@
     </div>
 
     <div id="agentWork" class="agent-work"></div>
+
+    <div id="homeBriefing" class="briefing-card hidden"></div>
 
     <div id="recommendationCard" class="recommendation-card hidden"></div>
 
@@ -609,6 +614,84 @@
   </section>
 
   <!-- CUMPLIMIENTO -->
+  <section class="tab-panel" id="tab-expedientes">
+    <div class="section-title">
+      <h1>Expedientes</h1>
+      <p>Cada notificación llega aquí ya trabajada por los agentes: a quién afecta, qué piden, qué documentos están preparados, qué falta y el borrador de respuesta. Tú revisas y apruebas.</p>
+    </div>
+
+    <div id="briefingCard" class="briefing-card"></div>
+
+    <div class="kpi-row">
+      <div class="kpi kpi-risk">
+        <span class="kpi-label">esperan tu revisión</span>
+        <span class="kpi-value" id="casesWaiting">0</span>
+        <span class="kpi-foot">con todo preparado</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">esperando documentación</span>
+        <span class="kpi-value" id="casesDocs">0</span>
+        <span class="kpi-foot">el perseguidor insiste por ti</span>
+      </div>
+      <div class="kpi kpi-result">
+        <span class="kpi-label">listos para presentar</span>
+        <span class="kpi-value" id="casesReady">0</span>
+        <span class="kpi-foot">escrito aprobado</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">anomalías abiertas</span>
+        <span class="kpi-value" id="casesAnomalies">0</span>
+        <span class="kpi-foot">detectadas en facturas y banco</span>
+      </div>
+    </div>
+
+    <div class="view-switch">
+      <div class="segmented" id="caseViews">
+        <button type="button" class="segment active" data-view="open">Bandeja</button>
+        <button type="button" class="segment" data-view="anomalies">Anomalías</button>
+        <button type="button" class="segment" data-view="closed">Cerrados</button>
+        <button type="button" class="segment" data-view="agents">Agentes</button>
+        <button type="button" class="segment" data-view="memory">Memoria</button>
+      </div>
+      <div class="card-actions">
+        <button type="button" class="btn-ghost" id="scanAnomalies"><svg class="icon"><use href="#i-alert"/></svg> Buscar anomalías</button>
+        <button type="button" class="btn-ghost" id="processPending"><svg class="icon"><use href="#i-play"/></svg> Procesar pendientes</button>
+      </div>
+    </div>
+
+    <div class="case-view" data-case-view="list">
+      <div class="case-list" id="caseList"></div>
+    </div>
+
+    <div class="case-view hidden" data-case-view="agents">
+      <div class="agents-intro card" id="agentsIntro"></div>
+      <div class="agents-grid" id="agentsGrid"></div>
+      <div class="card">
+        <div class="card-head"><h2>Últimos recorridos</h2><span class="card-sub">Cada ejecución del orquestador, paso a paso</span></div>
+        <div class="run-feed" id="agentRuns"></div>
+      </div>
+    </div>
+
+    <div class="case-view hidden" data-case-view="memory">
+      <div class="card memory-card">
+        <div class="card-head">
+          <h2>Pregunta a la memoria</h2>
+          <span class="card-sub">Responde con evidencia: documentos, notificaciones y expedientes</span>
+        </div>
+        <form class="memory-form" id="memoryForm">
+          <input type="text" name="question" maxlength="300" placeholder="¿Qué nos pidió Hacienda sobre el IVA del segundo trimestre?" autocomplete="off">
+          <button type="submit" class="act-btn act-primary"><svg class="icon"><use href="#i-search"/></svg> Preguntar</button>
+        </form>
+        <div class="memory-suggestions" id="memorySuggestions">
+          <button type="button" class="chip" data-question="¿Qué requerimientos hemos recibido de Hacienda?">¿Qué requerimientos hemos recibido de Hacienda?</button>
+          <button type="button" class="chip" data-question="¿Qué pasó con el último embargo?">¿Qué pasó con el último embargo?</button>
+          <button type="button" class="chip" data-question="¿Qué facturas tenemos de Repsol?">¿Qué facturas tenemos de Repsol?</button>
+        </div>
+        <div id="memoryAnswer"></div>
+      </div>
+    </div>
+  </section>
+
   <section class="tab-panel" id="tab-ventas">
     <div class="section-title">
       <h1>Ventas y cobros</h1>
@@ -1605,6 +1688,24 @@
   </div>
 </div>
 
+<dialog class="document-detail-dialog case-dialog" id="caseDialog">
+  <div class="case-banner" id="caseBanner"></div>
+  <div class="segmented dialog-tabs" id="caseTabs">
+    <button type="button" class="segment active" data-pane="resumen">Resumen</button>
+    <button type="button" class="segment" data-pane="documentacion">Documentación</button>
+    <button type="button" class="segment" data-pane="respuesta">Respuesta</button>
+    <button type="button" class="segment" data-pane="traza">Traza de agentes</button>
+    <button type="button" class="segment" data-pane="historial">Historial</button>
+  </div>
+  <div class="case-pane" data-pane="resumen" id="casePaneSummary"></div>
+  <div class="case-pane hidden" data-pane="documentacion" id="casePaneDocs"></div>
+  <div class="case-pane hidden" data-pane="respuesta" id="casePaneDraft"></div>
+  <div class="case-pane hidden" data-pane="traza" id="casePaneTrace"></div>
+  <div class="case-pane hidden" data-pane="historial" id="casePaneHistory"></div>
+  <div class="dialog-footer case-footer" id="caseActions"></div>
+  <input type="file" id="caseFileInput" class="hidden">
+</dialog>
+
 <dialog class="document-detail-dialog invoice-dialog" id="invoiceDialog">
   <div class="detail-dialog-header">
     <div>
@@ -1801,7 +1902,7 @@
 
 <div id="appMessages" class="app-messages"></div>
 
-<script src="/static/app.js?v=61"></script>
+<script src="/static/app.js?v=62"></script>
 <script src="/static/reports.js?v=3"></script>
 <script src="/static/assistant.js?v=2"></script>
 <script src="/static/activity.js?v=3"></script>
@@ -1812,10 +1913,11 @@
 <script src="/static/company.js?v=3"></script>
 <script src="/static/team.js?v=1"></script>
 <script src="/static/payroll.js?v=2"></script>
+<script src="/static/cases.js?v=1"></script>
 <script src="/static/sales.js?v=2"></script>
-<script src="/static/outbox.js?v=2"></script>
+<script src="/static/outbox.js?v=3"></script>
 <script src="/static/timesheet.js?v=3"></script>
-<script src="/static/automations.js?v=3"></script>
-<script src="/static/shell.js?v=2"></script>
+<script src="/static/automations.js?v=4"></script>
+<script src="/static/shell.js?v=3"></script>
 </body>
 </html>

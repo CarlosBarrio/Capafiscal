@@ -9,10 +9,43 @@ humana cuando hace falta criterio.
 > revisarse antes de usarse fiscalmente. CapaFiscal ayuda a preparar, no
 > presenta nada ante la Administración.
 
+## Cómo trabaja: un equipo de agentes
+
+Cada notificación que llega recorre siete agentes de punta a punta y llega a
+la persona ya trabajada, con un único «Revisar y aprobar»:
+
+```
+Vigilante → Expedientes → Fiscal → Memoria → Gestor → Perseguidor → Director
+ detecta     a quién       qué modelo   antecedentes   qué piden, qué   pide lo que    prioriza y
+ y descarga  afecta y      y periodo;   con evidencia  hay, qué falta,  falta y deja   decide qué
+             qué trámite   diferencias                 borrador         de insistir    ves hoy
+```
+
+Ejemplo real: llega una diligencia de embargo de créditos contra un proveedor.
+El agente identifica al proveedor por su NIF, encuentra que le debes una
+factura de 318 €, te avisa de que **no se la pagues** (responsabilidad
+solidaria, art. 42.2 LGT), prepara la relación de créditos y el escrito de
+contestación, y lo pone el primero de tu lista.
+
+- **Traza completa**: cada recorrido guarda qué hizo cada agente, en cuánto
+  tiempo, con qué evidencia y con qué motor (reglas o IA).
+- **Detector de anomalías** (estadística robusta): importes atípicos por
+  proveedor, proveedor nuevo con importe alto, IVA inusual, posibles
+  duplicados, facturas recurrentes que no han llegado, pagos sin factura y
+  cambios bruscos del IVA. Se cierran solas cuando la condición desaparece.
+- **Perseguidor**: pide la documentación con un enlace personal de subida
+  (sin usuario), recuerda con cortesía creciente, verifica lo recibido y deja
+  de insistir.
+- **Memoria**: pregunta en lenguaje natural («¿qué nos pidió Hacienda sobre el
+  IVA?») y responde con las fuentes.
+- **IA opcional**: con `ANTHROPIC_API_KEY`, Claude lee y redacta; sin clave,
+  todo funciona con reglas y plantillas.
+
 ## Qué hace
 
 | Área | Funcionalidad |
 |---|---|
+| **Expedientes** | La bandeja de trabajo de los agentes: resumen del Director («hoy deberías revisar…»), cada expediente con qué piden, documentación preparada/pedida/recibida, antecedentes, impacto fiscal, borrador editable del escrito, traza de agentes e historial · aprobar → paquete ZIP para presentar en sede → registrar la presentación → resolver |
 | **Hoy** | Saludo con el trabajo del agente en las últimas 24 h, IVA estimado del trimestre, resultado, pendiente de pago, siguiente paso recomendado y **agenda unificada** (impuestos, notificaciones, cobros, pagos y caducidades) |
 | **Facturas** | Recibidas y **emitidas** (se distinguen con el NIF de tu empresa) · subida múltiple o arrastrando · extracción de NIF/CIF, número, fechas, base, IVA por tipo, IRPF, recargo, total y categoría con cuenta del PGC · control de cuadre, duplicados y confianza por campo · aprobar, rechazar, reabrir, registrar pago o cobro |
 | **Memoria del agente** | Cuando corriges la categoría de un proveedor o cliente, la recuerda y la aplica a sus siguientes facturas |
@@ -139,6 +172,11 @@ backend/
     timesheet_service.py  Registro de jornada, alertas, PDF y Excel
     automation_service.py Automatizaciones programadas y resumen diario
     advisor_service.py    Paquete trimestral para la gestoría
+    agents/               Equipo de agentes: vigilante, expedientes, fiscal,
+                          memoria, gestor, perseguidor, director, detector,
+                          orquestador, conocimiento y capa de IA opcional
+    case_service.py       Expedientes: acciones, adjuntos, escrito PDF, paquete
+    agent_routes.py       API de expedientes, agentes, memoria y portal
     operations_service.py Panel, riesgos, agentes y asistente
     task_service.py       Bandeja de revisión
     outlook_connector.py  Conector de Outlook

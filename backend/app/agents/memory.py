@@ -31,14 +31,44 @@ STOPWORDS = set(
     han hasta hay la las le les lo los mas me mi mis mucho muy no nos o os otra otras otro otros para pero poco
     por porque que quien se ser si sin sobre son su sus tambien te tiene tu tus un una unas uno unos usted ya
     dicho dicha dichos dichas cuyo cuya segun mediante asimismo ademas presente presentes articulo ley fecha
+    hemos tenemos tengo tiene tienen hubo paso pasado ultimo ultima recibido recibida nos nuestro nuestra cual cuanto
     """.split()
 )
 TOKEN = re.compile(r"[a-z0-9]{3,}")
 WINDOW = 420
 
 
+SYNONYMS = {
+    "hacienda": ["agencia", "tributaria", "aeat"],
+    "aeat": ["agencia", "tributaria"],
+    "seguridad": ["tgss", "seguridad"],
+    "tgss": ["seguridad", "social"],
+    "iva": ["iva", "303"],
+    "retenciones": ["retencion", "111"],
+    "nomina": ["nomina", "salario"],
+}
+
+
+def stem(token: str) -> str:
+    """Reducción ligera de plurales: requerimientos → requerimiento."""
+    if len(token) > 6 and token.endswith("ones"):
+        return token[:-2]
+    if len(token) > 5 and token.endswith("es") and token[-3] not in "aeiou":
+        return token[:-2]
+    if len(token) > 4 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
 def tokenize(text: str) -> list[str]:
-    return [token for token in TOKEN.findall(normalize_search_text(text or "")) if token not in STOPWORDS]
+    return [stem(token) for token in TOKEN.findall(normalize_search_text(text or "")) if token not in STOPWORDS]
+
+
+def expand(tokens: list[str]) -> list[str]:
+    expanded = list(tokens)
+    for token in tokens:
+        expanded += [stem(item) for item in SYNONYMS.get(token, [])]
+    return expanded
 
 
 @dataclass
@@ -124,7 +154,7 @@ def search(
     corpus: list[Entry] | None = None,
 ) -> list[dict[str, Any]]:
     corpus = corpus if corpus is not None else build_corpus(database)
-    terms = tokenize(query)
+    terms = expand(tokenize(query))
     if not terms or not corpus:
         return []
 
@@ -186,8 +216,10 @@ def answer(database: Session, question: str) -> dict[str, Any]:
         if not sources:
             text = "No encuentro nada en la documentación que responda a esa pregunta."
         else:
-            lines = [f"He encontrado {len(sources)} fuente(s) relacionadas. La más relevante:"]
-            lines.append(f"[1] {sources[0]['title']}: {sources[0]['snippet']}")
+            lines = [f"He encontrado {len(sources)} resultado(s) relacionados, del más al menos relevante:"]
+            for index, source in enumerate(sources[:4], start=1):
+                lines.append(f"[{index}] {source['title']}" + (f" ({source['date']})" if source.get("date") else ""))
+            lines.append("Abre cada fuente para ver el texto exacto. Con ANTHROPIC_API_KEY, la respuesta se redacta a partir de ellas.")
             text = "\n".join(lines)
 
     return {"question": question, "answer": text, "sources": sources, "engine": engine}

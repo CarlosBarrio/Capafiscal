@@ -60,7 +60,9 @@ def requested_items(text: str) -> list[dict[str, Any]]:
         match = ITEM_PATTERN.match(original)
         if not (match and in_request):
             continue
-        detail = match.group(1).strip().rstrip(".;")
+        detail = match.group(1).strip().rstrip(";")
+        if detail.endswith(".") and not re.search(r"\b[A-Z]\.[A-Z]\.$", detail):
+            detail = detail[:-1]
         codes = match_documents(normalize_search_text(detail)) or ["OTRO"]
         for code in codes[:1]:
             key = code if code != "OTRO" else f"OTRO:{detail[:40]}"

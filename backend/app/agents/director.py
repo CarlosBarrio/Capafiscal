@@ -171,9 +171,13 @@ def daily_briefing(database: Session, today: date | None = None, limit: int = 8)
         "anomalies": sum(1 for case in cases if case.kind == "ANOMALY"),
     }
     top = items[:limit]
-    headline = (
-        f"Hoy deberías revisar {len(top)} cosa(s)" + (f", {counts['critical']} urgente(s)" if counts["critical"] else "")
-        if top
-        else "Nada requiere tu atención hoy"
-    )
+    urgent_top = sum(1 for item in top if item["level"] == "critical")
+    if not top:
+        headline = "Nada requiere tu atención hoy"
+    elif len(top) == 1:
+        headline = "Hoy deberías revisar 1 cosa" + (", urgente" if urgent_top else "")
+    elif urgent_top == len(top):
+        headline = f"Hoy deberías revisar {len(top)} cosas, todas urgentes"
+    else:
+        headline = f"Hoy deberías revisar {len(top)} cosas" + (f", {urgent_top} urgentes" if urgent_top > 1 else ", 1 urgente" if urgent_top else "")
     return {"date": today.isoformat(), "headline": headline, "counts": counts, "items": top, "total": len(items)}

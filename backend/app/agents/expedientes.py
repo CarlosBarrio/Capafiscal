@@ -61,13 +61,16 @@ def next_case_code(database, year: int) -> str:
     return f"EXP-{year}-{count + 1:04d}"
 
 
-def find_tax_ids(text: str) -> list[dict]:
+def find_tax_ids(text: str, known: dict[str, dict] | None = None) -> list[dict]:
     found: dict[str, dict] = {}
     lines = [line for line in text.splitlines() if line.strip()]
     for index, line in enumerate(lines):
         for match in TAX_ID_PATTERN.finditer(line.upper()):
             tax_id = normalize_tax_id(match.group(0))
-            if not tax_id or not is_valid_spanish_tax_id(tax_id) or tax_id in found:
+            if not tax_id or tax_id in found:
+                continue
+            # Un NIF con el dígito de control mal se acepta si ya lo conocemos.
+            if not is_valid_spanish_tax_id(tax_id) and tax_id not in (known or {}):
                 continue
             context = normalize_search_text(" ".join(lines[max(0, index - 1): index + 1]))
             found[tax_id] = {"tax_id": tax_id, "owner_hint": any(hint in context for hint in OWNER_HINTS), "line": line.strip()[:160]}
@@ -105,7 +108,7 @@ class ClasificadorExpedientes(Agent):
         notification = ctx.facts["notification"]
         normalized = normalize_search_text(ctx.text)
         known = directory(database)
-        tax_ids = find_tax_ids(ctx.text)
+        tax_ids = find_tax_ids(ctx.text, known)
 
         for item in tax_ids:
             item["match"] = known.get(item["tax_id"])

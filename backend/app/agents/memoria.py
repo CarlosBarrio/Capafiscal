@@ -9,6 +9,16 @@ from app.agents.base import StepResult
 from app.agents.base import evidence
 from app.agents.memory import build_corpus
 from app.agents.memory import search
+from app.agents.memory import tokenize
+from app.company_service import company_name
+from app.company_service import company_tax_ids
+
+# Palabras que aparecen en casi todas las notificaciones y no distinguen nada.
+GENERIC = set(tokenize(
+    "agencia estatal administracion tributaria delegacion especial dependencia regional seguridad social tesoreria "
+    "general notificacion referencia obligado tributario destinatario nif plazo dias habiles documentacion requiere "
+    "aporte aportar presente deberá debera correspondiente relacion procedimiento"
+))
 from app.models import Case
 from app.models import FiscalNotification
 
@@ -68,10 +78,15 @@ class AgenteMemoria(Agent):
         affected = ctx.facts.get("affected")
         if affected and affected.get("name"):
             terms.append(affected["name"])
-        query = " ".join(terms + [ctx.text[:600]])
+        own = set(tokenize(" ".join([company_name(database) or "", *company_tax_ids(database)])))
+        query_tokens = [
+            token for token in tokenize(" ".join(terms + [ctx.text[:800]]))
+            if token not in GENERIC and token not in own and not (token.isdigit() and len(token) == 4)
+        ]
+        query = " ".join(query_tokens)
         corpus = build_corpus(database)
         for hit in search(database, query, limit=4, exclude=seen, corpus=corpus):
-            if hit["score"] < 1.5:
+            if hit["score"] < 2.5 or len(hit["matched"]) < 2:
                 continue
             antecedents.append(
                 {

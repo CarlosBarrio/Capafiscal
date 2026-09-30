@@ -7,6 +7,7 @@
 
   const SECTIONS = {
     panel: ["Inicio", "Hoy", "home"],
+    expedientes: ["Inicio", "Expedientes", "archive"],
     asistente: ["Inicio", "Asistente", "sparkles"],
     facturas: ["Operación", "Facturas recibidas", "file"],
     ventas: ["Operación", "Ventas y cobros", "invoice"],
@@ -27,6 +28,9 @@
   };
 
   const ACTIONS = [
+    { label: "Qué revisar hoy", hint: "Director de cartera · Expedientes", icon: "chart", run: () => window.activateTab("expedientes") },
+    { label: "Preguntar a la memoria", hint: "Expedientes · respuestas con evidencia", icon: "brain", run: () => { window.activateTab("expedientes"); window.setTimeout(() => { document.querySelector('#caseViews [data-view="memory"]')?.click(); document.querySelector("#memoryForm input")?.focus(); }, 80); } },
+    { label: "Buscar anomalías", hint: "Detector · facturas, banco e IVA", icon: "alert", run: () => { window.activateTab("expedientes"); window.setTimeout(() => document.getElementById("scanAnomalies")?.click(), 80); } },
     { label: "Nueva factura", hint: "Ventas · emitir y registrar", icon: "invoice", run: () => window.newSalesInvoice?.() },
     { label: "Reclamar impagos", hint: "Ventas · cobros vencidos", icon: "coins", run: () => { window.activateTab("ventas"); window.setTimeout(() => document.querySelector('#salesViews [data-view="cobros"]')?.click(), 50); } },
     { label: "Fichar entrada o salida", hint: "Jornada", icon: "clock", run: () => window.activateTab("jornada") },

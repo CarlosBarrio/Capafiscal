@@ -1,0 +1,704 @@
+"use strict";
+
+/* Expedientes: el trabajo de los agentes, listo para revisar y aprobar. */
+(() => {
+  const esc = (value) => window.escapeHtml(value);
+  const money = (value) => window.formatMoney(value);
+  const day = (value) => window.formatDay(value);
+
+  const LEVEL_LABELS = { critical: "Urgente", high: "Revisión necesaria", normal: "Para revisar", low: "Informativo" };
+  const STATUS_CLASS = {
+    WAITING_HUMAN: "status-warning",
+    WAITING_DOCS: "status-info",
+    READY_TO_FILE: "status-success",
+    FILED: "status-success",
+    RESOLVED: "status-neutral",
+    DISMISSED: "status-neutral",
+    OPEN: "status-neutral",
+  };
+  const DOC_CLASS = {
+    ready: "status-success",
+    received: "status-success",
+    provided: "status-success",
+    partial: "status-warning",
+    requested: "status-info",
+    missing: "status-danger",
+    not_applicable: "status-neutral",
+  };
+  const KIND_LABELS = { document: "Documento", notification: "Notificación", case: "Expediente" };
+  const SOURCE_ICONS = { case: "archive", tax: "receipt", collection: "coins", payment: "card", compliance: "shield", team: "users", payroll: "wallet", outbox: "send", timesheet: "clock" };
+
+  let active = false;
+  let view = "open";
+  let current = null;
+  let pane = "resumen";
+  let pendingItemCode = null;
+
+  function daysText(days) {
+    if (days === null || days === undefined) return ["Sin plazo", "confírmalo"];
+    if (days < 0) return [`${Math.abs(days)} d`, "vencido"];
+    if (days === 0) return ["Hoy", "vence hoy"];
+    return [`${days} d`, days === 1 ? "queda 1 día" : `quedan ${days} días`];
+  }
+
+  /* ------------------------------------------------------------
+  DIRECTOR: lo que hay que revisar hoy
+  ------------------------------------------------------------ */
+  function briefingHtml(data, compact) {
+    if (!data.items.length) {
+      return `
+        <div class="briefing-empty">${window.icon("check")}<div><strong>Nada requiere tu atención hoy.</strong><span>Los agentes siguen vigilando buzones, facturas y banco.</span></div></div>
+      `;
+    }
+    const items = compact ? data.items.slice(0, 5) : data.items;
+    return `
+      <div class="briefing-head">
+        <span class="briefing-eyebrow">${window.icon("chart")} Director de cartera · ${esc(window.formatDay(data.date))}</span>
+        <h2>${esc(data.headline)}</h2>
+      </div>
+      <ol class="briefing-list">
+        ${items.map((item, index) => `
+          <li>
+            <button type="button" class="briefing-item lvl-${esc(item.level)}" data-brief="${index}">
+              <span class="briefing-rank">${index + 1}</span>
+              <span class="briefing-icon">${window.icon(SOURCE_ICONS[item.source] || "calendar")}</span>
+              <span class="briefing-body">
+                <strong>${esc(item.subtitle || item.title)}</strong>
+                <span>${esc(item.subtitle ? item.title : item.detail || "")}</span>
+              </span>
+              <span class="briefing-when">
+                ${item.deadline ? `<small>${esc(day(item.deadline))}</small>` : ""}
+                ${window.icon("chevron")}
+              </span>
+            </button>
+          </li>
+        `).join("")}
+      </ol>
+      ${compact && data.items.length > 5 ? `<button type="button" class="link-button briefing-more" data-go-cases>Ver las ${data.total} en Expedientes</button>` : ""}
+    `;
+  }
+
+  let briefingItems = [];
+
+  async function loadBriefing() {
+    const data = await window.apiRequest("/briefing");
+    briefingItems = data.items;
+    const badge = document.getElementById("cntCases");
+    if (badge) {
+      badge.textContent = data.counts.waiting_human;
+      badge.classList.toggle("hidden", !data.counts.waiting_human);
+    }
+    const set = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
+    set("casesWaiting", data.counts.waiting_human);
+    set("casesDocs", data.counts.waiting_docs);
+    set("casesReady", data.counts.ready_to_file);
+    set("casesAnomalies", data.counts.anomalies);
+
+    const home = document.getElementById("homeBriefing");
+    if (home) {
+      home.innerHTML = briefingHtml(data, true);
+      home.classList.toggle("hidden", !data.items.length);
+    }
+    const card = document.getElementById("briefingCard");
+    if (card) card.innerHTML = briefingHtml(data, false);
+  }
+
+  function openBriefingItem(index) {
+    const item = briefingItems[index];
+    if (!item) return;
+    if (item.case_id) return openCase(item.case_id);
+    if (item.document_id && (item.source === "payment" || item.source === "collection")) return window.showDetail?.(item.document_id, "payment");
+    window.activateTab(item.tab || "panel");
+  }
+
+  /* ------------------------------------------------------------
+  LISTADO
+  ------------------------------------------------------------ */
+  async function loadList() {
+    const items = await window.apiRequest(`/cases?view=${view}`);
+    const container = document.getElementById("caseList");
+    if (!items.length) {
+      const empty = {
+        open: ["archive", "Sin expedientes abiertos", "Cuando llegue una notificación, los agentes la trabajarán y aparecerá aquí lista para revisar."],
+        anomalies: ["check", "Todo cuadra", "El detector revisa cada mañana facturas, banco e IVA. Pulsa «Buscar anomalías» para hacerlo ahora."],
+        closed: ["inbox", "Aún no hay expedientes cerrados", "Aquí quedará el historial, que la memoria usa como antecedentes."],
+      }[view];
+      container.innerHTML = window.emptyState(...empty);
+      return;
+    }
+    container.innerHTML = items.map((item) => {
+      const [big, small] = daysText(item.days_left);
+      const progress = item.documents_total
+        ? `<span>${window.icon("doc")} ${item.documents_ready}/${item.documents_total} documentos</span>`
+        : "";
+      return `
+        <button type="button" class="case-card lvl-${esc(item.level)}" data-case="${item.id}">
+          <span class="case-main">
+            <span class="case-top">
+              <span class="mono">${esc(item.code || "")}</span>
+              <span>${esc(item.kind === "ANOMALY" ? item.procedure_label : item.organism_label || "")}</span>
+              ${item.reference ? `<span>ref. ${esc(item.reference)}</span>` : ""}
+            </span>
+            <strong class="case-headline">${esc(item.headline || item.title)}</strong>
+            <span class="case-title">${esc(item.title)}</span>
+            ${item.summary ? `<span class="case-summary">${esc(item.summary)}</span>` : ""}
+            <span class="case-meta">
+              ${progress}
+              ${item.requests_pending ? `<span>${window.icon("send")} ${item.requests_pending} pedido(s)</span>` : ""}
+              ${item.has_draft ? `<span>${window.icon("edit")} Borrador listo</span>` : ""}
+              ${item.amount ? `<span>${window.icon("coins")} ${money(item.amount)}</span>` : ""}
+            </span>
+          </span>
+          <span class="case-side">
+            <span class="status-pill ${STATUS_CLASS[item.status] || "status-neutral"}">${esc(item.status_label)}</span>
+            ${item.kind === "NOTIFICATION" ? `<span class="case-deadline ${item.days_left !== null && item.days_left <= 3 ? "is-urgent" : ""}"><strong>${esc(big)}</strong><small>${esc(small)}</small></span>` : ""}
+            <span class="case-score" title="Prioridad calculada por el Director">${item.priority}</span>
+          </span>
+        </button>
+      `;
+    }).join("");
+  }
+
+  /* ------------------------------------------------------------
+  DETALLE
+  ------------------------------------------------------------ */
+  async function openCase(id) {
+    current = await window.apiRequest(`/cases/${id}`);
+    const dialog = document.getElementById("caseDialog");
+    render();
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function render() {
+    renderBanner();
+    renderSummary();
+    renderDocs();
+    renderDraft();
+    renderTrace();
+    renderHistory();
+    renderActions();
+    showPane(pane);
+  }
+
+  function showPane(name) {
+    pane = name;
+    document.querySelectorAll("#caseTabs .segment").forEach((item) => item.classList.toggle("active", item.dataset.pane === name));
+    document.querySelectorAll("#caseDialog .case-pane").forEach((item) => item.classList.toggle("hidden", item.dataset.pane !== name));
+    const docsTab = document.querySelector('#caseTabs [data-pane="documentacion"]');
+    const draftTab = document.querySelector('#caseTabs [data-pane="respuesta"]');
+    docsTab.classList.toggle("hidden", current?.kind === "ANOMALY");
+    draftTab.classList.toggle("hidden", !current?.has_draft && current?.kind === "ANOMALY");
+  }
+
+  function renderBanner() {
+    const item = current;
+    const [big, small] = daysText(item.days_left);
+    document.getElementById("caseBanner").className = `case-banner lvl-${item.level}`;
+    document.getElementById("caseBanner").innerHTML = `
+      <div class="case-banner-main">
+        <span class="case-banner-eyebrow"><span class="level-dot"></span>${esc(LEVEL_LABELS[item.level])} · <span class="mono">${esc(item.code)}</span>${item.reference ? ` · ref. ${esc(item.reference)}` : ""}</span>
+        <h2>${esc(item.headline || item.title)}</h2>
+        <p>${esc(item.title)}</p>
+      </div>
+      <div class="case-banner-side">
+        ${item.kind === "NOTIFICATION" ? `<div class="case-countdown"><strong>${esc(big)}</strong><small>${esc(small)}</small></div>` : ""}
+        <span class="status-pill ${STATUS_CLASS[item.status] || "status-neutral"}">${esc(item.status_label)}</span>
+        <button type="button" class="icon-button" data-close-dialog aria-label="Cerrar">${window.icon("close")}</button>
+      </div>
+    `;
+  }
+
+  function factRow(label, value) {
+    return value ? `<div class="fact"><span>${esc(label)}</span><strong>${value}</strong></div>` : "";
+  }
+
+  function renderSummary() {
+    const item = current;
+    const facts = item.facts || {};
+    const insights = [...(facts.intake_warnings || []), ...(facts.insights || [])];
+    const subjectTypes = { company: "Tu empresa", employee: "Persona de la plantilla", customer: "Cliente", supplier: "Proveedor", unknown: "Tercero" };
+
+    const references = (facts.tax_references || []).map((ref) => `
+      <div class="impact-row">
+        <strong>Modelo ${esc(ref.model)}${ref.quarter ? ` · ${ref.quarter}T` : ""}${ref.year ? ` ${ref.year}` : ""}</strong>
+        <span>${ref.draft_result !== undefined && ref.draft_result !== null ? `Tus datos: ${money(ref.draft_result)}` : "Sin borrador"}</span>
+        <span>${ref.filed ? `Presentado: ${money(ref.filed.amount)}` : "No consta presentado"}</span>
+        ${ref.invoices_pending ? `<span class="value-negative">${ref.invoices_pending} factura(s) sin revisar</span>` : ""}
+      </div>
+    `).join("");
+
+    const embargo = (facts.embargo_pending || []).length ? `
+      <div class="summary-block">
+        <h3>Pagos que debes retener</h3>
+        ${facts.embargo_pending.map((row) => `<div class="impact-row"><strong>${esc(row.number || "s/n")}</strong><span>${esc(row.date)}</span><span>${money(row.total)}</span></div>`).join("")}
+      </div>` : "";
+
+    const antecedents = (item.antecedents || []).length ? `
+      <div class="summary-block">
+        <h3>Antecedentes que ha encontrado la Memoria</h3>
+        ${item.antecedents.map((ref) => `
+          <button type="button" class="antecedent" ${ref.case_id ? `data-open-case="${ref.case_id}"` : ref.kind === "case" ? `data-open-case="${ref.ref_id}"` : ""}>
+            <span class="antecedent-kind">${esc(KIND_LABELS[ref.kind] || ref.kind)}</span>
+            <span><strong>${esc(ref.title)}</strong><small>${esc(ref.why || "")}${ref.outcome ? ` · ${esc(ref.outcome)}` : ""}${ref.date ? ` · ${esc(day(ref.date))}` : ""}</small></span>
+          </button>
+        `).join("")}
+      </div>` : "";
+
+    const anomalyEvidence = item.kind === "ANOMALY" && facts.evidence?.length ? `
+      <div class="summary-block">
+        <h3>Evidencia</h3>
+        ${facts.evidence.map((ev) => `<button type="button" class="antecedent" ${ev.document_id ? `data-open-document="${ev.document_id}"` : ""}><span class="antecedent-kind">Factura</span><span><strong>${esc(ev.label)}</strong><small>${ev.document_id ? "Abrir el documento" : ""}</small></span></button>`).join("")}
+      </div>` : "";
+
+    document.getElementById("casePaneSummary").innerHTML = `
+      <p class="case-lead">${esc(item.summary || "")}</p>
+      ${insights.length ? `<div class="insight-list">${insights.map((text) => `<div class="report-warning">${window.icon("bulb")}<span>${esc(text)}</span></div>`).join("")}</div>` : ""}
+      <div class="case-summary-grid">
+        <div>
+          <div class="summary-block">
+            <h3>Qué hay que hacer</h3>
+            <ul class="check-list">
+              ${(item.actions || []).map((action, index) => `
+                <li class="check-item">
+                  <input type="checkbox" class="check-toggle" data-action-index="${index}" ${action.done ? "checked" : ""} aria-label="${esc(action.label)}">
+                  <span class="check-text"><strong class="${action.done ? "is-done" : ""}">${esc(action.label)}</strong></span>
+                </li>`).join("")}
+            </ul>
+          </div>
+          ${antecedents}
+          ${anomalyEvidence}
+        </div>
+        <div>
+          <div class="summary-block facts-block">
+            <h3>Datos clave</h3>
+            ${factRow("Organismo", esc(item.organism_label || ""))}
+            ${factRow("Trámite", esc(item.procedure_label))}
+            ${factRow("Afecta a", item.subject?.name ? `${esc(item.subject.name)} <small>${esc(subjectTypes[item.subject.type] || "")}${item.subject.tax_id ? ` · ${esc(item.subject.tax_id)}` : ""}</small>` : "")}
+            ${facts.affected ? factRow("Embargado", `${esc(facts.affected.name || facts.affected.tax_id)} <small>${esc(subjectTypes[facts.affected.type] || "")}</small>`) : ""}
+            ${factRow("Importe", item.amount ? money(item.amount) : "")}
+            ${factRow("Plazo", item.deadline ? `${esc(day(item.deadline))}${facts.deadline_rule ? `<small>${esc(facts.deadline_rule)}</small>` : ""}` : "Sin plazo conocido")}
+            ${factRow("Objetivo interno", item.internal_deadline ? `${esc(day(item.internal_deadline))} <small>margen de seguridad de 2 días hábiles</small>` : "")}
+            ${factRow("Origen", esc(facts.document_name || facts.source || ""))}
+            ${item.document_id ? `<button type="button" class="btn-ghost" data-open-document="${item.document_id}">${window.icon("doc")} Ver el documento original</button>` : ""}
+          </div>
+          ${references ? `<div class="summary-block"><h3>Impacto fiscal</h3>${references}</div>` : ""}
+          ${embargo}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDocs() {
+    const item = current;
+    const docs = item.documents || [];
+    const needsRequest = docs.some((doc) => ["missing", "partial"].includes(doc.status) && doc.source !== "system");
+    document.getElementById("casePaneDocs").innerHTML = `
+      ${docs.length ? `
+        <div class="doc-checklist">
+          ${docs.map((doc, index) => `
+            <div class="doc-row">
+              <span class="status-pill ${DOC_CLASS[doc.status] || "status-neutral"}">${esc(doc.status_label)}</span>
+              <div class="doc-body">
+                <strong>${esc(doc.label)}${doc.period_label ? ` <small>${esc(doc.period_label)}</small>` : ""}</strong>
+                <span>${esc(doc.source_label)}${doc.note ? ` · ${esc(doc.note)}` : ""}</span>
+                ${doc.detail && doc.code !== "OTRO" ? `<small class="muted">Lo que pide el texto: «${esc(doc.detail)}»</small>` : ""}
+                ${doc.verification ? `<small class="${doc.verification === "ok" ? "value-positive" : "value-negative"}">${doc.verification === "ok" ? "Verificado automáticamente" : doc.verification === "doubtful" ? "Revisa el contenido: no coincide del todo con lo pedido" : "No se pudo leer: revísalo tú"}</small>` : ""}
+                ${doc.request?.status === "PENDING" ? `<small class="muted">Pedido${doc.request.reminders ? ` · ${doc.request.reminders} recordatorio(s)` : ""} · <button type="button" class="link-button" data-copy="${esc(doc.request.url)}">copiar enlace de subida</button></small>` : ""}
+              </div>
+              <div class="doc-actions">
+                ${doc.status === "ready" ? `<span class="muted doc-auto">${window.icon("sparkles")} Va en el paquete</span>` : ""}
+                ${["missing", "partial", "requested"].includes(doc.status) ? `<button type="button" class="btn-ghost" data-attach="${index}">${window.icon("upload")} Adjuntar</button>` : ""}
+                ${doc.status !== "not_applicable" && doc.status !== "ready" ? `<button type="button" class="btn-ghost" data-doc-status="${index}" data-value="not_applicable">No aplica</button>` : ""}
+                ${doc.status === "not_applicable" ? `<button type="button" class="btn-ghost" data-doc-status="${index}" data-value="missing">Sí aplica</button>` : ""}
+              </div>
+            </div>
+          `).join("")}
+        </div>` : `<p class="empty-inline">Este trámite no pide documentación.</p>`}
+      <div class="doc-footer">
+        ${needsRequest ? `<button type="button" class="act-btn" data-case-action="request">${window.icon("send")} Pedir lo que falta</button>` : ""}
+        <button type="button" class="btn-ghost" data-attach="-1">${window.icon("upload")} Adjuntar otro documento</button>
+        <a class="btn-ghost" href="/api/cases/${item.id}/package.zip">${window.icon("archive")} Descargar paquete</a>
+      </div>
+      ${item.attachments?.length ? `
+        <div class="summary-block">
+          <h3>Documentos aportados</h3>
+          ${item.attachments.map((att) => `
+            <a class="attachment-chip" href="/api/case-attachments/${att.id}" target="_blank" rel="noopener noreferrer">
+              ${window.icon("doc")}<span>${esc(att.filename)}</span>
+              <small>${att.source === "client" ? "subido por enlace" : "aportado por ti"}${att.verification?.status === "ok" ? " · verificado" : att.verification?.status === "doubtful" ? " · revisar" : ""}</small>
+            </a>`).join("")}
+        </div>` : ""}
+    `;
+  }
+
+  function renderDraft() {
+    const item = current;
+    const placeholders = (item.draft_response || "").match(/\[[^\]]+\]/g) || [];
+    document.getElementById("casePaneDraft").innerHTML = item.draft_response ? `
+      <div class="draft-head">
+        <p class="detail-hint">${item.draft_edited ? "Borrador editado por ti." : "Borrador preparado por el Gestor de incidencias."} ${placeholders.length ? `<strong class="value-negative">Quedan ${placeholders.length} hueco(s) entre [corchetes] por completar.</strong>` : "Sin huecos pendientes."}</p>
+        <div class="card-actions">
+          <a class="btn-ghost" href="/api/cases/${item.id}/letter.pdf" target="_blank" rel="noopener noreferrer">${window.icon("doc")} Ver en PDF</a>
+          <button type="button" class="act-btn" data-case-action="save-draft">Guardar cambios</button>
+        </div>
+      </div>
+      <textarea class="draft-editor" id="caseDraft" spellcheck="true">${esc(item.draft_response)}</textarea>
+    ` : `<p class="empty-inline">Este trámite no necesita un escrito de respuesta.</p>`;
+  }
+
+  function renderTrace() {
+    const run = current.run;
+    if (!run) {
+      document.getElementById("casePaneTrace").innerHTML = `<p class="empty-inline">Sin recorridos registrados.</p>`;
+      return;
+    }
+    const total = run.steps.reduce((sum, step) => sum + step.duration_ms, 0);
+    const engines = [...new Set(run.steps.map((step) => step.engine))];
+    let elapsed = 0;
+    document.getElementById("casePaneTrace").innerHTML = `
+      <p class="detail-hint">Recorrido del ${esc(window.formatDate(run.started_at))} · ${run.steps.length} agentes · ${total} ms · motor: ${esc(engines.join(", "))} · disparado por ${esc({ upload: "la subida del documento", manual: "ti", schedule: "el planificador", system: "el sistema" }[run.trigger] || run.trigger)}</p>
+      <ol class="trace">
+        ${run.steps.map((step) => {
+          elapsed += step.duration_ms;
+          return `
+            <li class="trace-step status-${esc(step.status.toLowerCase())}">
+              <span class="trace-icon">${window.icon(step.icon || "sparkles")}</span>
+              <div class="trace-body">
+                <div class="trace-top">
+                  <strong>${esc(step.agent_name)}</strong>
+                  <span class="trace-time">+${elapsed} ms</span>
+                  <span class="status-pill mini ${step.engine === "reglas" ? "status-neutral" : "status-info"}">${esc(step.engine)}</span>
+                  ${step.status !== "OK" ? `<span class="status-pill mini status-danger">${esc(step.status)}</span>` : ""}
+                </div>
+                <p>${esc(step.summary)}</p>
+                ${step.evidence?.length ? `<div class="trace-evidence">${step.evidence.slice(0, 6).map((ev) => `<span class="chip">${esc(ev.label)}</span>`).join("")}</div>` : ""}
+              </div>
+            </li>
+          `;
+        }).join("")}
+      </ol>
+    `;
+  }
+
+  function renderHistory() {
+    document.getElementById("casePaneHistory").innerHTML = `
+      <ol class="history">
+        ${[...(current.events || [])].reverse().map((ev) => `
+          <li class="history-item kind-${esc(ev.kind)}">
+            <span class="history-dot">${window.icon(ev.icon || (ev.kind === "human" ? "users" : ev.kind === "system" ? "zap" : "sparkles"))}</span>
+            <div><strong>${esc(ev.title)}</strong><small>${esc(ev.kind === "human" ? `Por ${ev.actor}` : ev.actor_name)} · ${esc(window.formatDate(ev.created_at))}</small>${ev.detail ? `<p>${esc(ev.detail)}</p>` : ""}</div>
+          </li>`).join("")}
+      </ol>
+    `;
+  }
+
+  function renderActions() {
+    const item = current;
+    const actions = [];
+    const open = ["WAITING_HUMAN", "WAITING_DOCS", "OPEN"].includes(item.status);
+    if (item.kind === "ANOMALY" && open) {
+      actions.push(`<button type="button" class="btn-ghost" data-case-action="dismiss">Es correcto, descartar</button>`);
+      actions.push(`<span class="spacer"></span>`);
+      actions.push(`<button type="button" class="act-btn act-primary" data-case-action="resolve">${window.icon("check")} Resuelto</button>`);
+    } else if (open) {
+      if (item.notification_id) actions.push(`<button type="button" class="btn-ghost" data-case-action="rerun">${window.icon("repeat")} Volver a pasar los agentes</button>`);
+      actions.push(`<button type="button" class="btn-ghost" data-case-action="dismiss">Descartar</button>`);
+      actions.push(`<span class="spacer"></span>`);
+      if (item.has_draft) actions.push(`<button type="button" class="act-btn act-primary" data-case-action="approve">${window.icon("check")} Aprobar respuesta</button>`);
+      else actions.push(`<button type="button" class="act-btn act-primary" data-case-action="resolve">${window.icon("check")} Marcar como resuelto</button>`);
+    } else if (item.status === "READY_TO_FILE") {
+      actions.push(`<button type="button" class="btn-ghost" data-case-action="reopen">Volver a revisión</button>`);
+      actions.push(`<span class="spacer"></span>`);
+      actions.push(`<a class="btn-ghost" href="/api/cases/${item.id}/package.zip">${window.icon("archive")} Paquete para presentar</a>`);
+      actions.push(`<button type="button" class="act-btn act-primary" data-case-action="file">${window.icon("check")} Ya lo he presentado</button>`);
+    } else if (item.status === "FILED") {
+      actions.push(`<span class="muted">Presentado el ${esc(day(item.filed_at))}${item.filing_reference ? ` · registro ${esc(item.filing_reference)}` : ""}</span>`);
+      actions.push(`<span class="spacer"></span>`);
+      actions.push(`<button type="button" class="act-btn act-primary" data-case-action="resolve">Cerrar expediente</button>`);
+    } else {
+      actions.push(`<span class="muted">${esc(item.resolution || "")}</span>`);
+      actions.push(`<span class="spacer"></span>`);
+      actions.push(`<button type="button" class="btn-ghost" data-case-action="reopen">Reabrir</button>`);
+    }
+    document.getElementById("caseActions").innerHTML = actions.join("");
+  }
+
+  async function patch(body) {
+    current = await window.jsonRequest(`/cases/${current.id}`, "PATCH", body);
+    render();
+  }
+
+  async function caseAction(action) {
+    const id = current.id;
+    try {
+      if (action === "approve") {
+        const missing = current.documents.filter((doc) => ["missing", "requested", "partial"].includes(doc.status)).length;
+        const draft = document.getElementById("caseDraft");
+        if (draft && draft.value !== current.draft_response) await patch({ draft_response: draft.value });
+        if (missing && !window.confirm(`Faltan ${missing} documento(s). ¿Aprobar la respuesta igualmente?`)) return;
+        current = await window.jsonRequest(`/cases/${id}/approve`, "POST", {});
+        window.showMessage("Respuesta aprobada: descarga el paquete y preséntalo en la sede electrónica.", "success");
+      } else if (action === "file") {
+        const reference = window.prompt("Número de registro de entrada del justificante (opcional):", "");
+        if (reference === null) return;
+        current = await window.jsonRequest(`/cases/${id}/file`, "POST", { reference });
+        window.showMessage("Presentación registrada en el expediente.", "success");
+      } else if (action === "resolve" || action === "dismiss") {
+        const text = window.prompt(action === "dismiss" ? "¿Por qué se descarta? (queda en la memoria)" : "¿Cómo se ha resuelto? (queda en la memoria para la próxima vez)", "");
+        if (text === null) return;
+        current = await window.jsonRequest(`/cases/${id}/resolve`, "POST", { resolution: text, dismiss: action === "dismiss" });
+        window.showMessage(action === "dismiss" ? "Expediente descartado." : "Expediente resuelto.", "success");
+      } else if (action === "reopen") {
+        current = await window.jsonRequest(`/cases/${id}/reopen`, "POST", {});
+      } else if (action === "rerun") {
+        current = await window.jsonRequest(`/cases/${id}/rerun`, "POST", {});
+        window.showMessage("Los agentes han vuelto a trabajar el expediente.", "success");
+        pane = "traza";
+      } else if (action === "request") {
+        const result = await window.jsonRequest(`/cases/${id}/request-documents`, "POST", {});
+        window.showMessage(result.message ? "Petición preparada en la bandeja de salida." : "No había nada nuevo que pedir.", "success");
+        current = await window.apiRequest(`/cases/${id}`);
+        if (result.message) {
+          document.getElementById("caseDialog").close();
+          window.openOutboxMessage?.(result.message.id);
+          return;
+        }
+      } else if (action === "save-draft") {
+        await patch({ draft_response: document.getElementById("caseDraft").value });
+        window.showMessage("Borrador guardado.", "success");
+        return refreshBackground();
+      }
+      render();
+      refreshBackground();
+    } catch (error) {
+      window.showMessage(error.message, "error");
+    }
+  }
+
+  async function uploadAttachment(file) {
+    const form = new FormData();
+    form.append("uploaded_file", file);
+    if (pendingItemCode) form.append("item_code", pendingItemCode);
+    try {
+      current = await window.apiRequest(`/cases/${current.id}/attachments`, { method: "POST", body: form });
+      render();
+      window.showMessage("Documento incorporado al expediente.", "success");
+    } catch (error) {
+      window.showMessage(error.message, "error");
+    }
+  }
+
+  /* ------------------------------------------------------------
+  AGENTES Y MEMORIA
+  ------------------------------------------------------------ */
+  async function loadAgents() {
+    const [data, runs] = await Promise.all([window.apiRequest("/agents"), window.apiRequest("/agents/runs?limit=12")]);
+    document.getElementById("agentsIntro").innerHTML = `
+      <div class="agents-intro-body">
+        <div>
+          <h2>Tu equipo de ${data.agents.length} agentes</h2>
+          <p>Trabajan en cadena: el Vigilante detecta, Expedientes asigna, Fiscal mide el impacto, Memoria busca antecedentes, el Gestor prepara la respuesta, el Perseguidor consigue lo que falta y el Director prioriza. Tú solo revisas las excepciones.</p>
+        </div>
+        <div class="agents-engine">
+          <span class="status-pill ${data.ai_enabled ? "status-info" : "status-neutral"}">${data.ai_enabled ? `IA: ${esc(data.engine)}` : "Reglas y plantillas"}</span>
+          <small>${data.ai_enabled ? "Claude lee las notificaciones y redacta las respuestas." : "Añade ANTHROPIC_API_KEY en .env para que Claude lea y redacte."}</small>
+          <small>${data.runs_this_month} recorrido(s) este mes</small>
+        </div>
+      </div>
+    `;
+    document.getElementById("agentsGrid").innerHTML = data.agents.map((agent) => `
+      <article class="agent-card">
+        <header>
+          <span class="agent-avatar">${window.icon(agent.icon)}</span>
+          <div><h3>${esc(agent.name)}</h3><small>«${esc(agent.need)}»</small></div>
+        </header>
+        <p>${esc(agent.role)}</p>
+        <div class="agent-stats">
+          <span><strong>${agent.steps}</strong> tareas este mes</span>
+          ${agent.avg_ms ? `<span><strong>${agent.avg_ms}</strong> ms de media</span>` : ""}
+        </div>
+        ${agent.last_summary ? `<div class="agent-last">${window.icon("clock")}<span>${esc(agent.last_summary)}</span></div>` : ""}
+      </article>
+    `).join("");
+    document.getElementById("agentRuns").innerHTML = runs.length ? runs.map((run) => `
+      <button type="button" class="run-item" ${run.case_id ? `data-open-case="${run.case_id}"` : ""}>
+        <span class="run-chain">${run.steps.map((step) => `<span class="run-node status-${esc(step.status.toLowerCase())}" title="${esc(step.agent_name)}: ${esc(step.summary)}">${window.icon(step.icon)}</span>`).join("")}</span>
+        <span class="run-text"><strong>${esc(run.summary || run.pipeline)}</strong><small>${esc({ notification: "Notificación", anomalies: "Detector" }[run.pipeline] || run.pipeline)} · ${esc(window.formatDate(run.started_at))}</small></span>
+      </button>
+    `).join("") : `<p class="empty-inline">Aún no hay recorridos.</p>`;
+  }
+
+  async function ask(question) {
+    const container = document.getElementById("memoryAnswer");
+    container.innerHTML = `<p class="muted">Buscando en la documentación…</p>`;
+    try {
+      const data = await window.jsonRequest("/memory/ask", "POST", { question });
+      container.innerHTML = `
+        <div class="memory-answer">
+          <p class="memory-text">${esc(data.answer)}</p>
+          <small class="muted">Motor: ${esc(data.engine)}</small>
+        </div>
+        ${data.sources.length ? `<div class="memory-sources">${data.sources.map((source, index) => `
+          <button type="button" class="memory-source" data-source-kind="${esc(source.kind)}" data-source-id="${source.ref_id}">
+            <span class="memory-index">${index + 1}</span>
+            <span><strong>${esc(source.title)}</strong><small>${esc(KIND_LABELS[source.kind] || source.kind)}${source.date ? ` · ${esc(day(source.date))}` : ""}</small><em>${esc(source.snippet)}</em></span>
+          </button>`).join("")}</div>` : ""}
+      `;
+    } catch (error) {
+      container.innerHTML = `<p class="danger-text">${esc(error.message)}</p>`;
+    }
+  }
+
+  /* ------------------------------------------------------------
+  VISTAS
+  ------------------------------------------------------------ */
+  function showView(name) {
+    view = name;
+    document.querySelectorAll("#caseViews .segment").forEach((item) => item.classList.toggle("active", item.dataset.view === name));
+    const panel = ["agents", "memory"].includes(name) ? name : "list";
+    document.querySelectorAll(".case-view").forEach((item) => item.classList.toggle("hidden", item.dataset.caseView !== panel));
+    document.getElementById("briefingCard").classList.toggle("hidden", panel !== "list" || name !== "open");
+    if (name === "agents") loadAgents().catch((error) => window.showMessage(error.message, "error"));
+    else if (panel === "list") loadList().catch((error) => window.showMessage(error.message, "error"));
+  }
+
+  async function refresh() {
+    await loadBriefing();
+    if (active && !["agents", "memory"].includes(view)) await loadList();
+  }
+
+  function refreshBackground() {
+    refresh().catch(() => {});
+  }
+
+  function setup() {
+    const section = document.getElementById("tab-expedientes");
+    if (!section) return;
+
+    document.getElementById("caseViews").addEventListener("click", (event) => {
+      const button = event.target.closest(".segment");
+      if (button) showView(button.dataset.view);
+    });
+
+    document.addEventListener("click", (event) => {
+      const brief = event.target.closest("[data-brief]");
+      if (brief) return openBriefingItem(Number(brief.dataset.brief));
+      if (event.target.closest("[data-go-cases]")) return window.activateTab("expedientes");
+    });
+
+    section.addEventListener("click", (event) => {
+      const card = event.target.closest("[data-case]");
+      if (card) return openCase(Number(card.dataset.case)).catch((error) => window.showMessage(error.message, "error"));
+      const run = event.target.closest("[data-open-case]");
+      if (run) return openCase(Number(run.dataset.openCase));
+      const source = event.target.closest("[data-source-kind]");
+      if (source) {
+        const id = Number(source.dataset.sourceId);
+        if (source.dataset.sourceKind === "case") return openCase(id);
+        if (source.dataset.sourceKind === "document") return window.showDetail?.(id);
+        return window.activateTab("notificaciones");
+      }
+      const chip = event.target.closest("[data-question]");
+      if (chip) {
+        document.querySelector("#memoryForm input").value = chip.dataset.question;
+        return ask(chip.dataset.question);
+      }
+    });
+
+    document.getElementById("memoryForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const question = event.currentTarget.elements.question.value.trim();
+      if (question.length >= 3) ask(question);
+    });
+
+    document.getElementById("scanAnomalies").addEventListener("click", async () => {
+      try {
+        const result = await window.jsonRequest("/agents/anomalies/scan", "POST", {});
+        window.showMessage(result.created ? `${result.created} anomalía(s) nuevas.` : result.found ? "Sin novedades: las anomalías ya estaban avisadas." : "Todo cuadra: sin anomalías.", "success");
+        showView(result.created ? "anomalies" : view);
+        refreshBackground();
+      } catch (error) {
+        window.showMessage(error.message, "error");
+      }
+    });
+    document.getElementById("processPending").addEventListener("click", async () => {
+      try {
+        const result = await window.jsonRequest("/agents/process-pending", "POST", {});
+        window.showMessage(result.processed ? `${result.processed} notificación(es) trabajadas por los agentes.` : "No había notificaciones pendientes de trabajar.", "success");
+        refreshBackground();
+      } catch (error) {
+        window.showMessage(error.message, "error");
+      }
+    });
+
+    const dialog = document.getElementById("caseDialog");
+    document.getElementById("caseTabs").addEventListener("click", (event) => {
+      const button = event.target.closest(".segment");
+      if (button) showPane(button.dataset.pane);
+    });
+    dialog.addEventListener("click", async (event) => {
+      const action = event.target.closest("[data-case-action]");
+      if (action) return caseAction(action.dataset.caseAction);
+
+      const toggle = event.target.closest("[data-action-index]");
+      if (toggle) return patch({ action_index: Number(toggle.dataset.actionIndex), done: toggle.checked }).catch((error) => window.showMessage(error.message, "error"));
+
+      const status = event.target.closest("[data-doc-status]");
+      if (status) {
+        const doc = current.documents[Number(status.dataset.docStatus)];
+        return patch({ document_code: doc.code, document_detail: doc.detail, document_status: status.dataset.value }).catch((error) => window.showMessage(error.message, "error"));
+      }
+
+      const attach = event.target.closest("[data-attach]");
+      if (attach) {
+        const index = Number(attach.dataset.attach);
+        const doc = current.documents[index];
+        pendingItemCode = doc ? (doc.code !== "OTRO" ? doc.code : `OTRO:${(doc.detail || doc.label).slice(0, 30)}`) : null;
+        document.getElementById("caseFileInput").click();
+        return;
+      }
+
+      const copy = event.target.closest("[data-copy]");
+      if (copy) {
+        try {
+          await navigator.clipboard.writeText(copy.dataset.copy);
+          window.showMessage("Enlace copiado.", "success");
+        } catch {
+          window.prompt("Copia el enlace:", copy.dataset.copy);
+        }
+        return;
+      }
+
+      const other = event.target.closest("[data-open-case]");
+      if (other) return openCase(Number(other.dataset.openCase));
+      const doc = event.target.closest("[data-open-document]");
+      if (doc) {
+        dialog.close();
+        return window.showDetail?.(Number(doc.dataset.openDocument));
+      }
+    });
+    document.getElementById("caseFileInput").addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      event.target.value = "";
+      if (file) uploadAttachment(file);
+    });
+    dialog.addEventListener("close", () => { pane = "resumen"; refreshBackground(); });
+
+    loadBriefing().catch(() => {});
+  }
+
+  window.openCase = (id) => { window.activateTab("expedientes"); openCase(id); };
+
+  window.addEventListener("capafiscal:tab-changed", (event) => {
+    active = event.detail?.tab === "expedientes";
+    if (active) {
+      showView(view);
+      loadBriefing().catch(() => {});
+    } else if (event.detail?.tab === "panel") {
+      loadBriefing().catch(() => {});
+    }
+  });
+  window.addEventListener("capafiscal:data-changed", refreshBackground);
+
+  document.addEventListener("DOMContentLoaded", setup);
+})();

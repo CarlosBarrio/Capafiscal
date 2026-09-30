@@ -66,6 +66,19 @@ def request_message_body(case: Case, requests: list[DocumentRequest], reminder: 
     return subject, body
 
 
+def request_label(item: dict[str, Any]) -> str:
+    from app.extractor import normalize_search_text
+
+    detail = item.get("detail")
+    if not detail or item["code"] == "OTRO":
+        return item["label"]
+    # Si el texto ya empieza por el nombre del documento, basta con el texto.
+    first_word = normalize_search_text(item["label"]).split()[0]
+    if normalize_search_text(detail).startswith(first_word):
+        return detail[:255]
+    return f"{item['label']} — {detail}"[:255]
+
+
 def pending_requests(case: Case) -> list[DocumentRequest]:
     return [item for item in case.requests if item.status == "PENDING"]
 
@@ -89,7 +102,7 @@ def prepare_requests(database: Session, case: Case, *, created_by: str = "agent"
         request = DocumentRequest(
             case_id=case.id,
             item_code=key,
-            label=item["label"] + (f" — {item['detail']}" if item.get("detail") and item["code"] != "OTRO" else ""),
+            label=request_label(item),
             token=secrets.token_urlsafe(24),
             to_email=to_email,
             to_name=to_name,
