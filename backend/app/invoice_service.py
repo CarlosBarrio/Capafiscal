@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.extractor import EXTRACTOR_NAME
+from app.extractor import CATEGORY_ACCOUNTS
 from app.extractor import EXTRACTOR_VERSION
 from app.extractor import extract_invoice
 from app.extractor import normalize_amount
@@ -24,6 +25,7 @@ from app.models import Document
 from app.models import ExtractionRun
 from app.models import Invoice
 from app.models import InvoiceTaxLine
+from app.models import SupplierRule
 from app.schemas import InvoiceUpdate
 
 
@@ -522,8 +524,52 @@ def persist_extraction_result(
 
     document.extraction_status = "COMPLETED"
 
+    if document.kind == "NOTIFICATION":
+        # Ya clasificado como notificación (por el agente o el usuario).
+        from app.notification_service import detect_and_register
+
+        detect_and_register(
+            database,
+            document=document,
+            text=result.get("raw_text") or "",
+        )
+        return None
+
+    from app.notification_service import looks_like_administrative_act
+
+    if looks_like_administrative_act(result.get("raw_text") or ""):
+        # Un apremio o una liquidación tienen importe y fecha y pueden
+        # parecer facturas: si viene de un organismo, es notificación.
+        from app.notification_service import detect_and_register
+
+        if document.invoice is not None and document.invoice.review_status != "APPROVED":
+            database.delete(document.invoice)
+            document.invoice = None
+            database.flush()
+
+        document.status = "NEEDS_REVIEW"
+        notification = detect_and_register(
+            database,
+            document=document,
+            text=result.get("raw_text") or "",
+        )
+
+        if notification is not None:
+            return None
+
     if not result.get("is_invoice"):
         document.status = "NEEDS_REVIEW"
+
+        from app.notification_service import detect_and_register
+
+        notification = detect_and_register(
+            database,
+            document=document,
+            text=result.get("raw_text") or "",
+        )
+
+        if notification is not None:
+            return None
 
         add_audit_event(
             database,
@@ -642,6 +688,8 @@ def persist_extraction_result(
         "category",
     )
 
+    invoice.direction = result.get("direction") or "RECEIVED"
+
     invoice.confidence = int(
         result.get(
             "overall_confidence",
@@ -651,6 +699,13 @@ def persist_extraction_result(
     invoice.field_confidences = (
         field_confidences(result)
     )
+    invoice.field_confidences["direction"] = {
+        "confidence": result.get("direction_confidence", 50),
+        "source": "company_tax_id_position",
+        "evidence": None,
+    }
+
+    apply_supplier_rule(database, invoice)
 
     database.flush()
 
@@ -698,6 +753,84 @@ def persist_extraction_result(
     return invoice
 
 
+def counterparty_tax_id(invoice: Invoice) -> str | None:
+    if invoice.direction == "ISSUED":
+        return invoice.customer_tax_id
+
+    return invoice.supplier_tax_id
+
+
+def apply_supplier_rule(
+    database: Session,
+    invoice: Invoice,
+) -> bool:
+    """Aplica la categoría aprendida para la contraparte, si existe."""
+    tax_id = counterparty_tax_id(invoice)
+
+    if not tax_id:
+        return False
+
+    rule = database.scalar(
+        select(SupplierRule).where(SupplierRule.tax_id == tax_id)
+    )
+
+    if rule is None or rule.category not in CATEGORY_ACCOUNTS:
+        return False
+
+    invoice.category = rule.category
+    invoice.field_confidences = {
+        **(invoice.field_confidences or {}),
+        "category": {
+            "confidence": 97,
+            "source": "supplier_rule",
+            "evidence": (
+                "Categoría aprendida de tus correcciones anteriores "
+                f"para {tax_id}."
+            ),
+        },
+    }
+    rule.times_applied = (rule.times_applied or 0) + 1
+
+    return True
+
+
+def learn_supplier_rule(
+    database: Session,
+    invoice: Invoice,
+    actor: str,
+) -> None:
+    tax_id = counterparty_tax_id(invoice)
+
+    if not tax_id or not invoice.category:
+        return
+
+    rule = database.scalar(
+        select(SupplierRule).where(SupplierRule.tax_id == tax_id)
+    )
+
+    if rule is None:
+        rule = SupplierRule(tax_id=tax_id, category=invoice.category)
+        database.add(rule)
+    elif rule.category == invoice.category:
+        return
+    else:
+        rule.category = invoice.category
+
+    rule.learned_from_invoice_id = invoice.id
+
+    add_audit_event(
+        database,
+        action="supplier_rule.learned",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        actor=actor,
+        event_data={
+            "tax_id": tax_id,
+            "category": invoice.category,
+        },
+    )
+
+
 def process_document(
     database: Session,
     *,
@@ -736,15 +869,13 @@ def process_document(
     )
 
     try:
-        configured_tax_ids = (
-            settings.company_tax_ids
-            or settings.company_tax_id
-        )
+        from app.company_service import company_name
+        from app.company_service import company_tax_ids
 
         result = extract_invoice(
             file_path,
-            company_tax_id=configured_tax_ids,
-            company_name=settings.company_name,
+            company_tax_id=sorted(company_tax_ids(database)),
+            company_name=company_name(database),
         )
 
         invoice = persist_extraction_result(
@@ -845,6 +976,7 @@ def invoice_snapshot(
         "currency": invoice.currency,
         "concept": invoice.concept,
         "category": invoice.category,
+        "direction": invoice.direction,
         "tax_lines": [
             {
                 "tax_type": line.tax_type,
@@ -956,6 +1088,9 @@ def update_invoice(
     )
 
     after = invoice_snapshot(invoice)
+
+    if before.get("category") != after.get("category"):
+        learn_supplier_rule(database, invoice, actor)
 
     changed_fields = {
         field_name: {

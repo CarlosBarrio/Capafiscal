@@ -25,7 +25,7 @@ except ImportError:
 
 
 EXTRACTOR_NAME = "capafiscal.generic_invoice"
-EXTRACTOR_VERSION = "2.2.0"
+EXTRACTOR_VERSION = "2.3.0"
 
 CENT = Decimal("0.01")
 AMOUNT_TOLERANCE = Decimal("0.03")
@@ -943,6 +943,96 @@ def choose_tax_ids(
                 source="customer_tax_id_label",
                 evidence=selected["context"],
             )
+
+    return supplier, customer
+
+
+def detect_direction(
+    candidates: list[dict[str, Any]],
+    company_tax_id: Any,
+) -> tuple[str, int]:
+    """
+    Decide si la factura la emite la propia empresa (ISSUED) o la recibe
+    (RECEIVED) según dónde aparece su NIF. Sin NIF configurado se asume
+    recibida con confianza baja.
+    """
+    configured_ids = normalized_company_tax_ids(company_tax_id)
+
+    if not configured_ids or not candidates:
+        return "RECEIVED", 50
+
+    own = [
+        candidate
+        for candidate in candidates
+        if candidate["value"] in configured_ids
+    ]
+
+    if not own:
+        # Nuestro NIF no aparece: puede ser un ticket o factura simplificada.
+        return "RECEIVED", 60
+
+    if any(candidate["role"] == "supplier" for candidate in own):
+        return "ISSUED", 92
+
+    if any(candidate["role"] == "customer" for candidate in own):
+        return "RECEIVED", 95
+
+    first = min(candidates, key=lambda item: item["line_index"])
+
+    if first["value"] in configured_ids:
+        return "ISSUED", 80
+
+    return "RECEIVED", 80
+
+
+def choose_tax_ids_for_issued(
+    candidates: list[dict[str, Any]],
+    company_tax_id: Any,
+) -> tuple[ExtractedField, ExtractedField]:
+    configured_ids = normalized_company_tax_ids(company_tax_id)
+
+    own = [
+        candidate
+        for candidate in candidates
+        if candidate["value"] in configured_ids
+    ]
+    others = [
+        candidate
+        for candidate in candidates
+        if candidate["value"] not in configured_ids
+    ]
+
+    supplier = ExtractedField()
+
+    if own:
+        supplier = ExtractedField(
+            value=own[0]["value"],
+            confidence=99,
+            source="configured_company_tax_id",
+            evidence=own[0]["context"],
+        )
+
+    customer = ExtractedField()
+
+    if others:
+        def customer_score(candidate: dict[str, Any]) -> tuple[int, int]:
+            score = int(candidate["confidence"])
+
+            if candidate["role"] == "customer":
+                score += 25
+
+            if candidate["valid_checksum"]:
+                score += 5
+
+            return score, -int(candidate["line_index"])
+
+        selected = max(others, key=customer_score)
+        customer = ExtractedField(
+            value=selected["value"],
+            confidence=min(98, max(45, customer_score(selected)[0])),
+            source="ranked_customer_tax_id",
+            evidence=selected["context"],
+        )
 
     return supplier, customer
 
@@ -2141,11 +2231,48 @@ EXPENSE_CATEGORIES: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...
 DEFAULT_CATEGORY = "Otros gastos"
 DEFAULT_ACCOUNT = "629"
 
+# Categorías de ingreso (facturas emitidas), grupo 7 del PGC.
+INCOME_SERVICES = "Prestación de servicios"
+INCOME_GOODS = "Ventas de mercaderías"
+INCOME_CATEGORIES: dict[str, str] = {
+    INCOME_SERVICES: "705",
+    INCOME_GOODS: "700",
+}
+
 CATEGORY_ACCOUNTS: dict[str, str] = {
     name: account
     for name, account, _keywords, _suppliers in EXPENSE_CATEGORIES
 }
 CATEGORY_ACCOUNTS[DEFAULT_CATEGORY] = DEFAULT_ACCOUNT
+CATEGORY_ACCOUNTS.update(INCOME_CATEGORIES)
+
+
+def classify_income(
+    text: str,
+    concept: str | None,
+) -> ExtractedField:
+    normalized = normalize_search_text(f"{concept or ''}\n{text}")
+
+    goods_keywords = (
+        "mercaderia", "mercancia", "unidades", "producto", "articulo",
+        "precio unitario", "cantidad",
+    )
+    hits = [keyword for keyword in goods_keywords if keyword in normalized]
+
+    if hits:
+        return ExtractedField(
+            value=INCOME_GOODS,
+            confidence=70,
+            source="keyword_income_category",
+            evidence=", ".join(hits),
+        )
+
+    return ExtractedField(
+        value=INCOME_SERVICES,
+        confidence=65,
+        source="default_income_category",
+        evidence=None,
+    )
 
 
 def category_account(category: str | None) -> str:
@@ -2380,13 +2507,27 @@ def extract_invoice(
         primary_text
     )
 
-    (
-        supplier_tax_id,
-        customer_tax_id,
-    ) = choose_tax_ids(
+    direction, direction_confidence = detect_direction(
         tax_id_candidates,
         company_tax_id,
     )
+
+    if direction == "ISSUED":
+        (
+            supplier_tax_id,
+            customer_tax_id,
+        ) = choose_tax_ids_for_issued(
+            tax_id_candidates,
+            company_tax_id,
+        )
+    else:
+        (
+            supplier_tax_id,
+            customer_tax_id,
+        ) = choose_tax_ids(
+            tax_id_candidates,
+            company_tax_id,
+        )
 
     supplier_name = company_name_near_tax_id(
         primary_text,
@@ -2403,7 +2544,15 @@ def extract_invoice(
         "customer",
     )
 
-    if customer_tax_id.value and company_name:
+    if direction == "ISSUED":
+        if company_name:
+            supplier_name = ExtractedField(
+                value=company_name,
+                confidence=99,
+                source="configured_company_name",
+                evidence=supplier_name.evidence,
+            )
+    elif customer_tax_id.value and company_name:
         customer_name = ExtractedField(
             value=company_name,
             confidence=99,
@@ -2504,11 +2653,17 @@ def extract_invoice(
     )
 
     concept = extract_concept(primary_text)
-    category = classify_invoice(
-        primary_text,
-        concept.value,
-        supplier_name.value,
-    )
+    if direction == "ISSUED":
+        category = classify_income(
+            primary_text,
+            concept.value,
+        )
+    else:
+        category = classify_invoice(
+            primary_text,
+            concept.value,
+            supplier_name.value,
+        )
     currency = detect_currency(primary_text)
 
     tax_lines = extract_tax_lines(
@@ -2562,6 +2717,8 @@ def extract_invoice(
         ),
         "is_invoice": is_invoice,
         "invoice_likelihood": invoice_likelihood,
+        "direction": direction,
+        "direction_confidence": direction_confidence,
         "requires_ocr": False,
         "page_count": page_count,
         "processed_pages": primary_pages,

@@ -177,6 +177,9 @@ def calculate_task_reason(
 def document_requires_review_task(
     document: Document,
 ) -> bool:
+    if document.kind == "NOTIFICATION":
+        return False
+
     if document.status in {
         "APPROVED",
         "REJECTED",
@@ -241,12 +244,19 @@ def synchronize_document_task(
         "APPROVED",
         "REJECTED",
         "EXPORTED",
-    }:
+        "RESOLVED",
+    } or document.kind == "NOTIFICATION":
         if task is not None and task.status in OPEN_TASK_STATUSES:
             task.status = "RESOLVED"
-            task.resolution = document.status
+            task.resolution = (
+                "NOTIFICATION"
+                if document.kind == "NOTIFICATION"
+                else document.status
+            )
             task.resolution_notes = (
-                "Tarea resuelta automáticamente por "
+                "Documento clasificado como notificación administrativa."
+                if document.kind == "NOTIFICATION"
+                else "Tarea resuelta automáticamente por "
                 f"el estado {document.status}."
             )
             task.resolved_at = utc_now()
@@ -350,6 +360,10 @@ def synchronize_all_review_tasks(
         if previous_task is None or previous_state != current_state:
             changed_count += 1
 
+    from app.notification_service import sync_all_notification_tasks
+
+    sync_all_notification_tasks(database)
+
     return changed_count
 
 
@@ -361,7 +375,7 @@ def list_review_tasks(
 ) -> list[Task]:
     statement = (
         select(Task)
-        .where(Task.task_type == "REVIEW_INVOICE")
+        .where(Task.task_type.in_({"REVIEW_INVOICE", "NOTIFICATION"}))
         .options(
             selectinload(Task.document)
             .selectinload(Document.invoice)

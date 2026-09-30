@@ -61,6 +61,10 @@ class InvoiceUpdate(BaseModel):
     currency: str | None = None
     concept: str | None = None
     category: str | None = None
+    direction: str | None = Field(
+        default=None,
+        pattern="^(RECEIVED|ISSUED)$",
+    )
 
     tax_lines: list[InvoiceTaxLineCreate] | None = None
 
@@ -160,6 +164,7 @@ class InvoiceResponse(ORMModel):
 
     customer_name: str | None
     customer_tax_id: str | None
+    direction: str | None = None
 
     invoice_number: str | None
     invoice_date: date | None
@@ -228,6 +233,7 @@ class DocumentListItem(ORMModel):
     source: str
     source_provider: str | None
     is_demo: bool
+    kind: str | None = None
 
     status: str
     extraction_status: str

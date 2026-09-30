@@ -8,6 +8,7 @@ from decimal import Decimal
 from decimal import ROUND_HALF_UP
 from typing import Any
 
+from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
@@ -27,6 +28,33 @@ DUE_SOON_DAYS = 7
 # -------------------------------------------------------------------
 # Utilidades
 # -------------------------------------------------------------------
+
+RECEIVED = "RECEIVED"
+ISSUED = "ISSUED"
+
+
+def normalize_direction(value: str | None) -> str:
+    return ISSUED if (value or "").strip().upper() in {"ISSUED", "EMITIDAS"} else RECEIVED
+
+
+def direction_clause(direction: str):
+    # Las facturas antiguas (sin sentido) cuentan como recibidas.
+    if direction == ISSUED:
+        return Invoice.direction == ISSUED
+
+    return or_(Invoice.direction.is_(None), Invoice.direction != ISSUED)
+
+
+def is_issued(invoice: Invoice) -> bool:
+    return invoice.direction == ISSUED
+
+
+def counterparty(invoice: Invoice) -> tuple[str | None, str | None]:
+    if is_issued(invoice):
+        return invoice.customer_name, invoice.customer_tax_id
+
+    return invoice.supplier_name, invoice.supplier_tax_id
+
 
 def money(value: Decimal | None) -> Decimal:
     if value is None:
@@ -69,6 +97,7 @@ def load_invoices_in_period(
     date_from: date,
     date_to: date,
     review_statuses: set[str] | None = None,
+    direction: str | None = None,
 ) -> list[Invoice]:
     statement = (
         select(Invoice)
@@ -90,6 +119,9 @@ def load_invoices_in_period(
         statement = statement.where(
             Invoice.review_status.in_(review_statuses)
         )
+
+    if direction:
+        statement = statement.where(direction_clause(direction))
 
     return list(database.scalars(statement).all())
 
@@ -168,6 +200,55 @@ def rate_label(rate: Decimal | None) -> str:
 # Resumen fiscal del periodo
 # -------------------------------------------------------------------
 
+def summarize_by_rate(invoices: list[Invoice]) -> dict[str, Any]:
+    by_rate: dict[str, dict[str, Any]] = {}
+    base = tax = withholding = total = ZERO
+
+    for invoice in invoices:
+        base += money(invoice.subtotal)
+        tax += money(invoice.tax_total)
+        withholding += money(invoice.withholding_total)
+        total += money(invoice.total)
+
+        for line in invoice_tax_breakdown(invoice):
+            key = rate_label(line["tax_rate"])
+            bucket = by_rate.setdefault(
+                key,
+                {
+                    "rate": (
+                        float(line["tax_rate"])
+                        if line["tax_rate"] is not None
+                        else None
+                    ),
+                    "label": key,
+                    "base": ZERO,
+                    "tax": ZERO,
+                    "invoices": 0,
+                },
+            )
+            bucket["base"] += money(line["tax_base"])
+            bucket["tax"] += money(line["tax_amount"])
+            bucket["invoices"] += 1
+
+    return {
+        "base": float(base),
+        "tax": float(tax),
+        "withholding": float(withholding),
+        "total": float(total),
+        "by_rate": sorted(
+            (
+                {
+                    **bucket,
+                    "base": float(bucket["base"]),
+                    "tax": float(bucket["tax"]),
+                }
+                for bucket in by_rate.values()
+            ),
+            key=lambda item: -(item["rate"] if item["rate"] is not None else -1),
+        ),
+    }
+
+
 def build_vat_report(
     database: Session,
     *,
@@ -186,12 +267,21 @@ def build_vat_report(
         invoice
         for invoice in invoices
         if invoice.review_status == "APPROVED"
+        and not is_issued(invoice)
+    ]
+    approved_issued = [
+        invoice
+        for invoice in invoices
+        if invoice.review_status == "APPROVED"
+        and is_issued(invoice)
     ]
     pending = [
         invoice
         for invoice in invoices
         if invoice.review_status == "PENDING"
     ]
+
+    issued_summary = summarize_by_rate(approved_issued)
 
     by_rate: dict[str, dict[str, Any]] = {}
     by_category: dict[str, dict[str, Any]] = {}
@@ -322,6 +412,13 @@ def build_vat_report(
             (serialize(bucket) for bucket in by_month.values()),
             key=lambda item: item["month"],
         ),
+        "issued_invoices": len(approved_issued),
+        "issued_base": issued_summary["base"],
+        "issued_tax": issued_summary["tax"],
+        "issued_withholding": issued_summary["withholding"],
+        "issued_total": issued_summary["total"],
+        "issued_by_rate": issued_summary["by_rate"],
+        "vat_balance": round(issued_summary["tax"] - float(total_tax), 2),
         "warnings": warnings,
         "note": (
             "IVA soportado de facturas recibidas aprobadas, agrupado por "
@@ -336,11 +433,13 @@ def build_vat_report(
 # -------------------------------------------------------------------
 
 def supplier_key(invoice: Invoice) -> str | None:
-    if invoice.supplier_tax_id:
-        return f"nif:{invoice.supplier_tax_id}"
+    name, tax_id = counterparty(invoice)
 
-    if invoice.supplier_name:
-        return f"name:{invoice.supplier_name.strip().upper()}"
+    if tax_id:
+        return f"nif:{tax_id}"
+
+    if name:
+        return f"name:{name.strip().upper()}"
 
     return None
 
@@ -349,8 +448,13 @@ def build_supplier_list(
     database: Session,
     *,
     search: str | None = None,
+    direction: str = RECEIVED,
 ) -> list[dict[str, Any]]:
-    statement = select(Invoice).options(selectinload(Invoice.document))
+    statement = (
+        select(Invoice)
+        .where(direction_clause(direction))
+        .options(selectinload(Invoice.document))
+    )
     invoices = list(database.scalars(statement).all())
 
     suppliers: dict[str, dict[str, Any]] = {}
@@ -364,15 +468,15 @@ def build_supplier_list(
         if key is None or invoice.review_status == "REJECTED":
             continue
 
+        party_name, party_tax_id = counterparty(invoice)
+
         supplier = suppliers.setdefault(
             key,
             {
                 "key": key,
-                "name": invoice.supplier_name,
-                "tax_id": invoice.supplier_tax_id,
-                "tax_id_valid": is_valid_spanish_tax_id(
-                    invoice.supplier_tax_id
-                ),
+                "name": party_name,
+                "tax_id": party_tax_id,
+                "tax_id_valid": is_valid_spanish_tax_id(party_tax_id),
                 "invoices": 0,
                 "approved_invoices": 0,
                 "pending_invoices": 0,
@@ -384,8 +488,8 @@ def build_supplier_list(
             },
         )
 
-        if not supplier["name"] and invoice.supplier_name:
-            supplier["name"] = invoice.supplier_name
+        if not supplier["name"] and party_name:
+            supplier["name"] = party_name
 
         supplier["invoices"] += 1
 
@@ -470,7 +574,12 @@ def build_payments_overview(
     database: Session,
     *,
     today: date | None = None,
+    direction: str = RECEIVED,
 ) -> dict[str, Any]:
+    """
+    Recibidas: pagos pendientes a proveedores.
+    Emitidas: cobros pendientes de clientes (paid_at = fecha de cobro).
+    """
     current_day = today or date.today()
 
     statement = (
@@ -478,6 +587,7 @@ def build_payments_overview(
         .where(
             Invoice.review_status == "APPROVED",
             Invoice.paid_at.is_(None),
+            direction_clause(direction),
         )
         .options(selectinload(Invoice.document))
     )
@@ -491,13 +601,15 @@ def build_payments_overview(
         state = payment_state(invoice, current_day)
         totals[state] += money(invoice.total)
         counts[state] += 1
+        party_name, party_tax_id = counterparty(invoice)
 
         items.append(
             {
                 "invoice_id": invoice.id,
                 "document_id": invoice.document_id,
-                "supplier_name": invoice.supplier_name,
-                "supplier_tax_id": invoice.supplier_tax_id,
+                "direction": direction,
+                "supplier_name": party_name,
+                "supplier_tax_id": party_tax_id,
                 "invoice_number": invoice.invoice_number,
                 "invoice_date": (
                     invoice.invoice_date.isoformat()
@@ -536,6 +648,7 @@ def build_payments_overview(
 
     return {
         "generated_for": current_day.isoformat(),
+        "direction": direction,
         "unpaid_count": len(items),
         "unpaid_total": float(sum(totals.values(), ZERO)),
         "overdue_count": counts["OVERDUE"],
@@ -549,6 +662,25 @@ def build_payments_overview(
 # -------------------------------------------------------------------
 # Libro registro de facturas recibidas
 # -------------------------------------------------------------------
+
+ISSUED_LEDGER_LABELS = {
+    "supplier_tax_id": "NIF destinatario",
+    "supplier_name": "Nombre destinatario",
+    "paid_at": "Fecha cobro",
+    "withholding": "Retención IRPF soportada",
+    "surcharge": "Recargo equivalencia",
+}
+
+
+def ledger_columns(direction: str = RECEIVED) -> tuple[tuple[str, str], ...]:
+    if direction != ISSUED:
+        return LEDGER_COLUMNS
+
+    return tuple(
+        (key, ISSUED_LEDGER_LABELS.get(key, label))
+        for key, label in LEDGER_COLUMNS
+    )
+
 
 LEDGER_COLUMNS = (
     ("order", "Nº orden"),
@@ -578,6 +710,7 @@ def build_ledger_rows(
     date_from: date,
     date_to: date,
     include_pending: bool = False,
+    direction: str = RECEIVED,
 ) -> list[dict[str, Any]]:
     statuses = {"APPROVED"}
 
@@ -589,6 +722,7 @@ def build_ledger_rows(
         date_from=date_from,
         date_to=date_to,
         review_statuses=statuses,
+        direction=direction,
     )
 
     rows: list[dict[str, Any]] = []
@@ -611,8 +745,8 @@ def build_ledger_rows(
                         else None
                     ),
                     "invoice_number": invoice.invoice_number,
-                    "supplier_tax_id": invoice.supplier_tax_id,
-                    "supplier_name": invoice.supplier_name,
+                    "supplier_tax_id": counterparty(invoice)[1],
+                    "supplier_name": counterparty(invoice)[0],
                     "concept": (invoice.concept or "")[:250],
                     "category": invoice.category,
                     "account": category_account(invoice.category),
@@ -656,7 +790,11 @@ def format_csv_value(value: Any) -> str:
     return str(value)
 
 
-def ledger_to_csv(rows: list[dict[str, Any]]) -> bytes:
+def ledger_to_csv(
+    rows: list[dict[str, Any]],
+    direction: str = RECEIVED,
+) -> bytes:
+    columns = ledger_columns(direction)
     buffer = io.StringIO()
     writer = csv.writer(
         buffer,
@@ -664,12 +802,12 @@ def ledger_to_csv(rows: list[dict[str, Any]]) -> bytes:
         quoting=csv.QUOTE_MINIMAL,
     )
 
-    writer.writerow(label for _key, label in LEDGER_COLUMNS)
+    writer.writerow(label for _key, label in columns)
 
     for row in rows:
         writer.writerow(
             format_csv_value(row[key])
-            for key, _label in LEDGER_COLUMNS
+            for key, _label in columns
         )
 
     # BOM para que Excel en español detecte UTF-8.
@@ -680,7 +818,10 @@ def ledger_to_xlsx(
     rows: list[dict[str, Any]],
     *,
     title: str,
+    direction: str = RECEIVED,
 ) -> bytes:
+    columns = ledger_columns(direction)
+
     from openpyxl import Workbook
     from openpyxl.styles import Font
     from openpyxl.styles import PatternFill
@@ -688,14 +829,14 @@ def ledger_to_xlsx(
 
     workbook = Workbook()
     sheet = workbook.active
-    sheet.title = "Facturas recibidas"
+    sheet.title = "Facturas expedidas" if direction == ISSUED else "Facturas recibidas"
 
     sheet.append([title])
     sheet["A1"].font = Font(bold=True, size=13)
     sheet.append([])
 
     header_row = 3
-    sheet.append([label for _key, label in LEDGER_COLUMNS])
+    sheet.append([label for _key, label in columns])
 
     header_fill = PatternFill("solid", fgColor="9E1B32")
 
@@ -711,7 +852,7 @@ def ledger_to_xlsx(
     for row in rows:
         values = []
 
-        for key, _label in LEDGER_COLUMNS:
+        for key, _label in columns:
             value = row[key]
 
             if isinstance(value, Decimal):
@@ -721,7 +862,7 @@ def ledger_to_xlsx(
 
         sheet.append(values)
 
-    for column_index, (key, label) in enumerate(LEDGER_COLUMNS, start=1):
+    for column_index, (key, label) in enumerate(columns, start=1):
         letter = get_column_letter(column_index)
 
         if key in money_keys:
@@ -747,7 +888,7 @@ def ledger_to_xlsx(
         )
 
         for column_index, (key, _label) in enumerate(
-            LEDGER_COLUMNS,
+            columns,
             start=1,
         ):
             if key not in money_keys:
@@ -786,11 +927,13 @@ def apply_document_filters(
     date_from: date | None,
     date_to: date | None,
     payment: str | None,
+    direction: str | None = None,
     today: date | None = None,
 ):
     current_day = today or date.today()
     needs_invoice = any(
-        (search, review_status, category, date_from, date_to, payment)
+        (search, review_status, category, date_from, date_to, payment,
+         direction)
     )
 
     if not needs_invoice:
@@ -801,12 +944,20 @@ def apply_document_filters(
         Invoice.document_id == Document.id,
     )
 
+    if direction:
+        statement = statement.where(
+            Invoice.id.is_not(None),
+            direction_clause(normalize_direction(direction)),
+        )
+
     if search:
         pattern = f"%{search.strip()}%"
         statement = statement.where(
             Document.original_filename.ilike(pattern)
             | Invoice.supplier_name.ilike(pattern)
             | Invoice.supplier_tax_id.ilike(pattern)
+            | Invoice.customer_name.ilike(pattern)
+            | Invoice.customer_tax_id.ilike(pattern)
             | Invoice.invoice_number.ilike(pattern)
             | Invoice.concept.ilike(pattern)
         )

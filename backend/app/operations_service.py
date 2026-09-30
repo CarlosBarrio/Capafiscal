@@ -368,6 +368,44 @@ def build_document_risks(
     return risks
 
 
+def build_extra_risks(database: Session) -> list[RiskItem]:
+    """Riesgos de notificaciones, plazos fiscales y cumplimiento."""
+    from app.agenda_service import build_agenda
+
+    severity_by_level = {
+        "overdue": "CRITICAL",
+        "critical": "CRITICAL",
+        "high": "HIGH",
+    }
+    risks: list[RiskItem] = []
+
+    for item in build_agenda(database, horizon_days=10)["items"]:
+        severity = severity_by_level.get(item["level"])
+
+        if severity is None:
+            continue
+
+        risks.append(
+            RiskItem(
+                code=item["code"],
+                severity=severity,
+                title=item["title"],
+                explanation=item["detail"],
+                recommended_action=item["action"],
+                entity_type=item["entity_type"],
+                entity_id=item["entity_id"],
+                document_id=item.get("document_id"),
+                amount=(
+                    Decimal(str(item["amount"]))
+                    if item.get("amount") is not None
+                    else None
+                ),
+            )
+        )
+
+    return risks
+
+
 def list_open_risks(
     database: Session,
     *,
@@ -382,17 +420,25 @@ def list_open_risks(
             "APPROVED",
             "REJECTED",
             "EXPORTED",
-        }:
+            "RESOLVED",
+        } or document.kind == "NOTIFICATION":
             continue
 
         risks.extend(build_document_risks(document))
 
-    risks.sort(
-        key=lambda risk: (
+    risks.extend(build_extra_risks(database))
+
+    def sort_key(risk: RiskItem) -> tuple[int, int, datetime]:
+        # SQLite devuelve fechas sin zona: se comparan todas sin zona.
+        created = risk.created_at.replace(tzinfo=None) if risk.created_at else datetime.max
+
+        return (
             RISK_SEVERITY_ORDER.get(risk.severity, 99),
-            risk.created_at or utc_now(),
+            0 if risk.created_at is None else 1,
+            created,
         )
-    )
+
+    risks.sort(key=sort_key)
 
     return [
         risk.to_dict()
@@ -749,9 +795,11 @@ def build_monthly_impact(
         if task.status == "RESOLVED"
     ]
 
+    from app.company_service import hourly_cost as configured_hourly_cost
+
     minutes_per_processed_document = 7
     minutes_per_risk_prevented = 12
-    hourly_cost = Decimal("25.00")
+    hourly_cost = configured_hourly_cost(database)
 
     saved_minutes = (
         len(processed) * minutes_per_processed_document
@@ -774,7 +822,8 @@ def build_monthly_impact(
         "calculation_note": (
             "Estimación operativa: 7 minutos por documento procesado "
             "y 12 minutos adicionales por incidencia detectada, "
-            "valorados a 25 €/hora. No representa ahorro garantizado."
+            f"valorados a {float(hourly_cost):.0f} €/hora (configurable en "
+            "Mi empresa). No representa ahorro garantizado."
         ),
     }
 
@@ -965,9 +1014,137 @@ def assistant_answer(
             ),
         }
 
+    from app.bank_service import build_business_health
+    from app.notification_service import list_notifications
     from app.reports_service import build_payments_overview
     from app.reports_service import build_supplier_list
     from app.reports_service import build_vat_report
+    from app.tax_service import build_tax_calendar
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "notificacion",
+            "notificación",
+            "requerimiento",
+            "hacienda",
+            "apremio",
+            "embargo",
+            "multa",
+            "sancion",
+            "sanción",
+            "seguridad social",
+            "dehu",
+            "dehú",
+        )
+    ):
+        open_notifications = list_notifications(database, only_open=True)
+
+        if not open_notifications:
+            return {
+                "answer": "No tienes notificaciones administrativas abiertas.",
+                "sources": [],
+                "mode": "internal_data",
+                "warning": "Solo se consideran notificaciones registradas en CapaFiscal.",
+            }
+
+        first = open_notifications[0]
+        answer = (
+            f"Tienes {len(open_notifications)} notificación(es) abierta(s). "
+            f"La más urgente: {first['title']}"
+        )
+
+        if first["deadline"]:
+            answer += f", con plazo orientativo hasta el {format_day(first['deadline'])}"
+
+            if first["days_left"] is not None and first["days_left"] < 0:
+                answer += " (ya vencido: actúa cuanto antes)"
+
+        answer += "."
+
+        return {
+            "answer": answer,
+            "sources": [
+                {
+                    "type": "notification",
+                    "document_id": item["document_id"],
+                    "label": (
+                        f"{item['title']}"
+                        + (f" · vence {format_day(item['deadline'])}" if item["deadline"] else "")
+                    ),
+                }
+                for item in open_notifications[:5]
+            ],
+            "mode": "internal_data",
+            "warning": (
+                "Plazos orientativos calculados por reglas; confírmalos con "
+                "tu asesor y la fecha real de notificación."
+            ),
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in ("calendario", "presentar", "proximo modelo", "próximo modelo", "plazos fiscales", "que modelos", "qué modelos")
+    ):
+        today = date.today()
+        upcoming = [
+            entry
+            for entry in build_tax_calendar(database, year=today.year)["entries"]
+            + build_tax_calendar(database, year=today.year + 1)["entries"]
+            if entry["status"] in {"OVERDUE", "DUE_SOON", "UPCOMING"}
+        ][:6]
+
+        if not upcoming:
+            return {
+                "answer": "No hay modelos pendientes de presentar en el calendario.",
+                "sources": [],
+                "mode": "internal_data",
+                "warning": "Calendario general de la AEAT; revisa obligaciones específicas.",
+            }
+
+        listing = "; ".join(
+            f"{entry['model']} {entry['period_label']} hasta el {format_day(entry['due_date'])}"
+            + (f" (≈ {format_eur(entry['estimate'])})" if entry.get("estimate") else "")
+            for entry in upcoming[:4]
+        )
+
+        return {
+            "answer": f"Próximas obligaciones: {listing}.",
+            "sources": [],
+            "mode": "internal_data",
+            "warning": "Importes estimados con facturas aprobadas; no son autoliquidaciones.",
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in ("beneficio", "negocio", "margen", "cobrar", "cobros", "me deben", "facturado", "ingresos", "tesoreria", "tesorería", "caja")
+    ):
+        today = date.today()
+        health = build_business_health(
+            database,
+            year=today.year,
+            quarter=(today.month - 1) // 3 + 1,
+        )
+        answer = (
+            f"{health['period']}: ingresos {format_eur(health['income'])}, gastos "
+            f"{format_eur(health['expenses'])} y resultado {format_eur(health['result'])}."
+            f" Pendiente de cobro: {format_eur(health['receivables_total'])}"
+            + (f" ({format_eur(health['receivables_overdue'])} vencido)" if health["receivables_overdue"] else "")
+            + f"; pendiente de pago: {format_eur(health['payables_total'])}."
+        )
+
+        if health["bank_balance"] is not None:
+            answer += f" Saldo en banco: {format_eur(health['bank_balance'])}."
+
+        if health["insights"]:
+            answer += " " + " ".join(health["insights"][:2])
+
+        return {
+            "answer": answer,
+            "sources": [],
+            "mode": "internal_data",
+            "warning": health["note"],
+        }
 
     if any(
         keyword in normalized_question
@@ -1079,6 +1256,16 @@ def assistant_answer(
                 f"{format_eur(report['total_withholding'])}."
             )
 
+        if quarter:
+            from app.tax_service import build_model_303
+
+            model_303 = build_model_303(database, year=year, quarter=quarter)
+            answer += (
+                f" IVA repercutido en ventas: {format_eur(report['issued_tax'])}. "
+                f"Resultado estimado del modelo 303: "
+                f"{format_eur(model_303['result'])} ({model_303['outcome'].lower()})."
+            )
+
         if report["warnings"]:
             answer += " " + " ".join(report["warnings"])
 
@@ -1156,10 +1343,12 @@ def assistant_answer(
         if document.invoice is not None
     ]
 
+    # Solo gastos: las emitidas se consultan en impuestos y negocio.
     approved_invoices = [
         invoice
         for invoice in invoices
         if invoice.review_status == "APPROVED"
+        and invoice.direction != "ISSUED"
     ]
 
     open_tasks_statement = (

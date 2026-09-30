@@ -2,21 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
-from typing import Annotated
 from typing import Any
 
 from fastapi import Body
-from fastapi import Depends
 from fastapi import FastAPI
 from fastapi import File
-from fastapi import Header
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import UploadFile
@@ -30,13 +26,14 @@ from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.inspection import inspect as sqlalchemy_inspect
-from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import SessionLocal
 from app.database import create_database_tables
-from app.database import get_db
+from app.deps import ActorHeader
+from app.deps import DatabaseDependency
+from app.deps import normalize_actor
 from app.invoice_service import add_audit_event
 from app.invoice_service import approve_invoice
 from app.invoice_service import get_document
@@ -56,12 +53,15 @@ from app.operations_service import build_today_dashboard
 from app.operations_service import connector_catalog
 from app.operations_service import list_open_risks
 from app.extractor import CATEGORY_ACCOUNTS
+from app.business_routes import router as business_router
 from app.outlook_connector import router as outlook_router
 from app.reports_service import apply_document_filters
 from app.reports_service import build_ledger_rows
 from app.reports_service import build_payments_overview
 from app.reports_service import build_supplier_list
 from app.reports_service import build_vat_report
+from app.reports_service import ISSUED
+from app.reports_service import normalize_direction
 from app.reports_service import ledger_to_csv
 from app.reports_service import ledger_to_xlsx
 from app.reports_service import period_label
@@ -98,24 +98,8 @@ STATIC_DIRECTORY = APP_DIRECTORY / "static"
 
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
-SAFE_ACTOR_PATTERN = re.compile(
-    r"[^a-zA-Z0-9@._\-\s]"
-)
-
-
 class InvoiceApprovalRequest(BaseModel):
     force: bool = False
-
-
-DatabaseDependency = Annotated[
-    Session,
-    Depends(get_db),
-]
-
-ActorHeader = Annotated[
-    str | None,
-    Header(alias="X-Actor"),
-]
 
 
 def orm_to_dict(
@@ -132,20 +116,6 @@ def orm_to_dict(
             for attribute in mapper.column_attrs
         }
     )
-
-
-def normalize_actor(
-    actor: str | None,
-) -> str:
-    if not actor:
-        return "usuario-local"
-
-    cleaned = SAFE_ACTOR_PATTERN.sub(
-        "",
-        actor,
-    ).strip()
-
-    return cleaned[:100] or "usuario-local"
 
 
 def clean_original_filename(
@@ -319,6 +289,7 @@ app = FastAPI(
 )
 
 app.include_router(outlook_router)
+app.include_router(business_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -338,7 +309,9 @@ app.add_middleware(
     allow_methods=[
         "GET",
         "POST",
+        "PUT",
         "PATCH",
+        "DELETE",
         "OPTIONS",
     ],
     allow_headers=[
@@ -535,10 +508,15 @@ def list_suppliers(
         alias="q",
         max_length=200,
     ),
+    direction: str = Query(
+        default="RECEIVED",
+        pattern="^(RECEIVED|ISSUED|received|issued)$",
+    ),
 ) -> list[dict[str, Any]]:
     return build_supplier_list(
         database,
         search=search,
+        direction=normalize_direction(direction),
     )
 
 
@@ -548,8 +526,15 @@ def list_suppliers(
 )
 def payments_overview(
     database: DatabaseDependency,
+    direction: str = Query(
+        default="RECEIVED",
+        pattern="^(RECEIVED|ISSUED|received|issued)$",
+    ),
 ) -> dict[str, Any]:
-    return build_payments_overview(database)
+    return build_payments_overview(
+        database,
+        direction=normalize_direction(direction),
+    )
 
 
 @app.get(
@@ -566,21 +551,33 @@ def export_ledger(
     year: int | None = Query(default=None, ge=2000, le=2100),
     quarter: int | None = Query(default=None, ge=1, le=4),
     include_pending: bool = Query(default=False),
+    book: str = Query(
+        default="received",
+        pattern="^(received|issued)$",
+    ),
     actor_header: ActorHeader = None,
 ) -> Response:
     selected_year, selected_quarter = resolve_period(year, quarter)
     date_from, date_to = quarter_range(selected_year, selected_quarter)
+    direction = normalize_direction(book)
 
     rows = build_ledger_rows(
         database,
         date_from=date_from,
         date_to=date_to,
         include_pending=include_pending,
+        direction=direction,
     )
 
     label = period_label(selected_year, selected_quarter)
+    book_slug = "expedidas" if direction == ISSUED else "recibidas"
+    book_title = (
+        "Libro registro de facturas expedidas"
+        if direction == ISSUED
+        else "Libro registro de facturas recibidas"
+    )
     file_stem = (
-        f"libro_facturas_recibidas_{selected_year}"
+        f"libro_facturas_{book_slug}_{selected_year}"
         + (f"_{selected_quarter}T" if selected_quarter else "")
     )
 
@@ -595,13 +592,14 @@ def export_ledger(
             "period": label,
             "rows": len(rows),
             "include_pending": include_pending,
+            "book": book,
         },
     )
     database.commit()
 
     if export_format == "csv":
         return Response(
-            content=ledger_to_csv(rows),
+            content=ledger_to_csv(rows, direction),
             media_type="text/csv; charset=utf-8",
             headers={
                 "Content-Disposition": (
@@ -614,9 +612,10 @@ def export_ledger(
         content=ledger_to_xlsx(
             rows,
             title=(
-                f"Libro registro de facturas recibidas · {label}"
+                f"{book_title} · {label}"
                 + (" (incluye pendientes)" if include_pending else "")
             ),
+            direction=direction,
         ),
         media_type=(
             "application/vnd.openxmlformats-officedocument."
@@ -1014,6 +1013,11 @@ def list_documents(
         default=None,
         pattern="^(paid|unpaid|overdue)$",
     ),
+    direction: str | None = Query(
+        default=None,
+        pattern="^(RECEIVED|ISSUED|received|issued)$",
+    ),
+    kind: str | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=500),
 ) -> list[Document]:
@@ -1027,7 +1031,18 @@ def list_documents(
         date_from=date_from,
         date_to=date_to,
         payment=payment,
+        direction=direction,
     )
+
+    if kind:
+        normalized_kind = kind.strip().upper()
+
+        if normalized_kind == "INVOICE":
+            statement = statement.where(
+                (Document.kind.is_(None)) | (Document.kind == "INVOICE")
+            )
+        else:
+            statement = statement.where(Document.kind == normalized_kind)
 
     statement = (
         statement
