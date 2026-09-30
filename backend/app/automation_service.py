@@ -181,7 +181,37 @@ def job_digest(database: Session, now: datetime) -> tuple[int, str]:
     return 1, f"Resumen preparado: {digest['headline']}."
 
 
+def job_agents(database: Session, now: datetime) -> tuple[int, str]:
+    from app.agents.orchestrator import process_pending
+
+    cases = process_pending(database, trigger="schedule", today=now.date())
+    if not cases:
+        return 0, "Sin notificaciones nuevas que trabajar."
+    return len(cases), f"{len(cases)} notificación(es) trabajadas de punta a punta: " + ", ".join(case.code for case in cases) + "."
+
+
+def job_anomalies(database: Session, now: datetime) -> tuple[int, str]:
+    from app.agents.detector import run_anomaly_scan
+
+    result = run_anomaly_scan(database, trigger="schedule", today=now.date())
+    if not result["created"] and not result["closed"]:
+        return 0, f"Todo cuadra ({result['found']} aviso(s) ya conocidos)." if result["found"] else "Todo cuadra: sin anomalías."
+    return result["created"], f"{result['created']} anomalía(s) nuevas y {result['closed']} cerrada(s) solas."
+
+
+def job_follow_up(database: Session, now: datetime) -> tuple[int, str]:
+    from app.agents.perseguidor import follow_up
+
+    result = follow_up(database, today=now.date())
+    if not result["reminders"]:
+        return 0, "Nada que recordar: no hay documentación pedida sin respuesta."
+    return result["reminders"], f"{result['reminders']} recordatorio(s) preparados" + (f"; {result['escalated']} expediente(s) escalados" if result["escalated"] else "") + "."
+
+
 AUTOMATIONS: tuple[Automation, ...] = (
+    Automation("AGENT_PIPELINE", "Orquestador de expedientes", "Cada notificación nueva recorre los agentes de punta a punta: la detecta, la asigna, mira el impacto fiscal, busca antecedentes, reúne la documentación y prepara la respuesta.", "Cada 5 minutos", 0, 5, "interval", job_agents, 45, "Agente", "expedientes"),
+    Automation("ANOMALY_SCAN", "Detector de anomalías", "Cruza facturas, banco e histórico y abre un expediente cuando algo no cuadra: importes atípicos, duplicados, IVA inusual, facturas que faltan o pagos sin factura.", "Cada día · 06:45", 6, 45, "daily", job_anomalies, 15, "Agente", "expedientes"),
+    Automation("FOLLOW_UP", "Perseguidor de documentación", "Recuerda a quien debe aportar documentación, con cortesía creciente, hasta que la sube; después la verifica.", "Cada día · 09:30", 9, 30, "daily", job_follow_up, 10, "Agente", "expedientes"),
     Automation("BANK_MATCH", "Conciliación bancaria", "Cruza los movimientos importados con facturas pendientes y propone el cobro o pago.", "Cada día · 06:30", 6, 30, "daily", job_bank, 3, "Finanzas", "negocio"),
     Automation("RECURRING_INVOICES", "Facturas recurrentes", "Genera (y emite si lo indicas) las cuotas, igualas y alquileres que se facturan cada periodo.", "Cada día · 07:00", 7, 0, "daily", job_recurring, 10, "Ventas", "ventas"),
     Automation("DAILY_DIGEST", "Resumen diario", "Prepara un correo con lo urgente del día: plazos, cobros, mensajes y fichajes.", "Cada día · 07:30", 7, 30, "daily", job_digest, 5, "Agente", "panel"),
@@ -285,6 +315,12 @@ def get_setting(database: Session, code: str) -> AutomationSetting:
 def is_due(automation: Automation, setting: AutomationSetting, now: datetime) -> bool:
     if not setting.enabled:
         return False
+    if automation.cadence == "interval":
+        last = setting.last_run_at
+        if last is None:
+            return True
+        last = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+        return (now - last).total_seconds() >= automation.minute * 60
     if (now.hour, now.minute) < (automation.hour, automation.minute):
         return False
 
@@ -368,6 +404,8 @@ def serialize_run(run: AutomationRun) -> dict[str, Any]:
 def next_run_label(automation: Automation, setting: AutomationSetting, now: datetime) -> str:
     if not setting.enabled:
         return "Desactivada"
+    if automation.cadence == "interval":
+        return f"Cada {automation.minute} minutos"
     if is_due(automation, setting, now):
         return "En la próxima comprobación"
     at = f"{automation.hour:02d}:{automation.minute:02d}"

@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     smtp_use_ssl: bool = False
 
+    # IA opcional (Claude). Sin clave, los agentes usan reglas y plantillas.
+    anthropic_api_key: str = ""
+    agent_model: str = "claude-opus-5-5"
+    # Dirección pública para los enlaces de subida de documentos.
+    public_base_url: str = "http://127.0.0.1:8000"
+
     # Automatizaciones programadas del agente (se desactivan en los tests).
     enable_scheduler: bool = True
 

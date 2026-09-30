@@ -1566,3 +1566,178 @@ class AutomationRun(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ---------------------------------------------------------------------
+# AGENTES: expedientes, trazas de ejecución y peticiones de documentación
+# ---------------------------------------------------------------------
+
+
+class Case(Base):
+    """Expediente: la unidad de trabajo que recorren los agentes."""
+
+    __tablename__ = "cases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    # NOTIFICATION, ANOMALY
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    # Tipo de trámite: REQUERIMIENTO, EMBARGO_CREDITOS, ANOMALIA_IMPORTE…
+    procedure: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # OPEN, WAITING_HUMAN, WAITING_DOCS, READY_TO_FILE, FILED, RESOLVED, DISMISSED
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="OPEN", index=True)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # critical, high, normal, low
+    level: Mapped[str] = mapped_column(String(10), nullable=False, default="normal")
+    headline: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # A quién afecta (en una gestoría, el cliente de la cartera).
+    subject_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    subject_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    subject_tax_id: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    subject_ref_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    organism: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    deadline: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    internal_deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+
+    facts: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    required_documents: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    proposed_actions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    antecedents: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    draft_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    draft_edited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    notification_id: Mapped[int | None] = mapped_column(
+        ForeignKey("fiscal_notifications.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+    # Clave para no duplicar anomalías de la misma condición.
+    fingerprint: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
+
+    filed_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    filing_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    events: Mapped[list[CaseEvent]] = relationship(
+        back_populates="case", cascade="all, delete-orphan", order_by="CaseEvent.id"
+    )
+    attachments: Mapped[list[CaseAttachment]] = relationship(
+        back_populates="case", cascade="all, delete-orphan", order_by="CaseAttachment.id"
+    )
+    requests: Mapped[list[DocumentRequest]] = relationship(
+        back_populates="case", cascade="all, delete-orphan", order_by="DocumentRequest.id"
+    )
+
+
+class CaseEvent(Base):
+    """Línea de tiempo del expediente: pasos de agentes y acciones humanas."""
+
+    __tablename__ = "case_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    # agent, human, message, document, system
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    actor: Mapped[str] = mapped_column(String(80), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    case: Mapped[Case] = relationship(back_populates="events")
+
+
+class CaseAttachment(Base):
+    __tablename__ = "case_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # user, client, agent
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
+    verification: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    case: Mapped[Case] = relationship(back_populates="attachments")
+
+
+class DocumentRequest(Base):
+    """Petición de documentación que persigue el agente hasta recibirla."""
+
+    __tablename__ = "document_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    to_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    to_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # PENDING, RECEIVED, CANCELLED
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING", index=True)
+    reminders_sent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_contact_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_reminder_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    attachment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("case_attachments.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    case: Mapped[Case] = relationship(back_populates="requests")
+
+
+class AgentRun(Base):
+    """Una ejecución del orquestador (un recorrido completo de agentes)."""
+
+    __tablename__ = "agent_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pipeline: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    trigger: Mapped[str] = mapped_column(String(40), nullable=False)
+    case_id: Mapped[int | None] = mapped_column(ForeignKey("cases.id", ondelete="SET NULL"), nullable=True, index=True)
+    # RUNNING, OK, PARTIAL, ERROR
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="RUNNING")
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    steps: Mapped[list[AgentStep]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", order_by="AgentStep.position"
+    )
+
+
+class AgentStep(Base):
+    __tablename__ = "agent_steps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    agent: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    # OK, SKIPPED, ERROR
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    output: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    # "reglas" o el modelo de IA que participó
+    engine: Mapped[str] = mapped_column(String(60), nullable=False, default="reglas")
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    run: Mapped[AgentRun] = relationship(back_populates="steps")

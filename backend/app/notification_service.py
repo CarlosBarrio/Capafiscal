@@ -112,12 +112,20 @@ def detect_issuer(normalized: str) -> str | None:
     return None
 
 
-def detect_type(normalized: str) -> str:
+def _type_in(normalized: str) -> str | None:
     for notification_type, keywords in TYPE_KEYWORDS:
-        if any(keyword in normalized for keyword in keywords):
-            return notification_type
+        for keyword in keywords:
+            # Palabra completa: «autoliquidación» no es una liquidación.
+            if re.search(rf"(?<![a-z]){re.escape(keyword)}", normalized):
+                return notification_type
+    return None
 
-    return "OTRO"
+
+def detect_type(normalized: str) -> str:
+    """El título del acto (primeras líneas) manda sobre el resto del texto."""
+    head_lines = [line for line in normalized.splitlines() if line.strip()][:8]
+    head = "\n".join(head_lines)
+    return _type_in(head) or _type_in(normalized) or "OTRO"
 
 
 def detect_notification(
@@ -207,13 +215,23 @@ def looks_like_administrative_act(text: str) -> bool:
     plazo, y sin mencionar «factura».
     """
     normalized = normalize_search_text(text)
+    is_act = detect_issuer(normalized) is not None and detect_type(normalized) in STRONG_TYPES
 
-    if "factura" in normalized:
+    if not is_act:
         return False
 
+    if "factura" not in normalized:
+        return True
+
+    # Un requerimiento suele pedir facturas: si la cabecera es la de un
+    # organismo con un acto claro y no tiene la estructura de una factura
+    # (base imponible + total), es una notificación.
+    head = normalize_search_text("\n".join(text.splitlines()[:12]))
+    looks_like_invoice = "base imponible" in normalized and ("total factura" in normalized or "importe total" in normalized)
     return (
-        detect_issuer(normalized) is not None
-        and detect_type(normalized) in STRONG_TYPES
+        not looks_like_invoice
+        and detect_issuer(head) is not None
+        and detect_type(head) in STRONG_TYPES
     )
 
 

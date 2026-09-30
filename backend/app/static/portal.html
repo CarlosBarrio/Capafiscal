@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Enviar documentación · CapaFiscal</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --surface: #fff; --line: #e8e5df; --ink: #1c1b19; --muted: #756f67;
+    --brand: #8c1d33; --brand-050: #f8eef0; --green: #1a7a4c; --green-bg: #e8f4ed; --amber: #8f5f00; --amber-bg: #fbf2de;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); color: var(--ink); font: 15px/1.5 "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .card { width: min(520px, 100%); padding: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 1px 2px rgba(28,25,20,.04), 0 12px 32px rgba(28,25,20,.06); }
+  .brand { display: flex; gap: 10px; align-items: center; margin-bottom: 20px; color: var(--muted); font-size: 13px; }
+  .mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--brand); color: #fff; font: 700 12px Georgia, serif; }
+  h1 { margin: 0 0 6px; font: 600 24px/1.2 "Source Serif 4", Georgia, serif; }
+  p { margin: 0 0 14px; color: var(--muted); }
+  .what { margin: 18px 0; padding: 14px 16px; border-radius: 12px; background: var(--brand-050); }
+  .what strong { display: block; color: var(--brand); }
+  .drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 26px 16px; border: 1.5px dashed #d8d3ca; border-radius: 12px; cursor: pointer; text-align: center; transition: border-color .15s, background .15s; }
+  .drop:hover, .drop.over { border-color: var(--brand); background: #fcf8f9; }
+  .drop input { display: none; }
+  .file { font-weight: 600; }
+  button { width: 100%; margin-top: 14px; padding: 12px; border: none; border-radius: 10px; background: var(--brand); color: #fff; font: 600 15px inherit; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .result { margin-top: 16px; padding: 12px 14px; border-radius: 10px; font-size: 14px; }
+  .ok { background: var(--green-bg); color: #14563a; }
+  .warn { background: var(--amber-bg); color: #6b4700; }
+  .hidden { display: none; }
+  small { color: var(--muted); }
+</style>
+</head>
+<body>
+<main class="card">
+  <div class="brand"><span class="mark">CF</span><span id="company">CapaFiscal</span></div>
+  <h1>Enviar documentación</h1>
+  <p id="intro">Cargando la petición…</p>
+  <div class="what hidden" id="what"><small>Te pedimos</small><strong id="label"></strong><small id="meta"></small></div>
+  <form id="form" class="hidden">
+    <label class="drop" id="drop">
+      <input type="file" id="file" name="uploaded_file" accept=".pdf,.jpg,.jpeg,.png,.txt,.xlsx,.xls,.csv,.doc,.docx,.zip">
+      <span class="file" id="fileName">Pulsa para elegir el archivo</span>
+      <small>o arrástralo aquí · PDF, imagen, Excel o Word, hasta 15 MB</small>
+    </label>
+    <button type="submit" id="send" disabled>Enviar</button>
+  </form>
+  <div class="result hidden" id="result"></div>
+</main>
+<script>
+  const token = location.pathname.split("/").filter(Boolean).pop();
+  const $ = (id) => document.getElementById(id);
+  const text = (id, value) => { $(id).textContent = value; };
+
+  fetch(`/api/portal/${encodeURIComponent(token)}`).then(async (response) => {
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Enlace no válido.");
+    if (data.company) text("company", data.company);
+    text("label", data.label);
+    const parts = [data.case_title, data.reference ? `ref. ${data.reference}` : null,
+      data.deadline ? `antes del ${data.deadline.split("-").reverse().join("/")}` : null].filter(Boolean);
+    text("meta", parts.join(" · "));
+    $("what").classList.remove("hidden");
+    if (data.status === "RECEIVED") {
+      text("intro", "Ya recibimos este documento. Si quieres, puedes enviar una versión nueva.");
+    } else if (data.status === "CANCELLED") {
+      text("intro", "Esta petición ya no está activa. No hace falta que envíes nada.");
+      return;
+    } else {
+      text("intro", "Sube el documento y lo incorporamos al expediente. No necesitas usuario ni contraseña.");
+    }
+    $("form").classList.remove("hidden");
+  }).catch((error) => text("intro", error.message));
+
+  const input = $("file");
+  const drop = $("drop");
+  input.addEventListener("change", () => {
+    text("fileName", input.files[0]?.name || "Pulsa para elegir el archivo");
+    $("send").disabled = !input.files.length;
+  });
+  ["dragover", "dragenter"].forEach((name) => drop.addEventListener(name, (event) => { event.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((name) => drop.addEventListener(name, () => drop.classList.remove("over")));
+  drop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    input.files = event.dataTransfer.files;
+    input.dispatchEvent(new Event("change"));
+  });
+
+  $("form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const body = new FormData();
+    body.append("uploaded_file", input.files[0]);
+    $("send").disabled = true;
+    text("send", "Enviando…");
+    try {
+      const response = await fetch(`/api/portal/${encodeURIComponent(token)}`, { method: "POST", body });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "No se pudo enviar.");
+      const ok = data.verification?.status === "ok";
+      const result = $("result");
+      result.className = `result ${ok || data.verification?.status === "unverified" ? "ok" : "warn"}`;
+      result.textContent = ok || data.verification?.status === "unverified"
+        ? "¡Recibido! Ya está en el expediente. Gracias."
+        : "Recibido. Lo revisaremos porque no hemos podido confirmar que sea el documento pedido; si no lo es, te avisaremos.";
+      $("form").classList.add("hidden");
+    } catch (error) {
+      const result = $("result");
+      result.className = "result warn";
+      result.textContent = error.message;
+      $("send").disabled = false;
+      text("send", "Enviar");
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -57,6 +58,8 @@ from app.business_routes import router as business_router
 from app.outlook_connector import router as outlook_router
 from app.team_routes import router as team_router
 from app.ops_routes import router as ops_router
+from app.agent_routes import portal_router
+from app.agent_routes import router as agent_router
 from app.reports_service import apply_document_filters
 from app.reports_service import build_ledger_rows
 from app.reports_service import build_payments_overview
@@ -252,6 +255,28 @@ def get_missing_invoice_fields(
     return missing_fields
 
 
+def run_agents_for_document(database, document_id: int | None) -> None:
+    """Si el documento es una notificación, el orquestador la trabaja ya."""
+    if not document_id:
+        return
+
+    from sqlalchemy import select as sql_select
+
+    from app.agents.orchestrator import process_notification
+    from app.models import FiscalNotification
+
+    try:
+        notification = database.scalar(
+            sql_select(FiscalNotification).where(FiscalNotification.document_id == document_id)
+        )
+        if notification is not None:
+            process_notification(database, notification.id, trigger="upload")
+            database.commit()
+    except Exception:
+        database.rollback()
+        logging.getLogger(__name__).exception("Los agentes no pudieron procesar el documento %s", document_id)
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     settings.data_dir.mkdir(
@@ -301,6 +326,8 @@ app.include_router(outlook_router)
 app.include_router(business_router)
 app.include_router(team_router)
 app.include_router(ops_router)
+app.include_router(agent_router)
+app.include_router(portal_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -959,6 +986,8 @@ async def upload_document(
             document=failed_document,
         )
 
+    run_agents_for_document(database, document_id)
+
     processed_document = get_document(
         database,
         document_id,
@@ -1306,6 +1335,8 @@ def reprocess_document(
             message=f"El reprocesamiento falló. Error: {error}",
             document=failed_document,
         )
+
+    run_agents_for_document(database, document_id)
 
     processed_document = get_document(
         database,

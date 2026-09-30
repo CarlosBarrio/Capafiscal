@@ -304,6 +304,11 @@ def post_notification(
         actor=normalize_actor(actor_header),
     )
     database.commit()
+
+    from app.agents.orchestrator import process_notification
+
+    process_notification(database, notification.id, trigger="manual")
+    database.commit()
     database.refresh(notification)
 
     return serialize_notification(notification)

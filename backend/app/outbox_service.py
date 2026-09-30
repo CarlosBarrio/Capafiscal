@@ -37,6 +37,7 @@ KIND_LABELS = {
     "PAYSLIP": "Recibo de nómina",
     "DIGEST": "Resumen del agente",
     "ADVISOR": "Gestoría",
+    "REQUEST": "Petición de documentación",
     "OTHER": "Mensaje",
 }
 STATUS_LABELS = {"DRAFT": "Pendiente de revisar", "SENT": "Enviado", "DISCARDED": "Descartado", "FAILED": "Error al enviar"}
