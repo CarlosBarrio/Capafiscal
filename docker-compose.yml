@@ -1,0 +1,18 @@
+services:
+  capafiscal:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATA_DIR: /data
+      UPLOAD_DIR: /data/uploads
+      DATABASE_URL: sqlite:////data/capafiscal.db
+    volumes:
+      - capafiscal-data:/data
+    restart: unless-stopped
+
+volumes:
+  capafiscal-data:
