@@ -25,7 +25,7 @@ except ImportError:
 
 
 EXTRACTOR_NAME = "capafiscal.generic_invoice"
-EXTRACTOR_VERSION = "2.1.0"
+EXTRACTOR_VERSION = "2.2.0"
 
 CENT = Decimal("0.01")
 AMOUNT_TOLERANCE = Decimal("0.03")
@@ -78,7 +78,8 @@ DATE_PATTERN = re.compile(
 
 INVOICE_NUMBER_PATTERNS = (
     re.compile(
-        r"(?:factura|fra\.?)\s*"
+        # "FRA-2026-001": FRA es parte del número, no una etiqueta.
+        r"\b(?:factura|fra\.?)(?![-/_]?\d)\s*"
         r"(?:n[úu]mero|n[º°o.]|num\.?)?"
         r"\s*[:#\-]?\s*"
         r"([A-Z0-9][A-Z0-9 ./_-]{1,30})",
@@ -152,6 +153,16 @@ NAME_REJECT_WORDS = (
     "domicilio",
     "direccion",
     "codigo cliente",
+    "descripcion",
+    "concepto",
+    "importe",
+    "base imponible",
+    "subtotal",
+    "cantidad",
+    "precio",
+    "forma de pago",
+    "vencimiento",
+    "pagina",
 )
 
 
@@ -639,6 +650,20 @@ def clean_invoice_number(value: str | None) -> str | None:
         flags=re.IGNORECASE,
     )[0].strip(" .,:;-")
 
+    # Descarta palabras finales sin dígitos ("2026-001 MADRID").
+    tokens = candidate.split(" ")
+    last_digit_token = max(
+        (
+            index
+            for index, token in enumerate(tokens)
+            if re.search(r"\d", token)
+        ),
+        default=-1,
+    )
+
+    if last_digit_token >= 0:
+        candidate = " ".join(tokens[:last_digit_token + 1])
+
     if len(candidate) < 3 or len(candidate) > 30:
         return None
 
@@ -646,6 +671,9 @@ def clean_invoice_number(value: str | None) -> str | None:
         return None
 
     if re.fullmatch(r"\d{1,2}", candidate):
+        return None
+
+    if DATE_PATTERN.fullmatch(candidate):
         return None
 
     return candidate.upper()
@@ -708,6 +736,67 @@ def select_primary_pages(page_texts: list[str]) -> tuple[str, list[int]]:
     return clean_text("\n".join(selected)), selected_indexes
 
 
+def label_role_in_text(text: str) -> str | None:
+    """
+    Devuelve el rol ("customer" o "supplier") de la etiqueta más
+    cercana al final del texto, o None si no hay etiqueta.
+    """
+    normalized = normalize_search_text(text)
+    best_role: str | None = None
+    best_position = -1
+
+    for role, labels in (
+        ("customer", CUSTOMER_LABELS),
+        ("supplier", SUPPLIER_LABELS),
+    ):
+        for label in labels:
+            for match in re.finditer(
+                rf"\b{re.escape(label)}\b",
+                normalized,
+            ):
+                if match.start() > best_position:
+                    best_position = match.start()
+                    best_role = role
+
+    return best_role
+
+
+def tax_id_label_role(
+    lines: list[str],
+    line_index: int,
+    text_before_match: str,
+) -> str | None:
+    """
+    Decide a quién pertenece un NIF/CIF mirando solo el texto previo
+    de su propia línea y las líneas anteriores. Las líneas posteriores
+    no se usan: suelen pertenecer al bloque de la otra parte.
+    """
+    same_line_role = label_role_in_text(text_before_match)
+
+    if same_line_role:
+        return same_line_role
+
+    for offset in range(1, 4):
+        previous_index = line_index - offset
+
+        if previous_index < 0:
+            break
+
+        previous_line = lines[previous_index]
+
+        # Una línea anterior con su propio NIF cierra el bloque:
+        # su etiqueta pertenece a ese otro NIF.
+        if TAX_ID_PATTERN.search(previous_line):
+            break
+
+        role = label_role_in_text(previous_line)
+
+        if role:
+            return role
+
+    return None
+
+
 def find_tax_id_candidates(
     text: str,
 ) -> list[dict[str, Any]]:
@@ -732,21 +821,20 @@ def find_tax_id_candidates(
             start = max(0, line_index - 3)
             end = min(len(lines), line_index + 4)
             context = " | ".join(lines[start:end])
-            normalized_context = normalize_search_text(context)
 
             role = "unknown"
             confidence = 60
 
-            if any(
-                label in normalized_context
-                for label in CUSTOMER_LABELS
-            ):
+            label_role = tax_id_label_role(
+                lines,
+                line_index,
+                line[:match.start()],
+            )
+
+            if label_role == "customer":
                 role = "customer"
                 confidence = 85
-            elif any(
-                label in normalized_context
-                for label in SUPPLIER_LABELS
-            ):
+            elif label_role == "supplier":
                 role = "supplier"
                 confidence = 90
             elif line_index <= max(10, len(lines) // 4):
@@ -920,9 +1008,35 @@ def clean_company_name_candidate(
         candidate,
     )
 
-    candidate = candidate.strip(
-        " \t:-|,.;"
+    # Títulos del documento que comparten línea con el emisor:
+    # "EMPRESA S.A.   FACTURA" o "FACTURA SIMPLIFICADA".
+    candidate = re.sub(
+        r"(?i)\b(?:factura(?:\s+simplificada|\s+rectificativa)?"
+        r"|invoice)\b\s*$",
+        "",
+        candidate.strip(),
     )
+
+    # Etiquetas iniciales: "Cliente: EMPRESA S.L." -> "EMPRESA S.L."
+    candidate = re.sub(
+        r"(?i)^\s*(?:emisor|proveedor|cliente|destinatario|receptor"
+        r"|raz[oó]n social|facturar a|datos del proveedor"
+        r"|datos de cliente)\s*[:.\-]\s*",
+        "",
+        candidate,
+    )
+
+    candidate = candidate.strip(
+        " \t:-|,;"
+    )
+
+    # Conserva el punto final de abreviaturas societarias (S.A., S.L.U.)
+    # y elimina el resto de puntos finales.
+    candidate = re.sub(
+        r"(?<!\b[A-Za-z])\.+$",
+        "",
+        candidate,
+    ).strip()
 
     candidate = re.sub(
         r"\s+",
@@ -992,6 +1106,24 @@ def company_name_near_tax_id(
                 continue
 
             candidate_line = lines[candidate_index]
+
+            # Una línea con otro NIF pertenece a la otra parte.
+            other_tax_ids = {
+                normalize_tax_id(match.group(0))
+                for match in TAX_ID_PATTERN.finditer(candidate_line)
+            } - {normalized_tax_id}
+
+            if other_tax_ids:
+                continue
+
+            opposite_role = (
+                "customer"
+                if role == "supplier"
+                else "supplier"
+            )
+
+            if label_role_in_text(candidate_line) == opposite_role:
+                continue
 
             candidate = clean_company_name_candidate(
                 candidate_line,
@@ -1068,6 +1200,33 @@ def company_name_near_tax_id(
         source=f"{role}_name_near_tax_id",
         evidence=evidence[:300],
     )
+
+
+def company_name_from_header(
+    text: str,
+) -> ExtractedField:
+    """
+    Respaldo: el emisor suele figurar en las primeras líneas.
+    Se devuelve con confianza moderada para forzar revisión.
+    """
+    for line in get_lines(text)[:5]:
+        if TAX_ID_PATTERN.search(line):
+            continue
+
+        if label_role_in_text(line) == "customer":
+            continue
+
+        candidate = clean_company_name_candidate(line, None)
+
+        if looks_like_company_name(candidate):
+            return ExtractedField(
+                value=candidate,
+                confidence=65,
+                source="supplier_name_header",
+                evidence=line[:300],
+            )
+
+    return ExtractedField()
 
 
 def find_invoice_number(
@@ -1197,9 +1356,11 @@ def find_invoice_number(
     if not candidates:
         return ExtractedField()
 
+    # A igual puntuación gana el candidato más completo
+    # ("FRA-2026-001" frente a "2026-001").
     score, value, evidence = max(
         candidates,
-        key=lambda item: item[0],
+        key=lambda item: (item[0], len(item[1])),
     )
 
     return ExtractedField(
@@ -1214,15 +1375,41 @@ def find_date_near_labels(
     text: str,
     labels: tuple[str, ...],
     source: str,
+    exclude_labels: tuple[str, ...] = (),
 ) -> ExtractedField:
     lines = get_lines(text)
     candidates: list[tuple[int, date, str]] = []
 
+    def is_excluded(normalized_value: str) -> bool:
+        return any(
+            label in normalized_value
+            for label in exclude_labels
+        )
+
     for line_index, line in enumerate(lines):
         normalized_line = normalize_search_text(line)
 
-        if not any(label in normalized_line for label in labels):
+        matched_labels = [
+            label
+            for label in labels
+            if label in normalized_line
+        ]
+
+        if not matched_labels:
             continue
+
+        # Una etiqueta genérica ("fecha") dentro de una línea con
+        # etiqueta excluida ("fecha de vencimiento") no cuenta.
+        if is_excluded(normalized_line) and not any(
+            len(label) > len("fecha") for label in matched_labels
+        ):
+            continue
+
+        specificity_bonus = (
+            2
+            if any(len(label) > len("fecha") for label in matched_labels)
+            else 0
+        )
 
         for offset in range(0, 5):
             candidate_index = line_index + offset
@@ -1232,16 +1419,18 @@ def find_date_near_labels(
 
             candidate_line = lines[candidate_index]
 
+            if offset > 0 and is_excluded(
+                normalize_search_text(candidate_line)
+            ):
+                break
+
             for match in DATE_PATTERN.finditer(candidate_line):
                 parsed = parse_date_value(match.group(1))
 
                 if not parsed:
                     continue
 
-                score = 95 - offset * 5
-
-                if "vencimiento" in normalized_line:
-                    score += 2
+                score = 95 - offset * 5 + specificity_bonus
 
                 candidates.append(
                     (
@@ -1250,6 +1439,10 @@ def find_date_near_labels(
                         f"{line} | {candidate_line}",
                     )
                 )
+
+                # En la misma línea, la primera fecha tras la etiqueta
+                # es la buena.
+                break
 
     if not candidates:
         return ExtractedField()
@@ -1805,7 +1998,16 @@ def extract_concept(text: str) -> ExtractedField:
         if money_values(line) and len(line) < 30:
             continue
 
-        concept_lines.append(line)
+        # Quita importes al final de la línea de detalle.
+        line = re.sub(
+            r"(?:\s+[-+]?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})?\s*(?:€|EUR)?)+$",
+            "",
+            line,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        if line:
+            concept_lines.append(line)
 
     concept = " ".join(concept_lines)
     concept = re.sub(r"\s+", " ", concept).strip()
@@ -1821,88 +2023,184 @@ def extract_concept(text: str) -> ExtractedField:
     )
 
 
+# Categorías de gasto con su cuenta del Plan General Contable (grupo 6).
+# El orden importa solo para desempatar puntuaciones iguales.
+EXPENSE_CATEGORIES: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        "Combustible",
+        "628",
+        (
+            "gasoleo", "gasolina", "euro-super", "combustible",
+            "carburante", "diesel", "adblue", "litros",
+        ),
+        ("repsol", "cepsa", "galp", "moeve", "bp oil", "shell", "petronor"),
+    ),
+    (
+        "Suministros",
+        "628",
+        (
+            "suministro electrico", "energia electrica", "electricidad",
+            "potencia contratada", "kwh", "gas natural", "suministro de agua",
+            "consumo de agua", "termino de energia",
+        ),
+        ("endesa", "iberdrola", "naturgy", "holaluz", "canal de isabel",
+         "aqualia", "totalenergies"),
+    ),
+    (
+        "Telecomunicaciones",
+        "629",
+        (
+            "telefonia", "telefono movil", "fibra", "internet", "linea movil",
+            "datos moviles", "centralita",
+        ),
+        ("vodafone", "movistar", "telefonica", "orange", "masmovil",
+         "digi spain", "yoigo", "jazztel"),
+    ),
+    (
+        "Arrendamientos",
+        "621",
+        ("alquiler", "arrendamiento", "renting", "leasing operativo"),
+        (),
+    ),
+    (
+        "Servicios profesionales",
+        "623",
+        (
+            "honorarios", "asesoria", "gestoria", "abogado", "notaria",
+            "notario", "auditoria", "consultoria", "arquitecto",
+            "direccion de obra", "ingenieria", "estudio geotecnico",
+        ),
+        (),
+    ),
+    (
+        "Seguros",
+        "625",
+        ("poliza", "prima de seguro", "seguro de", "aseguradora"),
+        ("mapfre", "allianz", "axa ", "zurich", "mutua madrilena",
+         "generali", "sanitas", "adeslas"),
+    ),
+    (
+        "Publicidad y marketing",
+        "627",
+        ("publicidad", "marketing", "anuncio", "campana", "google ads",
+         "redes sociales"),
+        (),
+    ),
+    (
+        "Reparaciones y mantenimiento",
+        "622",
+        ("reparacion", "mantenimiento", "averia", "revision tecnica",
+         "limpieza de mantenimiento", "servicio de limpieza"),
+        (),
+    ),
+    (
+        "Software e informática",
+        "629",
+        (
+            "licencia", "suscripcion", "software", "hosting", "dominio",
+            "ordenador", "servidor", "informatica", "openvpn", "cloud",
+        ),
+        ("microsoft", "google cloud", "amazon web services", "adobe",
+         "holded", "ionos"),
+    ),
+    (
+        "Transportes y mensajería",
+        "624",
+        ("transporte", "mensajeria", "envio", "paqueteria", "porte"),
+        ("seur", "mrw", "correos", "nacex", "dhl", "ups ", "gls"),
+    ),
+    (
+        "Viajes y dietas",
+        "629",
+        ("hotel", "alojamiento", "billete", "vuelo", "restaurante",
+         "dietas", "taxi"),
+        ("renfe", "iberia", "vueling", "ryanair", "booking"),
+    ),
+    (
+        "Prevención de riesgos laborales",
+        "629",
+        ("prevencion de riesgos", "vigilancia de la salud",
+         "reconocimiento medico"),
+        (),
+    ),
+    (
+        "Servicios bancarios",
+        "626",
+        ("comision", "comisiones bancarias", "mantenimiento de cuenta"),
+        (),
+    ),
+    (
+        "Compras y aprovisionamientos",
+        "600",
+        ("mercaderia", "mercancia", "compra de", "precio unitario",
+         "unidades", "producto"),
+        ("makro", "mercadona", "leroy merlin", "bricomart"),
+    ),
+)
+
+DEFAULT_CATEGORY = "Otros gastos"
+DEFAULT_ACCOUNT = "629"
+
+CATEGORY_ACCOUNTS: dict[str, str] = {
+    name: account
+    for name, account, _keywords, _suppliers in EXPENSE_CATEGORIES
+}
+CATEGORY_ACCOUNTS[DEFAULT_CATEGORY] = DEFAULT_ACCOUNT
+
+
+def category_account(category: str | None) -> str:
+    return CATEGORY_ACCOUNTS.get(category or "", DEFAULT_ACCOUNT)
+
+
 def classify_invoice(
     text: str,
     concept: str | None,
+    supplier_name: str | None = None,
 ) -> ExtractedField:
-    normalized = normalize_search_text(
-        f"{text}\n{concept or ''}"
-    )
+    normalized_text = normalize_search_text(text)
+    normalized_concept = normalize_search_text(concept or "")
+    normalized_supplier = normalize_search_text(supplier_name or "")
 
-    categories = (
-        (
-            "Combustible",
-            (
-                "gasoleo",
-                "gasolina",
-                "euro-super",
-                "combustible",
-            ),
-        ),
-        (
-            "Servicios profesionales",
-            (
-                "honorarios",
-                "arquitecto",
-                "direccion de obra",
-                "proyecto",
-                "ingenieria",
-                "estudio geotecnico",
-            ),
-        ),
-        (
-            "Informática",
-            (
-                "ordenador",
-                "surface",
-                "openvpn",
-                "servidor",
-                "informatica",
-                "dispositivo",
-            ),
-        ),
-        (
-            "Limpieza",
-            (
-                "limpieza de mantenimiento",
-                "servicio de limpieza",
-            ),
-        ),
-        (
-            "Prevención de riesgos laborales",
-            (
-                "prevencion",
-                "vigilancia de la salud",
-            ),
-        ),
-        (
-            "Suministros y compras",
-            (
-                "producto",
-                "unidades",
-                "precio unitario",
-            ),
-        ),
-    )
+    best: tuple[int, str, list[str]] | None = None
 
-    for category, keywords in categories:
-        if any(keyword in normalized for keyword in keywords):
-            return ExtractedField(
-                value=category,
-                confidence=75,
-                source="keyword_category",
-                evidence=", ".join(
-                    keyword
-                    for keyword in keywords
-                    if keyword in normalized
-                ),
-            )
+    for category, _account, keywords, suppliers in EXPENSE_CATEGORIES:
+        score = 0
+        evidence: list[str] = []
+
+        for keyword in keywords:
+            if keyword in normalized_concept:
+                score += 3
+                evidence.append(keyword)
+            elif keyword in normalized_text:
+                score += 1
+                evidence.append(keyword)
+
+        for supplier in suppliers:
+            if supplier in normalized_supplier:
+                score += 4
+                evidence.append(supplier.strip())
+            elif supplier in normalized_text:
+                score += 2
+                evidence.append(supplier.strip())
+
+        if score and (best is None or score > best[0]):
+            best = (score, category, evidence)
+
+    if best is None:
+        return ExtractedField(
+            value=DEFAULT_CATEGORY,
+            confidence=40,
+            source="default_category",
+            evidence=None,
+        )
+
+    score, category, evidence = best
 
     return ExtractedField(
-        value="Otros gastos",
-        confidence=40,
-        source="default_category",
-        evidence=None,
+        value=category,
+        confidence=min(92, 60 + score * 5),
+        source="keyword_category",
+        evidence=", ".join(evidence),
     )
 
 
@@ -2096,6 +2394,9 @@ def extract_invoice(
         "supplier",
     )
 
+    if supplier_name.value is None and supplier_tax_id.value:
+        supplier_name = company_name_from_header(primary_text)
+
     customer_name = company_name_near_tax_id(
         primary_text,
         customer_tax_id.value,
@@ -2125,6 +2426,14 @@ def extract_invoice(
             "fecha",
         ),
         source="invoice_date_label",
+        exclude_labels=(
+            "vencimiento",
+            "fecha de pago",
+            "fecha limite",
+            "fecha de entrega",
+            "fecha de alta",
+            "periodo",
+        ),
     )
 
     if invoice_date.value is None:
@@ -2198,6 +2507,7 @@ def extract_invoice(
     category = classify_invoice(
         primary_text,
         concept.value,
+        supplier_name.value,
     )
     currency = detect_currency(primary_text)
 
