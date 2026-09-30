@@ -1,6 +1,10 @@
 from collections.abc import Generator
 
+import logging
+
 from sqlalchemy import create_engine
+from sqlalchemy import inspect
+from sqlalchemy import text
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
@@ -57,3 +61,60 @@ def create_database_tables() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    add_missing_columns()
+
+
+logger = logging.getLogger(__name__)
+
+
+def add_missing_columns() -> list[str]:
+    """
+    Migración mínima para bases de datos ya creadas: añade las columnas
+    nuevas (siempre opcionales) que falten en tablas existentes.
+    create_all() crea tablas nuevas, pero nunca modifica las existentes.
+    """
+    added: list[str] = []
+
+    # Inspección y ALTER en la misma conexión para ver un esquema coherente.
+    with engine.begin() as connection:
+        inspector = inspect(connection)
+        existing_tables = set(inspector.get_table_names())
+
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+
+            existing_columns = {
+                column["name"]
+                for column in inspector.get_columns(table.name)
+            }
+
+            for column in table.columns:
+                if column.name in existing_columns:
+                    continue
+
+                if not column.nullable:
+                    logger.warning(
+                        "No se puede añadir automáticamente la columna "
+                        "obligatoria %s.%s.",
+                        table.name,
+                        column.name,
+                    )
+                    continue
+
+                column_type = column.type.compile(
+                    dialect=engine.dialect
+                )
+
+                connection.execute(
+                    text(
+                        f'ALTER TABLE "{table.name}" '
+                        f'ADD COLUMN "{column.name}" {column_type}'
+                    )
+                )
+                added.append(f"{table.name}.{column.name}")
+
+    if added:
+        logger.info("Columnas añadidas: %s", ", ".join(added))
+
+    return added

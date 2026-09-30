@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -15,6 +16,7 @@ from app.models import AuditEvent
 from app.models import Document
 from app.models import Invoice
 from app.models import Task
+from app.task_service import PRIORITY_ORDER
 
 
 UTC = timezone.utc
@@ -583,12 +585,20 @@ def build_today_dashboard(
             )
         )
         .order_by(
-            Task.priority.asc(),
+            PRIORITY_ORDER,
             Task.created_at.asc(),
         )
         .limit(8)
     )
     tasks = list(database.scalars(open_tasks_statement).all())
+
+    open_tasks_count = int(
+        database.scalar(
+            select(func.count(Task.id))
+            .where(Task.status.in_(OPEN_TASK_STATUSES))
+        )
+        or 0
+    )
 
     recommendation: dict[str, Any]
 
@@ -648,8 +658,8 @@ def build_today_dashboard(
             "documents_today": len(documents_today),
             "processed_today": len(processed_today),
             "pending_documents": len(pending_documents),
-            "open_risks": len(risks),
-            "open_tasks": len(tasks),
+            "open_risks": len(list_open_risks(database, limit=500)),
+            "open_tasks": open_tasks_count,
         },
         "recommendation": recommendation,
         "risks": risks[:5],
@@ -873,6 +883,68 @@ def connector_catalog(
     ]
 
 
+QUARTER_WORDS = {
+    "primer": 1,
+    "1er": 1,
+    "segundo": 2,
+    "tercer": 3,
+    "cuarto": 4,
+}
+
+
+def parse_question_period(
+    normalized_question: str,
+) -> tuple[int, int | None]:
+    """
+    Extrae año y trimestre de la pregunta. Por defecto, el trimestre
+    en curso del año actual.
+    """
+    today = date.today()
+    year_match = re.search(r"\b(20\d{2})\b", normalized_question)
+    year = int(year_match.group(1)) if year_match else today.year
+
+    quarter: int | None = None
+
+    quarter_match = re.search(
+        r"\b([1-4])\s*(?:t|º?\s*trimestre)\b",
+        normalized_question,
+    )
+
+    if quarter_match:
+        quarter = int(quarter_match.group(1))
+    else:
+        for word, number in QUARTER_WORDS.items():
+            if f"{word} trimestre" in normalized_question:
+                quarter = number
+                break
+
+    if quarter is None and "anual" not in normalized_question:
+        if "trimestre anterior" in normalized_question:
+            current_quarter = (today.month - 1) // 3 + 1
+            quarter = current_quarter - 1 or 4
+            if current_quarter == 1 and not year_match:
+                year -= 1
+        else:
+            quarter = (today.month - 1) // 3 + 1
+
+    return year, quarter
+
+
+def format_eur(value: float | Decimal | None) -> str:
+    amount = float(value or 0)
+    text = f"{amount:,.2f}"
+    return text.replace(",", "X").replace(".", ",").replace("X", ".") + " €"
+
+
+def format_day(value: str | None) -> str:
+    if not value:
+        return "—"
+
+    year, month, day = value[:10].split("-")
+
+    return f"{day}/{month}/{year}"
+
+
 def assistant_answer(
     database: Session,
     question: str,
@@ -890,6 +962,188 @@ def assistant_answer(
             "warning": (
                 "Respuesta basada exclusivamente en datos internos "
                 "de CapaFiscal."
+            ),
+        }
+
+    from app.reports_service import build_payments_overview
+    from app.reports_service import build_supplier_list
+    from app.reports_service import build_vat_report
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "pago",
+            "pagar",
+            "pagad",
+            "vencid",
+            "vence",
+            "vencimiento",
+            "deuda",
+            "debo",
+        )
+    ):
+        payments = build_payments_overview(database)
+
+        if not payments["unpaid_count"]:
+            return {
+                "answer": (
+                    "No hay facturas aprobadas pendientes de pago."
+                ),
+                "sources": [],
+                "mode": "internal_data",
+                "warning": (
+                    "Solo se consideran facturas aprobadas sin fecha "
+                    "de pago registrada."
+                ),
+            }
+
+        answer = (
+            f"Tienes {payments['unpaid_count']} factura(s) aprobada(s) "
+            f"sin pagar por {format_eur(payments['unpaid_total'])}."
+        )
+
+        if payments["overdue_count"]:
+            answer += (
+                f" {payments['overdue_count']} están vencidas "
+                f"({format_eur(payments['overdue_total'])})."
+            )
+
+        if payments["due_soon_count"]:
+            answer += (
+                f" {payments['due_soon_count']} vence(n) en los próximos "
+                f"7 días ({format_eur(payments['due_soon_total'])})."
+            )
+
+        return {
+            "answer": answer,
+            "sources": [
+                {
+                    "type": "invoice",
+                    "document_id": item["document_id"],
+                    "invoice_id": item["invoice_id"],
+                    "label": (
+                        f"{item['supplier_name'] or 'Proveedor'} · "
+                        f"{format_eur(item['total'])}"
+                        + (
+                            f" · vence {format_day(item['due_date'])}"
+                            if item["due_date"]
+                            else ""
+                        )
+                    ),
+                }
+                for item in payments["items"][:6]
+            ],
+            "mode": "internal_data",
+            "warning": (
+                "Los pagos se registran manualmente en CapaFiscal; "
+                "no se consulta el banco."
+            ),
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "trimestre",
+            "303",
+            "modelo",
+            "liquidacion",
+            "liquidación",
+        )
+    ) or re.search(r"\b[1-4]t\b", normalized_question):
+        year, quarter = parse_question_period(normalized_question)
+        report = build_vat_report(
+            database,
+            year=year,
+            quarter=quarter,
+        )
+
+        rates_text = "; ".join(
+            f"{item['label']}: base {format_eur(item['base'])}, "
+            f"cuota {format_eur(item['tax'])}"
+            for item in report["by_rate"]
+        )
+
+        answer = (
+            f"{report['period']}: {report['approved_invoices']} "
+            f"factura(s) recibida(s) aprobada(s), base "
+            f"{format_eur(report['total_base'])} e IVA soportado "
+            f"{format_eur(report['total_tax'])}."
+        )
+
+        if rates_text:
+            answer += f" Desglose por tipo: {rates_text}."
+
+        if report["total_withholding"]:
+            answer += (
+                f" Retenciones practicadas: "
+                f"{format_eur(report['total_withholding'])}."
+            )
+
+        if report["warnings"]:
+            answer += " " + " ".join(report["warnings"])
+
+        return {
+            "answer": answer,
+            "sources": [],
+            "mode": "internal_data",
+            "warning": report["note"],
+        }
+
+    suppliers = build_supplier_list(database)
+
+    for supplier in suppliers:
+        name_words = [
+            word
+            for word in re.findall(
+                r"[a-záéíóúñ0-9]+",
+                (supplier["name"] or "").lower(),
+            )
+            if len(word) >= 4
+            and word not in {"s.a.", "espana", "españa", "clientes",
+                             "comercial", "servicios", "energia"}
+        ]
+
+        matches_name = bool(name_words) and name_words[0] in (
+            normalized_question
+        )
+        matches_tax_id = bool(supplier["tax_id"]) and (
+            supplier["tax_id"].lower() in normalized_question
+        )
+
+        if not (matches_name or matches_tax_id):
+            continue
+
+        answer = (
+            f"{supplier['name'] or supplier['tax_id']}: "
+            f"{supplier['approved_invoices']} factura(s) aprobada(s) por "
+            f"{format_eur(supplier['total_approved'])} "
+            f"(IVA {format_eur(supplier['tax_approved'])})."
+        )
+
+        if supplier["pending_invoices"]:
+            answer += (
+                f" Además hay {supplier['pending_invoices']} "
+                "pendiente(s) de revisión."
+            )
+
+        if supplier["unpaid_amount"]:
+            answer += (
+                f" Pendiente de pago: "
+                f"{format_eur(supplier['unpaid_amount'])}."
+            )
+
+        if supplier["last_invoice_date"]:
+            answer += (
+                f" Última factura: "
+                f"{format_day(supplier['last_invoice_date'])}."
+            )
+
+        return {
+            "answer": answer,
+            "sources": [],
+            "mode": "internal_data",
+            "warning": (
+                "Datos de facturas registradas en CapaFiscal."
             ),
         }
 
@@ -1161,7 +1415,8 @@ def assistant_answer(
         "answer": (
             "Todavía no tengo una respuesta específica para esa "
             "consulta. Puedo ayudarte con: riesgos, tareas, facturas, "
-            "gasto aprobado, IVA soportado o un resumen de situación."
+            "gasto aprobado, IVA soportado de un trimestre, pagos "
+            "pendientes, un proveedor concreto o un resumen de situación."
         ),
         "sources": [],
         "mode": "internal_data",

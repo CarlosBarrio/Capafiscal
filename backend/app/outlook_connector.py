@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import Column, DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 
+from app.config import settings as app_settings
 from app.database import Base, SessionLocal, engine
 
 
@@ -27,9 +27,22 @@ router = APIRouter(
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 GRAPH_SCOPES = ["User.Read", "Mail.Read"]
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = PROJECT_ROOT / "data"
+# Misma carpeta de datos que la base de datos (configurable con DATA_DIR).
+DATA_DIR: Path = app_settings.data_dir
 TOKEN_CACHE_FILE = DATA_DIR / "outlook_token_cache.enc"
+
+# Ubicación usada por versiones anteriores (carpeta data/ en la raíz).
+_LEGACY_TOKEN_CACHE_FILE = (
+    Path(__file__).resolve().parents[2] / "data" / "outlook_token_cache.enc"
+)
+
+if (
+    _LEGACY_TOKEN_CACHE_FILE.exists()
+    and not TOKEN_CACHE_FILE.exists()
+    and _LEGACY_TOKEN_CACHE_FILE != TOKEN_CACHE_FILE
+):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    _LEGACY_TOKEN_CACHE_FILE.replace(TOKEN_CACHE_FILE)
 
 # Los flujos OAuth pendientes viven en memoria.
 # Para un despliegue con varios procesos se moverán a Redis o BD.
@@ -66,25 +79,14 @@ OutlookImport.__table__.create(
 
 
 def _settings() -> dict[str, str]:
+    # Se leen de la configuración central para que funcionen tanto las
+    # variables de entorno como el archivo .env.
     return {
-        "client_id": os.getenv("OUTLOOK_CLIENT_ID", "").strip(),
-        "client_secret": os.getenv(
-            "OUTLOOK_CLIENT_SECRET",
-            "",
-        ).strip(),
-        "tenant_id": os.getenv(
-            "OUTLOOK_TENANT_ID",
-            "common",
-        ).strip(),
-        "redirect_uri": os.getenv(
-            "OUTLOOK_REDIRECT_URI",
-            "http://127.0.0.1:8000"
-            "/api/connectors/outlook/callback",
-        ).strip(),
-        "encryption_key": os.getenv(
-            "APP_ENCRYPTION_KEY",
-            "",
-        ).strip(),
+        "client_id": app_settings.outlook_client_id.strip(),
+        "client_secret": app_settings.outlook_client_secret.strip(),
+        "tenant_id": app_settings.outlook_tenant_id.strip(),
+        "redirect_uri": app_settings.outlook_redirect_uri.strip(),
+        "encryption_key": app_settings.app_encryption_key.strip(),
     }
 
 

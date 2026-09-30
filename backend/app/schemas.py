@@ -106,6 +106,51 @@ class InvoiceRejectRequest(BaseModel):
     )
 
 
+class InvoiceReopenRequest(BaseModel):
+    reason: str = Field(
+        min_length=3,
+        max_length=1000,
+    )
+
+
+PAYMENT_METHODS = (
+    "TRANSFERENCIA",
+    "DOMICILIACION",
+    "TARJETA",
+    "EFECTIVO",
+    "CONFIRMING",
+    "OTRO",
+)
+
+
+class InvoicePaymentRequest(BaseModel):
+    paid: bool = True
+    paid_at: date | None = None
+    payment_method: str | None = Field(
+        default=None,
+        max_length=50,
+    )
+
+    @field_validator("payment_method")
+    @classmethod
+    def normalize_payment_method(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None or not value.strip():
+            return None
+
+        normalized = value.strip().upper()
+
+        if normalized not in PAYMENT_METHODS:
+            raise ValueError(
+                "Forma de pago no válida. Opciones: "
+                + ", ".join(PAYMENT_METHODS)
+            )
+
+        return normalized
+
+
 class InvoiceResponse(ORMModel):
     id: int
     document_id: int
@@ -143,6 +188,9 @@ class InvoiceResponse(ORMModel):
     approved_at: datetime | None
     rejected_at: datetime | None
     rejection_reason: str | None
+
+    paid_at: date | None = None
+    payment_method: str | None = None
 
     created_at: datetime
     updated_at: datetime

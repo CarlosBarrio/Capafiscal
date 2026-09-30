@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
+from app.extractor import EXTRACTOR_NAME
+from app.extractor import EXTRACTOR_VERSION
 from app.extractor import extract_invoice
 from app.extractor import normalize_amount
 from app.extractor import normalize_tax_id
@@ -42,6 +44,15 @@ def parse_iso_date(
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+def format_eur(value: Decimal) -> str:
+    text = f"{value:,.2f}"
+
+    return (
+        text.replace(",", "X").replace(".", ",").replace("X", ".")
+        + " €"
+    )
 
 
 def serialize_audit_value(
@@ -198,8 +209,8 @@ def validate_invoice_values(
                     "message": (
                         "Los importes no cuadran. "
                         f"El total esperado es "
-                        f"{expected_total:.2f} y el total "
-                        f"extraído es {total:.2f}."
+                        f"{format_eur(expected_total)} y el total "
+                        f"extraído es {format_eur(total)}."
                     ),
                     "difference": format(
                         difference,
@@ -700,10 +711,8 @@ def process_document(
 
     extraction_run = ExtractionRun(
         document=document,
-        extractor_name=(
-            "capafiscal.generic_invoice"
-        ),
-        extractor_version="2.0.0",
+        extractor_name=EXTRACTOR_NAME,
+        extractor_version=EXTRACTOR_VERSION,
         status="RUNNING",
     )
 
@@ -1077,3 +1086,90 @@ def normalize_invoice_number(
     normalized = " ".join(normalized.split())
 
     return normalized or None
+
+
+def reopen_invoice(
+    database: Session,
+    *,
+    invoice: Invoice,
+    reason: str,
+    actor: str = "user",
+) -> Invoice:
+    if invoice.review_status not in {"APPROVED", "REJECTED"}:
+        raise ValueError(
+            "Solo pueden reabrirse facturas aprobadas o rechazadas."
+        )
+
+    previous_status = invoice.review_status
+
+    invoice.review_status = "PENDING"
+    invoice.approved_at = None
+    invoice.rejected_at = None
+    invoice.rejection_reason = None
+
+    update_document_status(
+        invoice.document,
+        invoice,
+    )
+
+    add_audit_event(
+        database,
+        action="invoice.reopened",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        actor=actor,
+        event_data={
+            "document_id": invoice.document_id,
+            "previous_status": previous_status,
+            "reason": reason,
+        },
+    )
+
+    database.commit()
+    database.refresh(invoice)
+
+    return invoice
+
+
+def set_invoice_payment(
+    database: Session,
+    *,
+    invoice: Invoice,
+    paid: bool,
+    paid_at: date | None,
+    payment_method: str | None,
+    actor: str = "user",
+) -> Invoice:
+    if paid and invoice.review_status != "APPROVED":
+        raise ValueError(
+            "Solo pueden marcarse como pagadas las facturas aprobadas."
+        )
+
+    if paid:
+        invoice.paid_at = paid_at or date.today()
+        invoice.payment_method = payment_method
+        action = "invoice.paid"
+    else:
+        invoice.paid_at = None
+        invoice.payment_method = None
+        action = "invoice.payment_cancelled"
+
+    add_audit_event(
+        database,
+        action=action,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        actor=actor,
+        event_data={
+            "document_id": invoice.document_id,
+            "paid_at": invoice.paid_at,
+            "payment_method": invoice.payment_method,
+            "total": invoice.total,
+        },
+    )
+
+    database.commit()
+    database.refresh(invoice)
+
+    return invoice
+

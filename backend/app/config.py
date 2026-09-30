@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     amount_tolerance: float = 0.02
     minimum_auto_confidence: int = 80
 
+    # Conector de Outlook (Microsoft Graph).
+    outlook_client_id: str = ""
+    outlook_client_secret: str = ""
+    outlook_tenant_id: str = "common"
+    outlook_redirect_uri: str = (
+        "http://127.0.0.1:8000/api/connectors/outlook/callback"
+    )
+    app_encryption_key: str = ""
+
     model_config = SettingsConfigDict(
         env_file=PROJECT_DIR / ".env",
         env_file_encoding="utf-8",

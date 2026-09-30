@@ -5,6 +5,9 @@ import os
 import re
 import uuid
 from contextlib import asynccontextmanager
+from datetime import date
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Annotated
 from typing import Any
@@ -21,6 +24,7 @@ from fastapi import status
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import or_
@@ -39,6 +43,8 @@ from app.invoice_service import get_document
 from app.invoice_service import get_invoice
 from app.invoice_service import process_document
 from app.invoice_service import reject_invoice
+from app.invoice_service import reopen_invoice
+from app.invoice_service import set_invoice_payment
 from app.invoice_service import update_invoice
 from app.models import AuditEvent
 from app.models import Document
@@ -49,7 +55,17 @@ from app.operations_service import build_monthly_impact
 from app.operations_service import build_today_dashboard
 from app.operations_service import connector_catalog
 from app.operations_service import list_open_risks
+from app.extractor import CATEGORY_ACCOUNTS
 from app.outlook_connector import router as outlook_router
+from app.reports_service import apply_document_filters
+from app.reports_service import build_ledger_rows
+from app.reports_service import build_payments_overview
+from app.reports_service import build_supplier_list
+from app.reports_service import build_vat_report
+from app.reports_service import ledger_to_csv
+from app.reports_service import ledger_to_xlsx
+from app.reports_service import period_label
+from app.reports_service import quarter_range
 from app.schemas import ActionResponse
 from app.schemas import AgentResponse
 from app.schemas import AssistantQueryRequest
@@ -59,7 +75,9 @@ from app.schemas import ConnectorResponse
 from app.schemas import DashboardTodayResponse
 from app.schemas import DocumentDetail
 from app.schemas import DocumentListItem
+from app.schemas import InvoicePaymentRequest
 from app.schemas import InvoiceRejectRequest
+from app.schemas import InvoiceReopenRequest
 from app.schemas import InvoiceResponse
 from app.schemas import InvoiceUpdate
 from app.schemas import MonthlyImpactResponse
@@ -464,6 +482,155 @@ def query_assistant(
 
 
 # -------------------------------------------------------------------
+# Informes, proveedores, pagos y exportaciones
+# -------------------------------------------------------------------
+
+def resolve_period(
+    year: int | None,
+    quarter: int | None,
+) -> tuple[int, int | None]:
+    return (year or date.today().year), quarter
+
+
+@app.get(
+    "/api/categories",
+    tags=["Informes"],
+)
+def list_categories() -> list[dict[str, str]]:
+    return [
+        {
+            "name": name,
+            "account": account,
+        }
+        for name, account in CATEGORY_ACCOUNTS.items()
+    ]
+
+
+@app.get(
+    "/api/reports/vat",
+    tags=["Informes"],
+)
+def vat_report(
+    database: DatabaseDependency,
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    quarter: int | None = Query(default=None, ge=1, le=4),
+) -> dict[str, Any]:
+    selected_year, selected_quarter = resolve_period(year, quarter)
+
+    return build_vat_report(
+        database,
+        year=selected_year,
+        quarter=selected_quarter,
+    )
+
+
+@app.get(
+    "/api/suppliers",
+    tags=["Informes"],
+)
+def list_suppliers(
+    database: DatabaseDependency,
+    search: str | None = Query(
+        default=None,
+        alias="q",
+        max_length=200,
+    ),
+) -> list[dict[str, Any]]:
+    return build_supplier_list(
+        database,
+        search=search,
+    )
+
+
+@app.get(
+    "/api/payments",
+    tags=["Informes"],
+)
+def payments_overview(
+    database: DatabaseDependency,
+) -> dict[str, Any]:
+    return build_payments_overview(database)
+
+
+@app.get(
+    "/api/exports/ledger",
+    tags=["Informes"],
+)
+def export_ledger(
+    database: DatabaseDependency,
+    export_format: str = Query(
+        default="xlsx",
+        alias="format",
+        pattern="^(csv|xlsx)$",
+    ),
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    quarter: int | None = Query(default=None, ge=1, le=4),
+    include_pending: bool = Query(default=False),
+    actor_header: ActorHeader = None,
+) -> Response:
+    selected_year, selected_quarter = resolve_period(year, quarter)
+    date_from, date_to = quarter_range(selected_year, selected_quarter)
+
+    rows = build_ledger_rows(
+        database,
+        date_from=date_from,
+        date_to=date_to,
+        include_pending=include_pending,
+    )
+
+    label = period_label(selected_year, selected_quarter)
+    file_stem = (
+        f"libro_facturas_recibidas_{selected_year}"
+        + (f"_{selected_quarter}T" if selected_quarter else "")
+    )
+
+    add_audit_event(
+        database,
+        action="ledger.exported",
+        entity_type="report",
+        entity_id=file_stem,
+        actor=normalize_actor(actor_header),
+        event_data={
+            "format": export_format,
+            "period": label,
+            "rows": len(rows),
+            "include_pending": include_pending,
+        },
+    )
+    database.commit()
+
+    if export_format == "csv":
+        return Response(
+            content=ledger_to_csv(rows),
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{file_stem}.csv"'
+                ),
+            },
+        )
+
+    return Response(
+        content=ledger_to_xlsx(
+            rows,
+            title=(
+                f"Libro registro de facturas recibidas · {label}"
+                + (" (incluye pendientes)" if include_pending else "")
+            ),
+        ),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{file_stem}.xlsx"'
+            ),
+        },
+    )
+
+
+# -------------------------------------------------------------------
 # Carga manual
 # -------------------------------------------------------------------
 
@@ -834,11 +1001,36 @@ def list_documents(
     ),
     source: str | None = Query(default=None),
     is_demo: bool | None = Query(default=None),
+    search: str | None = Query(
+        default=None,
+        alias="q",
+        max_length=200,
+    ),
+    review_status: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    payment: str | None = Query(
+        default=None,
+        pattern="^(paid|unpaid|overdue)$",
+    ),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=500),
 ) -> list[Document]:
+    statement = select(Document)
+
+    statement = apply_document_filters(
+        statement,
+        search=search,
+        review_status=review_status,
+        category=category,
+        date_from=date_from,
+        date_to=date_to,
+        payment=payment,
+    )
+
     statement = (
-        select(Document)
+        statement
         .options(
             selectinload(Document.invoice).selectinload(
                 Invoice.tax_lines
@@ -867,7 +1059,7 @@ def list_documents(
             Document.is_demo.is_(is_demo)
         )
 
-    return list(database.scalars(statement).all())
+    return list(database.scalars(statement).unique().all())
 
 
 @app.get(
@@ -930,6 +1122,89 @@ def document_file(
         filename=document.original_filename,
         content_disposition_type="inline",
     )
+
+
+@app.post(
+    "/api/documents/reprocess-pending",
+    tags=["Documentos"],
+)
+def reprocess_pending_documents(
+    database: DatabaseDependency,
+    actor_header: ActorHeader = None,
+) -> dict[str, Any]:
+    """
+    Vuelve a extraer todos los documentos no aprobados ni rechazados,
+    por ejemplo tras mejorar el extractor. Las facturas aprobadas no se
+    tocan.
+    """
+    actor = normalize_actor(actor_header)
+
+    document_ids = list(
+        database.scalars(
+            select(Document.id)
+            .where(Document.status.not_in({"APPROVED", "REJECTED", "EXPORTED"}))
+            .order_by(Document.id.asc())
+        ).all()
+    )
+
+    processed = 0
+    failed: list[dict[str, Any]] = []
+    missing_files = 0
+
+    for document_id in document_ids:
+        document = get_document(database, document_id)
+
+        if document is None:
+            continue
+
+        if document.invoice is not None and document.invoice.review_status in {
+            "APPROVED",
+            "REJECTED",
+        }:
+            continue
+
+        file_path = get_document_file_path(document)
+
+        if not file_path.is_file():
+            missing_files += 1
+            continue
+
+        try:
+            process_document(
+                database,
+                document=document,
+                file_path=file_path,
+                actor=actor,
+            )
+            processed += 1
+        except Exception as error:
+            database.rollback()
+            failed.append(
+                {
+                    "document_id": document_id,
+                    "error": str(error),
+                }
+            )
+
+    synchronize_all_review_tasks(database)
+    database.commit()
+
+    return {
+        "success": not failed,
+        "processed": processed,
+        "failed": failed,
+        "missing_files": missing_files,
+        "message": (
+            f"{processed} documento(s) reprocesado(s)"
+            + (f", {len(failed)} con error" if failed else "")
+            + (
+                f", {missing_files} sin archivo original"
+                if missing_files
+                else ""
+            )
+            + "."
+        ),
+    }
 
 
 @app.post(
@@ -1152,6 +1427,22 @@ def approve_invoice_endpoint(
             },
         )
 
+    if invoice.duplicate_status == "STRONG":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "STRONG_DUPLICATE",
+                "message": (
+                    "La factura coincide con otra por CIF y número. "
+                    "Resuelve el posible duplicado antes de aprobar."
+                ),
+                "duplicate_of_invoice_id": (
+                    invoice.duplicate_of_invoice_id
+                ),
+                "can_force_approval": False,
+            },
+        )
+
     missing_fields = get_missing_invoice_fields(invoice)
 
     if missing_fields and not force_approval:
@@ -1322,6 +1613,112 @@ def reject_invoice_endpoint(
         message="Factura rechazada correctamente.",
         document=complete_document,
         invoice=complete_document.invoice,
+    )
+
+
+@app.post(
+    "/api/invoices/{invoice_id}/reopen",
+    response_model=ActionResponse,
+    tags=["Facturas"],
+)
+def reopen_invoice_endpoint(
+    invoice_id: int,
+    payload: InvoiceReopenRequest,
+    database: DatabaseDependency,
+    actor_header: ActorHeader = None,
+) -> ActionResponse:
+    actor = normalize_actor(actor_header)
+
+    invoice = get_invoice(
+        database,
+        invoice_id,
+    )
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Factura no encontrada.",
+        )
+
+    try:
+        reopened_invoice = reopen_invoice(
+            database,
+            invoice=invoice,
+            reason=payload.reason.strip(),
+            actor=actor,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+
+    complete_document = get_document(
+        database,
+        reopened_invoice.document_id,
+    )
+
+    return ActionResponse(
+        success=True,
+        message="Factura reabierta para revisión.",
+        document=complete_document,
+        invoice=complete_document.invoice if complete_document else None,
+    )
+
+
+@app.post(
+    "/api/invoices/{invoice_id}/payment",
+    response_model=ActionResponse,
+    tags=["Facturas"],
+)
+def invoice_payment_endpoint(
+    invoice_id: int,
+    payload: InvoicePaymentRequest,
+    database: DatabaseDependency,
+    actor_header: ActorHeader = None,
+) -> ActionResponse:
+    actor = normalize_actor(actor_header)
+
+    invoice = get_invoice(
+        database,
+        invoice_id,
+    )
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Factura no encontrada.",
+        )
+
+    try:
+        updated_invoice = set_invoice_payment(
+            database,
+            invoice=invoice,
+            paid=payload.paid,
+            paid_at=payload.paid_at,
+            payment_method=payload.payment_method,
+            actor=actor,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+
+    complete_document = get_document(
+        database,
+        updated_invoice.document_id,
+    )
+
+    return ActionResponse(
+        success=True,
+        message=(
+            "Factura marcada como pagada."
+            if payload.paid
+            else "Pago de la factura anulado."
+        ),
+        document=complete_document,
+        invoice=complete_document.invoice if complete_document else None,
     )
 
 

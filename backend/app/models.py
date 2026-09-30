@@ -310,6 +310,16 @@ class Invoice(Base):
         nullable=True,
     )
 
+    paid_at: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+        index=True,
+    )
+    payment_method: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

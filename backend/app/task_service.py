@@ -4,6 +4,7 @@ from datetime import datetime
 from datetime import timezone
 from typing import Any
 
+from sqlalchemy import case
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
@@ -19,6 +20,26 @@ OPEN_TASK_STATUSES = {
     "OPEN",
     "IN_PROGRESS",
 }
+
+# Orden explícito: ordenar el texto daría HIGH < LOW < NORMAL.
+PRIORITY_ORDER = case(
+    {
+        "HIGH": 0,
+        "NORMAL": 1,
+        "LOW": 2,
+    },
+    value=Task.priority,
+    else_=3,
+)
+
+STATUS_ORDER = case(
+    {
+        "IN_PROGRESS": 0,
+        "OPEN": 1,
+    },
+    value=Task.status,
+    else_=2,
+)
 
 REVIEW_DOCUMENT_STATUSES = {
     "NEEDS_REVIEW",
@@ -361,8 +382,8 @@ def list_review_tasks(
     statement = (
         statement
         .order_by(
-            Task.status.asc(),
-            Task.priority.asc(),
+            STATUS_ORDER,
+            PRIORITY_ORDER,
             Task.created_at.asc(),
             Task.id.asc(),
         )
