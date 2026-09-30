@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -9,7 +9,7 @@
   <title>CapaFiscal · Gestión de facturas</title>
   <link
     rel="stylesheet"
-    href="/static/style.css?v=41"
+    href="/static/style.css?v=50"
   >
 </head>
 <body>
@@ -26,51 +26,38 @@
     </div>
     <div class="header-actions">
       <label for="fileInput" class="btn-solid-light">
-        Subir documento
+        Subir documentos
       </label>
       <input
         type="file"
         id="fileInput"
         accept=".pdf,.txt,application/pdf,text/plain"
+        multiple
         hidden
       >
       <nav class="nav-tabs" id="navTabs">
-        <button
-          type="button"
-          class="nav-tab active"
-          data-tab="panel"
-        >
+        <button type="button" class="nav-tab active" data-tab="panel">
           Panel
         </button>
-        <button
-          type="button"
-          class="nav-tab"
-          data-tab="facturas"
-        >
+        <button type="button" class="nav-tab" data-tab="facturas">
           Facturas
           <span class="tab-count" id="cntFacturas">0</span>
         </button>
-        <button
-          type="button"
-          class="nav-tab"
-          data-tab="actividad"
-        >
+        <button type="button" class="nav-tab" data-tab="proveedores">
+          Proveedores
+        </button>
+        <button type="button" class="nav-tab" data-tab="informes">
+          Informes
+        </button>
+        <button type="button" class="nav-tab" data-tab="asistente">
+          Asistente
+        </button>
+        <button type="button" class="nav-tab" data-tab="actividad">
           Actividad
           <span class="tab-count" id="cntActivity">0</span>
         </button>
-        <button
-          type="button"
-          class="nav-tab"
-          data-tab="conectores"
-        >
+        <button type="button" class="nav-tab" data-tab="conectores">
           Conectores
-        </button>
-        <button
-          type="button"
-          class="nav-tab"
-          data-tab="informes"
-        >
-          Informes
         </button>
       </nav>
     </div>
@@ -84,7 +71,7 @@
       <h1 id="greetingLine">
         Resumen de documentación
       </h1>
-      <p>
+      <p id="panelPeriodNote">
         Información calculada a partir de documentos reales.
       </p>
     </div>
@@ -98,48 +85,62 @@
       </div>
       <div class="kpi">
         <span class="kpi-value" id="mIva">0 €</span>
-        <span class="kpi-label">
-          IVA aprobado
+        <span class="kpi-label" id="mIvaLabel">
+          IVA soportado del trimestre
         </span>
       </div>
       <div class="kpi">
         <span class="kpi-value" id="mSpend">0 €</span>
-        <span class="kpi-label">
-          gasto aprobado
+        <span class="kpi-label" id="mSpendLabel">
+          gasto aprobado del trimestre
         </span>
       </div>
-      <div class="kpi">
-        <span class="kpi-value" id="mPending">0</span>
-        <span class="kpi-label">
-          documentos pendientes
+      <div class="kpi kpi-payments">
+        <span class="kpi-value" id="mUnpaid">0 €</span>
+        <span class="kpi-label" id="mUnpaidLabel">
+          pendiente de pago
         </span>
-      </div>
-
-      <div
-        id="openRisksPanel"
-        class="open-risks-card hidden"
-      >
-        <div class="open-risks-header">
-          <span class="open-risks-icon">⚠️</span>
-          <div>
-            <h3>Documentos para revisar</h3>
-            <p id="openRisksText">
-              No hay incidencias abiertas.
-            </p>
-          </div>
-          <div id="openRisksList"></div>
-        </div>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-head">
-        <h2>Bandeja de revisión</h2>
-        <span class="card-sub" id="reviewInboxSub">
-          Tareas persistentes pendientes
-        </span>
+    <div id="recommendationCard" class="recommendation-card hidden"></div>
+
+    <div
+      id="openRisksPanel"
+      class="open-risks-card hidden"
+    >
+      <div class="open-risks-header">
+        <span class="open-risks-icon">⚠️</span>
+        <div>
+          <h3>Documentos para revisar</h3>
+          <p id="openRisksText">
+            No hay incidencias abiertas.
+          </p>
+        </div>
       </div>
-      <div id="inboxList" class="tasks-list"></div>
+      <div id="openRisksList"></div>
+    </div>
+
+    <div class="panel-grid">
+      <div class="card">
+        <div class="card-head">
+          <h2>Bandeja de revisión</h2>
+          <span class="card-sub" id="reviewInboxSub">
+            Tareas persistentes pendientes
+          </span>
+        </div>
+        <div id="inboxList" class="tasks-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Pagos y vencimientos</h2>
+          <span class="card-sub" id="paymentsSub">
+            Facturas aprobadas sin pagar
+          </span>
+        </div>
+        <div id="paymentsList" class="payments-list"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -161,10 +162,282 @@
         Documentos recibidos, extraídos, revisados y aprobados.
       </p>
     </div>
+
+    <div class="card filter-card">
+      <form class="filter-toolbar" id="invoiceFilters">
+        <label class="filter-search">
+          Buscar
+          <input
+            type="search"
+            name="q"
+            placeholder="Proveedor, NIF, número, concepto o archivo…"
+            autocomplete="off"
+          >
+        </label>
+        <label>
+          Revisión
+          <select name="review_status">
+            <option value="">Todas</option>
+            <option value="PENDING">Pendientes</option>
+            <option value="APPROVED">Aprobadas</option>
+            <option value="REJECTED">Rechazadas</option>
+          </select>
+        </label>
+        <label>
+          Pago
+          <select name="payment">
+            <option value="">Todos</option>
+            <option value="unpaid">Sin pagar</option>
+            <option value="overdue">Vencidas</option>
+            <option value="paid">Pagadas</option>
+          </select>
+        </label>
+        <label>
+          Periodo
+          <select name="period" id="invoicePeriodSelect">
+            <option value="">Todas las fechas</option>
+          </select>
+        </label>
+        <label>
+          Categoría
+          <select name="category" id="invoiceCategorySelect">
+            <option value="">Todas</option>
+          </select>
+        </label>
+        <button type="reset" class="btn-ghost">Limpiar</button>
+      </form>
+      <div class="filter-footer">
+        <p class="filter-summary" id="invoiceFilterSummary"></p>
+        <button
+          type="button"
+          class="btn-ghost"
+          id="reprocessPendingButton"
+          title="Vuelve a leer todos los documentos no aprobados ni rechazados con el extractor actual."
+        >
+          Reprocesar pendientes
+        </button>
+      </div>
+    </div>
+
     <div
       id="documentsList"
       class="documents-list"
     ></div>
+  </section>
+
+  <!-- PROVEEDORES -->
+  <section class="tab-panel" id="tab-proveedores">
+    <div class="section-title">
+      <h1>Proveedores</h1>
+      <p>
+        Agregado de facturas recibidas por NIF/CIF. Los importes
+        incluyen solo facturas aprobadas.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <label class="inline-search">
+          <input
+            type="search"
+            id="supplierSearch"
+            placeholder="Buscar por nombre o NIF…"
+            autocomplete="off"
+          >
+        </label>
+        <span class="card-sub" id="supplierSummary"></span>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table" id="supplierTable">
+          <thead>
+            <tr>
+              <th>Proveedor</th>
+              <th>NIF/CIF</th>
+              <th>Categoría principal</th>
+              <th class="num">Facturas</th>
+              <th class="num">Gasto aprobado</th>
+              <th class="num">IVA</th>
+              <th class="num">Pendiente de pago</th>
+              <th>Última factura</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- INFORMES -->
+  <section class="tab-panel" id="tab-informes">
+    <div class="section-title">
+      <h1>Informes</h1>
+      <p>
+        IVA soportado, gasto por categoría y libro registro de facturas
+        recibidas, calculados a partir de facturas aprobadas.
+      </p>
+    </div>
+
+    <div class="card filter-card">
+      <div class="filter-toolbar report-toolbar">
+        <label>
+          Año
+          <select id="reportYear"></select>
+        </label>
+        <label>
+          Periodo
+          <select id="reportQuarter">
+            <option value="1">1er trimestre</option>
+            <option value="2">2º trimestre</option>
+            <option value="3">3er trimestre</option>
+            <option value="4">4º trimestre</option>
+            <option value="">Año completo</option>
+          </select>
+        </label>
+        <label class="activity-checkbox">
+          <input type="checkbox" id="exportIncludePending">
+          Incluir pendientes en la exportación
+        </label>
+        <div class="card-actions">
+          <button type="button" class="act-btn act-primary" id="exportXlsx">
+            Exportar Excel
+          </button>
+          <button type="button" class="btn-ghost" id="exportCsv">
+            Exportar CSV
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="reportWarnings"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 id="reportTitle">Resumen del periodo</h2>
+        <span class="card-sub" id="reportRange"></span>
+      </div>
+      <div class="taxhealth-metrics">
+        <div>
+          <span id="txCount">0</span>
+          <p>facturas aprobadas</p>
+        </div>
+        <div>
+          <span id="txBase">0 €</span>
+          <p>base imponible</p>
+        </div>
+        <div class="tax-iva">
+          <span id="txIva">0 €</span>
+          <p>IVA soportado</p>
+        </div>
+        <div>
+          <span id="txTotal">0 €</span>
+          <p>total gasto</p>
+        </div>
+      </div>
+      <p class="report-extra" id="reportExtra"></p>
+
+      <div class="report-grid">
+        <div>
+          <h3 class="report-subtitle">IVA por tipo impositivo</h3>
+          <div class="table-scroll">
+            <table class="data-table" id="rateTable">
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th class="num">Facturas</th>
+                  <th class="num">Base</th>
+                  <th class="num">Cuota</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <h3 class="report-subtitle">Gasto por mes</h3>
+          <div id="monthChart" class="bar-chart"></div>
+        </div>
+      </div>
+
+      <h3 class="report-subtitle">Gasto por categoría</h3>
+      <div class="table-scroll">
+        <table class="data-table" id="categoryTable">
+          <thead>
+            <tr>
+              <th>Categoría</th>
+              <th>Cuenta PGC</th>
+              <th class="num">Facturas</th>
+              <th class="num">Base</th>
+              <th class="num">IVA</th>
+              <th class="num">Total</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="report-note" id="reportNote"></p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Actividad del mes</h2>
+        <span class="card-sub" id="roiNote"></span>
+      </div>
+
+      <div class="roi-metrics">
+        <div class="roi-item">
+          <strong id="roiDocs">0</strong>
+          <span>documentos procesados</span>
+        </div>
+        <div class="roi-item">
+          <strong id="roiRisks">0</strong>
+          <span>incidencias detectadas</span>
+        </div>
+        <div class="roi-item roi-hero">
+          <strong id="roiHours">—</strong>
+          <span>tiempo ahorrado (estimado)</span>
+        </div>
+        <div class="roi-item roi-hero">
+          <strong id="roiCost">—</strong>
+          <span>coste evitado (estimado)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ASISTENTE -->
+  <section class="tab-panel" id="tab-asistente">
+    <div class="section-title">
+      <h1>Asistente</h1>
+      <p>
+        Pregunta por tus facturas, IVA, pagos, proveedores o riesgos.
+        Responde solo con los datos registrados en CapaFiscal.
+      </p>
+    </div>
+
+    <div class="chat-card">
+      <div class="chat-window" id="chatWindow" aria-live="polite"></div>
+      <div class="chat-suggestions" id="chatSuggestions">
+        <button type="button" class="chip">¿Cuánto IVA llevo este trimestre?</button>
+        <button type="button" class="chip">¿Qué pagos tengo pendientes?</button>
+        <button type="button" class="chip">¿Qué riesgos hay abiertos?</button>
+        <button type="button" class="chip">¿Qué tareas tengo pendientes?</button>
+        <button type="button" class="chip">Resumen de situación</button>
+      </div>
+      <form class="chat-input" id="chatForm">
+        <input
+          type="text"
+          id="chatInput"
+          placeholder="Escribe tu pregunta…"
+          autocomplete="off"
+          maxlength="2000"
+        >
+        <button type="submit" class="act-btn act-primary">Enviar</button>
+      </form>
+      <p class="chat-disclaimer">
+        Respuestas basadas en reglas y datos internos. No sustituye el
+        criterio de un asesor fiscal.
+      </p>
+    </div>
   </section>
 
   <!-- ACTIVIDAD -->
@@ -205,6 +478,7 @@
             <option value="document">Documentos</option>
             <option value="invoice">Facturas</option>
             <option value="task">Tareas</option>
+            <option value="report">Informes</option>
             <option value="connector">Conectores</option>
           </select>
         </label>
@@ -254,66 +528,6 @@
     </div>
     <div id="connectorsList"></div>
   </section>
-
-  <!-- INFORMES -->
-  <section class="tab-panel" id="tab-informes">
-    <div class="section-title">
-      <h1>Informes</h1>
-      <p>
-        Resumen calculado a partir de facturas aprobadas.
-      </p>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <h2>Resumen de facturas</h2>
-      </div>
-      <div class="taxhealth-metrics">
-        <div>
-          <span id="txCount">0</span>
-          <p>facturas aprobadas</p>
-        </div>
-        <div>
-          <span id="txBase">0 €</span>
-          <p>base imponible</p>
-        </div>
-        <div class="tax-iva">
-          <span id="txIva">0 €</span>
-          <p>IVA soportado</p>
-        </div>
-        <div>
-          <span id="txTotal">0 €</span>
-          <p>total gasto</p>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <h2>Actividad del sistema</h2>
-          <span class="card-sub" id="roiNote"></span>
-        </div>
-
-        <div class="roi-metrics">
-          <div class="roi-item">
-            <strong id="roiDocs">0</strong>
-            <span>documentos procesados</span>
-          </div>
-          <div class="roi-item">
-            <strong id="roiRisks">0</strong>
-            <span>documentos para revisar</span>
-          </div>
-          <div class="roi-item roi-hero">
-            <strong id="roiHours">—</strong>
-            <span>tiempo ahorrado</span>
-          </div>
-          <div class="roi-item roi-hero">
-            <strong id="roiCost">—</strong>
-            <span>coste evitado</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
 </main>
 
 <footer class="site-footer">
@@ -328,9 +542,18 @@
   </div>
 </footer>
 
+<div id="dropOverlay" class="drop-overlay hidden" aria-hidden="true">
+  <div class="drop-overlay-inner">
+    <strong>Suelta aquí tus facturas</strong>
+    <span>PDF o TXT · hasta 15 MB por archivo</span>
+  </div>
+</div>
+
 <div id="appMessages" class="app-messages"></div>
 
-<script src="/static/app.js?v=41"></script>
-<script src="/static/activity.js?v=1"></script>
+<script src="/static/app.js?v=50"></script>
+<script src="/static/reports.js?v=1"></script>
+<script src="/static/assistant.js?v=1"></script>
+<script src="/static/activity.js?v=2"></script>
 </body>
 </html>

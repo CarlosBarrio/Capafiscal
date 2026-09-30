@@ -35,6 +35,12 @@
         "invoice.approved_with_warnings":
             "Factura aprobada con advertencias",
         "invoice.rejected": "Factura rechazada",
+        "invoice.reopened": "Factura reabierta",
+        "invoice.paid": "Factura marcada como pagada",
+        "invoice.payment_cancelled": "Pago de factura anulado",
+
+        "ledger.exported": "Libro registro exportado",
+        "assistant.query": "Consulta al asistente",
 
         "task.created": "Tarea creada",
         "task.started": "Tarea iniciada",
@@ -51,6 +57,8 @@
         invoice: "Factura",
         task: "Tarea",
         connector: "Conector",
+        report: "Informe",
+        assistant: "Asistente",
     };
 
     function activityEscapeHtml(value) {
