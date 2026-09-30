@@ -210,7 +210,7 @@
         <span>${esc(draft.outcome)}</span>
         <strong>${money(draft.result)}</strong>
       </div>
-      ${(draft.warnings || []).map((text) => `<div class="report-warning">⚠️ ${esc(text)}</div>`).join("")}
+      ${(draft.warnings || []).map((text) => `<div class="report-warning">${window.icon("alert")}<span>${esc(text)}</span></div>`).join("")}
       <table class="data-table compact tax-boxes">
         <thead><tr><th>Casilla</th><th>Concepto</th><th class="num">Importe</th></tr></thead>
         <tbody>

@@ -26,15 +26,18 @@
     form.elements.activity.value = company.activity || "";
     form.elements.email.value = company.email || "";
     form.elements.hourly_cost.value = company.hourly_cost ?? "";
+    form.elements.iban.value = company.iban || "";
+    form.elements.bic.value = company.bic || "";
+    form.elements.at_ep_rate.value = company.at_ep_rate ?? "";
 
     const hint = document.getElementById("companyHint");
 
     if (!company.configured) {
-      hint.innerHTML = "⚠️ Sin NIF configurado, todas las facturas se tratan como <strong>recibidas</strong>. Indícalo para que el agente detecte tus facturas emitidas.";
+      hint.innerHTML = "Sin NIF configurado, todas las facturas se tratan como <strong>recibidas</strong>. Indícalo para que el agente detecte tus facturas emitidas.";
     } else if (company.tax_id && !company.tax_id_valid) {
-      hint.textContent = "⚠️ El dígito de control del NIF/CIF no es válido. Revísalo.";
+      hint.textContent = "El dígito de control del NIF/CIF no es válido. Revísalo.";
     } else {
-      hint.textContent = "✓ El agente usa este NIF para distinguir facturas emitidas y recibidas. Tras cambiarlo, usa «Reprocesar pendientes» en Facturas.";
+      hint.textContent = "El agente usa este NIF para distinguir facturas emitidas y recibidas. Tras cambiarlo, usa «Reprocesar pendientes» en Facturas.";
     }
   }
 
@@ -66,7 +69,9 @@
       const body = Object.fromEntries(
         [...data.entries()].map(([key, value]) => [key, String(value).trim() || null])
       );
-      if (body.hourly_cost !== null) body.hourly_cost = Number(String(body.hourly_cost).replace(",", "."));
+      for (const key of ["hourly_cost", "at_ep_rate"]) {
+        if (body[key] !== null) body[key] = Number(String(body[key]).replace(",", "."));
+      }
 
       try {
         const company = await window.jsonRequest("/company", "PUT", body);

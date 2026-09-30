@@ -250,10 +250,20 @@ function requiresReview(documentItem) {
   );
 }
 
-function emptyState(icon, title, text) {
+const EMOJI_ICONS = {
+  "🔍": "search", "📄": "file", "📥": "inbox", "⚠️": "alert", "🗓️": "calendar",
+  "💶": "coins", "✅": "check", "🏛️": "landmark", "📚": "activity", "⏳": "clock",
+};
+
+function icon(name, className = "") {
+  return `<svg class="icon ${className}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+}
+
+function emptyState(symbol, title, text) {
+  const iconName = EMOJI_ICONS[symbol] || symbol || "inbox";
   return `
     <div class="section-empty">
-      <span class="section-empty-icon">${escapeHtml(icon)}</span>
+      <span class="section-empty-icon">${icon(iconName)}</span>
       <div>
         <p class="section-empty-title">${escapeHtml(title)}</p>
         <p class="section-empty-text">${escapeHtml(text)}</p>
@@ -318,6 +328,7 @@ async function loadDocuments() {
   try {
     const data = await apiRequest("/documents?limit=500");
     documentsCache = normalizeList(data, ["documents", "items", "results"]);
+    window.documentsCache = documentsCache;
     renderRecentDocuments(documentsCache);
     renderOpenRisks(documentsCache);
 
@@ -470,8 +481,8 @@ function realDocumentCard(documentItem) {
   const payment = paymentInfo(invoice);
 
   let sourceLabel = "";
-  if (documentItem.source === "manual_upload") sourceLabel = "⬆ carga manual";
-  else if (["outlook", "outlook_graph", "email"].includes(documentItem.source)) sourceLabel = "✉ Outlook";
+  if (documentItem.source === "manual_upload") sourceLabel = "Carga manual";
+  else if (["outlook", "outlook_graph", "email"].includes(documentItem.source)) sourceLabel = "Outlook";
 
   if (documentItem.kind === "NOTIFICATION") return notificationDocumentCard(documentItem, sourceLabel);
 
@@ -682,11 +693,13 @@ const AGENDA_LEVELS = {
 };
 
 const AGENDA_ICONS = {
-  tax: "🧾",
-  notification: "🏛️",
-  collection: "💶",
-  payment: "💳",
-  compliance: "🛡️",
+  tax: "receipt",
+  notification: "landmark",
+  collection: "coins",
+  payment: "card",
+  compliance: "shield",
+  team: "users",
+  payroll: "wallet",
 };
 
 function renderAgenda(agenda) {
@@ -712,7 +725,7 @@ function renderAgenda(agenda) {
 
     return `
       <button type="button" class="agenda-item level-${escapeHtml(item.level)}" onclick="${open}">
-        <span class="agenda-icon" aria-hidden="true">${AGENDA_ICONS[item.kind] || "•"}</span>
+        <span class="agenda-icon kind-${escapeHtml(item.kind)}">${icon(AGENDA_ICONS[item.kind] || "calendar")}</span>
         <span class="agenda-body">
           <strong>${escapeHtml(item.title)}</strong>
           <span>${escapeHtml(item.detail)}</span>
@@ -727,12 +740,13 @@ function renderAgenda(agenda) {
 }
 
 const AGENT_WORK_GROUPS = [
-  ["document.uploaded", "📥", "documentos recibidos"],
-  ["document.processing.completed", "🔎", "documentos leídos"],
-  ["notification.detected", "🏛️", "notificaciones detectadas"],
-  ["bank.reconciled", "🔗", "pagos conciliados"],
-  ["invoice.approved", "✅", "facturas aprobadas"],
-  ["supplier_rule.learned", "🧠", "categorías aprendidas"],
+  ["document.uploaded", "inbox", "documentos recibidos"],
+  ["document.processing.completed", "eye", "documentos leídos"],
+  ["notification.detected", "landmark", "notificaciones detectadas"],
+  ["bank.reconciled", "link", "pagos conciliados"],
+  ["invoice.approved", "check", "facturas aprobadas"],
+  ["supplier_rule.learned", "brain", "categorías aprendidas"],
+  ["payroll.approved", "wallet", "nóminas aprobadas"],
 ];
 
 function renderAgentWork(events) {
@@ -752,7 +766,7 @@ function renderAgentWork(events) {
   if (!tiles.length) {
     container.innerHTML = `
       <div class="agent-work-empty">
-        <span aria-hidden="true">🌙</span>
+        ${icon("moon")}
         Sin actividad en las últimas 24 horas. Sube documentos, importa el banco o conecta Outlook y el agente empezará a trabajar.
       </div>
     `;
@@ -764,7 +778,7 @@ function renderAgentWork(events) {
     <div class="agent-work-tiles">
       ${tiles.map((tile) => `
         <div class="agent-work-tile">
-          <span aria-hidden="true">${tile.icon}</span>
+          <span class="agent-work-icon">${icon(tile.icon)}</span>
           <strong>${tile.count}</strong>
           <small>${escapeHtml(tile.label)}</small>
         </div>
@@ -780,7 +794,7 @@ function renderRecommendation(recommendation) {
   const severity = String(recommendation.severity || "LOW").toLowerCase();
   card.className = `recommendation-card severity-${escapeHtml(severity)}`;
   card.innerHTML = `
-    <div class="recommendation-icon">${severity === "low" ? "✅" : "💡"}</div>
+    <div class="recommendation-icon">${icon(severity === "low" ? "check" : "bulb")}</div>
     <div class="recommendation-body">
       <p class="recommendation-eyebrow">Siguiente paso recomendado</p>
       <h3>${escapeHtml(recommendation.title)}</h3>
@@ -892,7 +906,7 @@ function renderTasks(tasks) {
     const invoice = task.document?.invoice || {};
     const party = invoice.direction === "ISSUED" ? invoice.customer_name : invoice.supplier_name;
     const title = task.task_type === "NOTIFICATION"
-      ? `🏛️ ${task.document?.original_filename || "Notificación"}`
+      ? `Notificación · ${task.document?.original_filename || ""}`
       : party || task.document?.original_filename || `Documento ${task.document_id}`;
 
     return `
@@ -1891,6 +1905,7 @@ function renderApiError(title, detail) {
 FUNCIONES GLOBALES
 ================================================================ */
 Object.assign(window, {
+  icon,
   convertToNotification,
   jsonRequest,
   formatDate,

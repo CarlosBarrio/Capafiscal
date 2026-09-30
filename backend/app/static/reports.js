@@ -111,7 +111,7 @@
 
     const warnings = document.getElementById("reportWarnings");
     warnings.innerHTML = (report.warnings || [])
-      .map((text) => `<div class="report-warning">⚠️ ${esc(text)}</div>`)
+      .map((text) => `<div class="report-warning">${window.icon("alert")}<span>${esc(text)}</span></div>`)
       .join("");
 
     const rateBody = document.querySelector("#rateTable tbody");
@@ -224,7 +224,7 @@
           </td>
           <td>
             ${esc(item.tax_id || "—")}
-            ${item.tax_id && !item.tax_id_valid ? `<span class="nif-warning" title="El dígito de control no es válido. Revisa el NIF/CIF.">⚠︎ revisar</span>` : ""}
+            ${item.tax_id && !item.tax_id_valid ? `<span class="nif-warning" title="El dígito de control no es válido. Revisa el NIF/CIF.">revisar</span>` : ""}
           </td>
           <td>${esc(item.main_category || "—")}</td>
           <td class="num">${item.approved_invoices}${item.pending_invoices ? ` <span class="muted">(+${item.pending_invoices} pend.)</span>` : ""}</td>

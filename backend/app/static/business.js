@@ -66,7 +66,7 @@
       : "saldo en banco (importa un extracto)";
 
     document.getElementById("healthInsights").innerHTML = (health.insights || [])
-      .map((text) => `<div class="report-warning insight">💡 ${esc(text)}</div>`)
+      .map((text) => `<div class="report-warning insight">${window.icon("bulb")}<span>${esc(text)}</span></div>`)
       .join("");
 
     renderMonthChart(health.months);
@@ -217,7 +217,7 @@
       (forecast.projected_balance !== null ? ` · saldo final previsto ${money(forecast.projected_balance)}` : "");
 
     document.getElementById("cashflowWarnings").innerHTML = (forecast.warnings || [])
-      .map((text) => `<div class="report-warning">⚠️ ${esc(text)}</div>`)
+      .map((text) => `<div class="report-warning">${window.icon("alert")}<span>${esc(text)}</span></div>`)
       .join("");
 
     const body = document.querySelector("#cashflowTable tbody");

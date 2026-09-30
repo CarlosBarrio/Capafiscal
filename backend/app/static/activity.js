@@ -156,11 +156,11 @@
         const tone = activityTone(action);
 
         const icons = {
-            danger: "⛔",
-            warning: "⚠️",
-            success: "✅",
-            info: "📝",
-            neutral: "•",
+            danger: "alert",
+            warning: "alert",
+            success: "check",
+            info: "doc",
+            neutral: "activity",
         };
 
         return icons[tone];
@@ -440,7 +440,7 @@
         return `
             <article class="activity-item activity-${tone}">
                 <div class="activity-marker">
-                    ${activityEscapeHtml(activityIcon(event.action))}
+                    ${window.icon(activityIcon(event.action))}
                 </div>
 
                 <div class="activity-content">
@@ -530,7 +530,7 @@
         if (!events.length) {
             container.innerHTML = `
                 <div class="section-empty">
-                    <span class="section-empty-icon">📚</span>
+                    <span class="section-empty-icon">${window.icon("activity")}</span>
 
                     <div>
                         <p class="section-empty-title">
@@ -635,7 +635,7 @@
 
         container.innerHTML = `
             <div class="section-empty">
-                <span class="section-empty-icon">⏳</span>
+                <span class="section-empty-icon">${window.icon("clock")}</span>
 
                 <div>
                     <p class="section-empty-title">
@@ -679,7 +679,7 @@
         } catch (error) {
             container.innerHTML = `
                 <div class="section-empty">
-                    <span class="section-empty-icon">⚠️</span>
+                    <span class="section-empty-icon">${window.icon("alert")}</span>
 
                     <div>
                         <p class="section-empty-title">

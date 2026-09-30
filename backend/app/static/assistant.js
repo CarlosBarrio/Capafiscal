@@ -15,7 +15,7 @@
     const item = document.createElement("div");
     item.className = `chat-msg ${role}`;
     item.innerHTML = `
-      <span class="chat-avatar" aria-hidden="true">${role === "user" ? "🧑" : "📒"}</span>
+      <span class="chat-avatar" aria-hidden="true">${role === "user" ? "Tú" : window.icon("sparkles")}</span>
       <div class="chat-text">${html}</div>
     `;
     container.appendChild(item);

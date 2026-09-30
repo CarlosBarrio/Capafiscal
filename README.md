@@ -21,10 +21,13 @@ humana cuando hace falta criterio.
 | **Impuestos** | Calendario fiscal según seas autónomo o sociedad (303, 130, 111, 115, 390, 190, 180, 347, 202, 200, 100) con festivos nacionales · **borradores continuos** de los modelos 303, 130, 111 y 115 por casillas · modelo 347 por tercero y trimestre · registro de presentaciones |
 | **Notificaciones** | Detección automática de requerimientos, liquidaciones, apremios, embargos y sanciones de AEAT, Seguridad Social, DGT, ayuntamientos… · referencia e importe · **plazo calculado** con su regla (días hábiles, art. 62 LGT, art. 43.2 Ley 39/2015) · tarea en la bandeja · registro manual |
 | **Cumplimiento** | Caducidad del certificado digital (lee .cer/.pem/.p12 sin guardar el archivo ni la contraseña) · apoderamientos, DEHú, Verifactu, factura electrónica y RGPD · controles automáticos (libros al día, modelos y notificaciones en plazo) |
+| **Equipo** | Fichas de personas (datos, puesto, contrato, IBAN, habilidades) · **crear desde un CV** en PDF · documentos por persona (contrato, resguardo de alta, 145, nóminas…) · **checklist de incorporación y baja** con plazos legales (alta en SS antes del primer día, Contrat@ en 10 días hábiles, baja en 3 días) que se marca solo al subir el resguardo · **organigrama** automático · proyectos con asignación de personas y dedicación · calendario de ausencias con saldo de vacaciones · avisos de contratos temporales que vencen |
+| **Nóminas** | **Paso de nóminas automático**: borrador mensual de toda la plantilla (12 o 14 pagas, días trabajados, horas extra, incentivos y anticipos) con cotizaciones 2026 (incluye MEI) y retención de IRPF estimada · aprobar → **recibos en PDF**, **remesa SEPA** (pain.001) para subir al banco, resumen en Excel y **asiento contable** (640/642/4751/476/465) · alimenta el modelo 111, la tesorería (neto a fin de mes y seguros sociales el mes siguiente) y la salud del negocio · simulador de coste de contratación |
 | **Terceros** | Proveedores y clientes por NIF: importes, IVA, pendiente y última factura |
 | **Informes** | IVA soportado y repercutido por trimestre, gasto por categoría y mes · **libros registro de facturas recibidas y expedidas** en Excel o CSV |
 | **Asistente** | Preguntas sobre IVA y 303 de un trimestre, modelos a presentar, salud del negocio, notificaciones, pagos, un proveedor, riesgos o tareas |
 | **Conectores** | Outlook (Microsoft Graph) para importar adjuntos · carga manual · extractos bancarios |
+| **Navegación** | Menú lateral agrupado (Operación, Finanzas, Personas, Empresa) · buscador y acciones rápidas con **Ctrl + K** (secciones, facturas, personas) · diseño adaptado a móvil |
 | **Trazabilidad** | Auditoría de todas las acciones de personas y del agente |
 
 ## Puesta en marcha
@@ -119,6 +122,9 @@ backend/
     agenda_service.py     Agenda unificada de vencimientos
     calendar_es.py        Días hábiles y festivos nacionales
     company_service.py    Datos de la empresa usuaria
+    team_routes.py        API de equipo, proyectos, ausencias y nóminas
+    team_service.py       Fichas, incorporación, organigrama, ausencias, CV
+    payroll_service.py    Cálculo de nóminas, recibos PDF, SEPA, Excel, asiento
     operations_service.py Panel, riesgos, agentes y asistente
     task_service.py       Bandeja de revisión
     outlook_connector.py  Conector de Outlook
