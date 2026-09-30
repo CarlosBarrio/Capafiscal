@@ -74,9 +74,9 @@
     greeted = true;
     appendMessage(
       "bot",
-      "Hola. Puedo decirte el IVA soportado de un trimestre (por ejemplo «IVA del 2T»), " +
-      "qué pagos tienes pendientes, cuánto has gastado con un proveedor, qué riesgos " +
-      "o tareas hay abiertos, o darte un resumen de situación."
+      "Hola. Puedo decirte el IVA y el resultado del 303 de un trimestre (por ejemplo «IVA del 2T»), " +
+      "qué modelos te tocan presentar, cómo va el negocio, qué notificaciones o pagos tienes " +
+      "pendientes, cuánto has gastado con un proveedor o qué riesgos hay abiertos."
     );
   }
 

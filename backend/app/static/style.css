@@ -945,7 +945,7 @@ body { margin: 0; font-family: var(--sans); background: var(--bg); color: var(--
 
 .filter-toolbar {
     display: grid;
-    grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(130px, 1fr)) auto;
+    grid-template-columns: minmax(220px, 2fr) repeat(5, minmax(120px, 1fr)) auto;
     gap: 12px;
     align-items: end;
 }
@@ -1295,3 +1295,476 @@ fieldset.detail-form-grid:disabled textarea { background: #f4f5f7; color: #555; 
 }
 
 .filter-footer .filter-summary { margin: 0; }
+
+/* ================================================================
+   V60 · NAVEGACIÓN EN FILA PROPIA
+================================================================ */
+
+:root { --income: #2563a8; --expense: #9e1b32; }
+
+.header-inner { padding-bottom: 10px; }
+
+.main-nav {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 22px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    white-space: nowrap;
+}
+
+.main-nav .nav-tab { flex-shrink: 0; padding: 10px 13px; font-size: 13.5px; }
+.tab-count-alert { background: var(--red) !important; color: white !important; }
+.tab-count.hidden { display: none; }
+
+/* ================================================================
+   HOY: TRABAJO DEL AGENTE Y AGENDA
+================================================================ */
+
+.agent-work {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 22px;
+}
+
+.agent-work-title {
+    margin: 0 0 10px;
+    color: var(--granate);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.agent-work-tiles { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.agent-work-tile {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #fbfbfc;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+}
+
+.agent-work-tile strong { font-family: var(--serif); font-size: 20px; }
+.agent-work-tile small { color: var(--muted); font-size: 12.5px; }
+.agent-work-empty { color: var(--muted); font-size: 14px; display: flex; gap: 10px; align-items: center; }
+
+.agenda-list { display: flex; flex-direction: column; gap: 8px; }
+
+.agenda-item {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    width: 100%;
+    padding: 11px 14px;
+    background: #fbfbfc;
+    border: 1px solid var(--line);
+    border-left: 4px solid #c9ccd3;
+    border-radius: 6px;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.agenda-item:hover { background: #f6f7f9; }
+.agenda-item.level-overdue, .agenda-item.level-critical { border-left-color: var(--red); }
+.agenda-item.level-high { border-left-color: #d97524; }
+.agenda-item.level-normal { border-left-color: var(--azul); }
+.agenda-icon { font-size: 20px; text-align: center; }
+.agenda-body { min-width: 0; }
+.agenda-body strong { display: block; }
+.agenda-body span { color: var(--muted); font-size: 13px; }
+.agenda-when { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.agenda-when .status-pill { padding: 3px 8px; font-size: 11px; }
+.agenda-when small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+/* ================================================================
+   COMPONENTES COMUNES
+================================================================ */
+
+.direction-tag {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+}
+
+.direction-received { background: #f8dfe2; color: var(--granate); }
+.direction-issued { background: #e3edf8; color: var(--income); }
+.direction-notification { background: #efe7f7; color: #6b3fa0; }
+.notification-card { border-left: 4px solid #6b3fa0; }
+
+.segmented {
+    display: inline-flex;
+    padding: 3px;
+    background: #eceef1;
+    border-radius: 7px;
+    gap: 2px;
+}
+
+.segment {
+    border: none;
+    background: transparent;
+    padding: 6px 12px;
+    border-radius: 5px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.segment.active { background: var(--white); color: var(--granate); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
+
+.compact-toolbar { grid-template-columns: 160px 200px 1fr !important; }
+.compact-toolbar .filter-summary { margin: 0; align-self: center; }
+
+.kpi-income { border-left-color: var(--income); }
+.kpi-result { border-left-color: var(--green); }
+.value-negative { color: var(--red) !important; }
+.value-positive { color: var(--green); }
+.row-danger td { background: #fff6f6; }
+.status-pill.mini { padding: 2px 6px; font-size: 10px; margin-left: 4px; }
+.block { display: block; }
+.actions-cell { white-space: nowrap; text-align: right; }
+.actions-cell .act-btn, .actions-cell .btn-ghost { padding: 6px 10px; font-size: 13px; }
+.insight { background: #eef4fb; border-color: #cddcef; color: #1f3d63; }
+.plain-list { margin: 0; padding-left: 18px; line-height: 1.7; font-size: 14px; }
+
+.table-view { margin-top: 12px; font-size: 13px; color: var(--muted); }
+.table-view summary { cursor: pointer; font-weight: 700; }
+.table-view table { margin-top: 10px; }
+
+/* ================================================================
+   NEGOCIO
+================================================================ */
+
+.chart-legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink); }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.legend-income { background: var(--income); }
+.legend-expense { background: var(--expense); }
+
+.month-columns {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 8px;
+    height: 220px;
+    align-items: end;
+    border-bottom: 1px solid #cfd3da;
+    padding: 0 4px;
+}
+
+.month-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    border-radius: 4px;
+    outline: none;
+}
+
+.month-column:hover, .month-column:focus { background: #f6f7f9; }
+
+.month-bars {
+    flex: 1;
+    width: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 2px;
+}
+
+.month-bars span { width: min(14px, 38%); border-radius: 4px 4px 0 0; min-height: 0; }
+.bar-income { background: var(--income); }
+.bar-expense { background: var(--expense); }
+.month-label { margin: 6px 0 -24px; color: var(--muted); font-size: 11.5px; text-transform: capitalize; }
+.month-chart { padding-bottom: 26px; }
+
+.indicator-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.indicator {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 14px;
+    background: #fbfbfc;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+}
+
+.indicator span { color: var(--muted); font-size: 12px; }
+.indicator strong { font-family: var(--serif); font-size: 19px; }
+.indicator small { color: var(--muted); font-size: 12px; }
+
+.bank-import {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(160px, 1fr) auto;
+    gap: 12px;
+    align-items: end;
+    margin-bottom: 16px;
+}
+
+.bank-import label:not(.file-drop) {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.bank-import input[type="text"],
+.bank-import input[type="password"],
+.compliance-form input,
+.compliance-form select,
+.candidate-select {
+    min-height: 40px;
+    padding: 8px 11px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--white);
+    font: inherit;
+    font-weight: 400;
+    color: var(--ink);
+}
+
+.file-drop {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 14px;
+    border: 2px dashed #c9ccd3;
+    border-radius: 8px;
+    background: #fbfbfc;
+    cursor: pointer;
+}
+
+.file-drop:hover { border-color: var(--granate); }
+.file-drop span { color: var(--muted); font-size: 12.5px; }
+
+.bank-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.candidate-select { min-height: 32px; padding: 4px 8px; margin-top: 6px; max-width: 280px; font-size: 13px; }
+
+/* ================================================================
+   IMPUESTOS
+================================================================ */
+
+.tax-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+}
+
+.tax-calendar { display: flex; flex-direction: column; gap: 8px; }
+
+.tax-entry {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--azul);
+    border-radius: 6px;
+    background: #fbfbfc;
+}
+
+.tax-entry.selected { box-shadow: 0 0 0 2px rgba(158, 27, 50, 0.25); background: var(--white); }
+.tax-entry.status-overdue { border-left-color: var(--red); }
+.tax-entry.status-due_soon { border-left-color: #d97524; }
+.tax-entry.status-filed { border-left-color: var(--green); opacity: 0.85; }
+.tax-entry.status-no_data { border-left-color: #c9ccd3; opacity: 0.7; }
+
+.tax-entry-model { display: flex; flex-direction: column; align-items: center; }
+.tax-entry-model strong { font-family: var(--serif); font-size: 21px; color: var(--granate); }
+.tax-entry-model span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.tax-entry-name { margin: 0; font-weight: 700; font-size: 14px; }
+.tax-entry-meta { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+.tax-entry-note { margin: 2px 0 0; color: var(--muted); font-size: 11.5px; font-style: italic; }
+.tax-entry-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.tax-entry-actions .status-pill { padding: 3px 8px; font-size: 11px; }
+.tax-entry-actions .act-btn, .tax-entry-actions .btn-ghost { padding: 5px 10px; font-size: 12.5px; }
+
+.tax-result {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    border-radius: 6px;
+    background: #e2f1e9;
+    color: var(--green);
+}
+
+.tax-result.to-pay { background: var(--granate-050); color: var(--granate); }
+.tax-result span { font-weight: 800; }
+.tax-result strong { font-family: var(--serif); font-size: 28px; }
+
+.box-number {
+    display: inline-block;
+    min-width: 30px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #eceef1;
+    font-weight: 800;
+    font-size: 12px;
+    text-align: center;
+}
+
+/* ================================================================
+   NOTIFICACIONES
+================================================================ */
+
+.notification-item { border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
+.notification-item > summary { list-style: none; border: none; }
+.notification-item > summary::-webkit-details-marker { display: none; }
+.notification-item[open] > summary { border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+.notification-detail { padding: 16px; }
+.notification-item.urgency-overdue > summary, .notification-item.urgency-critical > summary { border-left: 5px solid var(--red); }
+.notification-item.urgency-high > summary { border-left: 5px solid #d97524; }
+.notification-item.urgency-normal > summary, .notification-item.urgency-none > summary { border-left: 5px solid var(--amber); }
+.notification-item.urgency-done > summary { border-left: 5px solid var(--green); }
+
+.aeat-countdown.urgency-overdue, .aeat-countdown.urgency-critical { background: var(--red); }
+.aeat-countdown.urgency-high { background: #d97524; }
+.aeat-countdown.urgency-normal { background: var(--amber); }
+.aeat-countdown.urgency-none { background: #8a909c; }
+.aeat-countdown.urgency-done { background: var(--green); }
+
+.manual-form > summary { list-style: none; cursor: pointer; }
+.manual-form > summary::-webkit-details-marker { display: none; }
+.manual-form > summary h2 { margin: 0; font-family: var(--serif); font-size: 19px; }
+.manual-form > summary h2::before { content: "＋ "; color: var(--granate); }
+.manual-form[open] > summary { margin-bottom: 14px; }
+.notification-form, .notification-edit { margin-top: 10px; }
+
+/* ================================================================
+   CUMPLIMIENTO
+================================================================ */
+
+.compliance-hero { display: flex; gap: 22px; align-items: center; }
+.compliance-hero h2 { margin: 0 0 4px; font-family: var(--serif); }
+
+.compliance-score {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 118px;
+    height: 118px;
+    border-radius: 50%;
+    border: 6px solid var(--line);
+    flex-shrink: 0;
+}
+
+.compliance-score strong { font-family: var(--serif); font-size: 30px; }
+.compliance-score span { color: var(--muted); font-size: 11px; }
+.compliance-score .score-good { color: var(--green); }
+.compliance-score .score-mid { color: var(--amber); }
+.compliance-score .score-low { color: var(--red); }
+
+.certificate-card {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.certificate-card div { padding: 10px 12px; background: #fbfbfc; border: 1px solid var(--line); border-radius: 6px; }
+.certificate-card span { display: block; color: var(--muted); font-size: 11px; }
+.certificate-card strong { font-size: 13.5px; word-break: break-word; }
+
+.compliance-list { display: flex; flex-direction: column; }
+
+.compliance-item {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.compliance-item:last-child { border-bottom: none; }
+
+.compliance-icon {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    padding: 0 !important;
+    font-weight: 800;
+}
+
+.compliance-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.compliance-head .status-pill { padding: 3px 8px; font-size: 11px; }
+.compliance-body p { margin: 4px 0; color: #444; font-size: 14px; }
+
+.compliance-form {
+    display: grid;
+    grid-template-columns: 160px 160px minmax(0, 1fr) auto;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.compliance-form input, .compliance-form select { min-height: 34px; padding: 5px 9px; font-size: 13px; }
+.compliance-form .btn-ghost { padding: 6px 12px; font-size: 13px; }
+
+@media (max-width: 1000px) {
+    .tax-layout { grid-template-columns: 1fr; }
+    .bank-import { grid-template-columns: 1fr; }
+    .certificate-card { grid-template-columns: 1fr 1fr; }
+    .compliance-form { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 600px) {
+    .compact-toolbar { grid-template-columns: 1fr !important; }
+    .indicator-list { grid-template-columns: 1fr; }
+    .month-columns { gap: 3px; height: 180px; }
+    .month-label { font-size: 9.5px; }
+    .agenda-item { grid-template-columns: 26px minmax(0, 1fr); }
+    .agenda-when { grid-column: 2; flex-direction: row; align-items: center; justify-content: flex-start; }
+    .tax-entry { grid-template-columns: 52px minmax(0, 1fr); }
+    .tax-entry-actions { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; flex-wrap: wrap; }
+    .compliance-hero { flex-direction: column; text-align: center; }
+    .compliance-form { grid-template-columns: 1fr; }
+    .certificate-card { grid-template-columns: 1fr; }
+}
+
+.compliance-form.no-expiry { grid-template-columns: 160px minmax(0, 1fr) auto; }
+
+.tax-nodata { margin-top: 6px; }
+.tax-nodata > summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 700; padding: 6px 2px; }
+.tax-nodata[open] > summary { margin-bottom: 6px; }
+.tax-nodata .tax-entry { margin-bottom: 8px; }
+
+/* Etiquetas de mes dentro de la columna, sin márgenes negativos. */
+.month-columns { border-bottom: none; }
+.month-bars { border-bottom: 1px solid #cfd3da; }
+.month-label { margin: 6px 0 0; }
+.month-chart { padding-bottom: 0; }
+.month-chart .table-view { margin-top: 16px; }
+
+@media (max-width: 600px) {
+    .segmented { flex-wrap: wrap; }
+    .compliance-form.no-expiry { grid-template-columns: 1fr; }
+}

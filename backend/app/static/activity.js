@@ -40,6 +40,19 @@
         "invoice.payment_cancelled": "Pago de factura anulado",
 
         "ledger.exported": "Libro registro exportado",
+        "notification.detected": "Notificación detectada por el agente",
+        "notification.created": "Notificación registrada",
+        "notification.updated": "Notificación actualizada",
+        "bank.imported": "Extracto bancario importado",
+        "bank.reconciled": "Movimiento conciliado con factura",
+        "bank.unreconciled": "Conciliación deshecha",
+        "tax.filed": "Modelo marcado como presentado",
+        "tax.filing_removed": "Presentación desmarcada",
+        "compliance.updated": "Cumplimiento actualizado",
+        "compliance.certificate_loaded": "Certificado digital leído",
+        "company.updated": "Datos de empresa actualizados",
+        "supplier_rule.learned": "Categoría aprendida por el agente",
+        "supplier_rule.deleted": "Categoría olvidada",
         "assistant.query": "Consulta al asistente",
 
         "task.created": "Tarea creada",
@@ -58,6 +71,12 @@
         task: "Tarea",
         connector: "Conector",
         report: "Informe",
+        notification: "Notificación",
+        bank: "Banco",
+        tax: "Impuestos",
+        compliance: "Cumplimiento",
+        company: "Mi empresa",
+        supplier_rule: "Memoria del agente",
         assistant: "Asistente",
     };
 

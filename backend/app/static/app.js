@@ -1,5 +1,5 @@
 "use strict";
-console.log("CapaFiscal frontend real V50");
+console.log("CapaFiscal frontend real V60");
 
 const API_BASE = "/api";
 
@@ -216,8 +216,9 @@ function confidenceClass(confidence) {
 
 function paymentInfo(invoice) {
   if (!invoice?.id || invoice.review_status !== "APPROVED") return null;
+  const issued = invoice.direction === "ISSUED";
   if (invoice.paid_at) {
-    return { label: `Pagada ${formatDay(invoice.paid_at)}`, className: "status-success" };
+    return { label: `${issued ? "Cobrada" : "Pagada"} ${formatDay(invoice.paid_at)}`, className: "status-success" };
   }
   if (invoice.due_date && invoice.due_date < todayIso()) {
     return { label: `Vencida ${formatDay(invoice.due_date)}`, className: "status-danger" };
@@ -225,11 +226,12 @@ function paymentInfo(invoice) {
   if (invoice.due_date) {
     return { label: `Vence ${formatDay(invoice.due_date)}`, className: "status-warning" };
   }
-  return { label: "Sin pagar", className: "status-neutral" };
+  return { label: issued ? "Sin cobrar" : "Sin pagar", className: "status-neutral" };
 }
 
 function requiresReview(documentItem) {
-  if (["APPROVED", "REJECTED", "EXPORTED"].includes(documentItem.status)) return false;
+  if (documentItem.kind === "NOTIFICATION") return false;
+  if (["APPROVED", "REJECTED", "EXPORTED", "RESOLVED"].includes(documentItem.status)) return false;
   const invoice = documentItem.invoice || {};
   const confidence = Number(invoice.confidence || 0);
   return (
@@ -319,7 +321,6 @@ async function loadDocuments() {
     renderRecentDocuments(documentsCache);
     renderOpenRisks(documentsCache);
 
-    setText("mRisks", documentsCache.filter(requiresReview).length);
     setText("cntFacturas", String(documentsCache.length));
 
     await loadFilteredDocuments();
@@ -387,7 +388,7 @@ function invoiceFilterParams() {
   if (!form) return params;
 
   const data = new FormData(form);
-  for (const key of ["q", "review_status", "payment", "category"]) {
+  for (const key of ["q", "direction", "review_status", "payment", "category"]) {
     const value = String(data.get(key) || "").trim();
     if (value) params.set(key, value);
   }
@@ -472,15 +473,24 @@ function realDocumentCard(documentItem) {
   if (documentItem.source === "manual_upload") sourceLabel = "⬆ carga manual";
   else if (["outlook", "outlook_graph", "email"].includes(documentItem.source)) sourceLabel = "✉ Outlook";
 
+  if (documentItem.kind === "NOTIFICATION") return notificationDocumentCard(documentItem, sourceLabel);
+
+  const issued = invoice.direction === "ISSUED";
+  const partyName = issued ? invoice.customer_name : invoice.supplier_name;
+  const directionTag = invoice.id
+    ? `<span class="direction-tag ${issued ? "direction-issued" : "direction-received"}">${issued ? "Emitida" : "Recibida"}</span>`
+    : "";
+
   return `
   <article class="document-card ${reviewRequired ? "needs-review" : ""}">
     <div class="document-top">
       <div>
         <p class="doc-type">
-          ${escapeHtml(invoice.category || "Factura recibida")}
+          ${directionTag}
+          ${escapeHtml(invoice.category || (invoice.id ? "Factura" : "Documento sin clasificar"))}
           ${sourceLabel ? `<span class="source-tag">${escapeHtml(sourceLabel)}</span>` : ""}
         </p>
-        <h3>${escapeHtml(invoice.supplier_name || "Proveedor sin identificar")}</h3>
+        <h3>${escapeHtml(partyName || (issued ? "Cliente sin identificar" : "Proveedor sin identificar"))}</h3>
         <p class="filename">${escapeHtml(documentItem.original_filename || "Sin nombre")}</p>
       </div>
 
@@ -545,6 +555,31 @@ function realDocumentCard(documentItem) {
   `;
 }
 
+function notificationDocumentCard(documentItem, sourceLabel) {
+  const documentId = Number(documentItem.id);
+  return `
+  <article class="document-card notification-card">
+    <div class="document-top">
+      <div>
+        <p class="doc-type">
+          <span class="direction-tag direction-notification">Notificación</span>
+          ${sourceLabel ? `<span class="source-tag">${escapeHtml(sourceLabel)}</span>` : ""}
+        </p>
+        <h3>${escapeHtml(documentItem.original_filename || "Notificación")}</h3>
+        <p class="filename">Gestiónala en la pestaña Notificaciones.</p>
+      </div>
+      <div class="badges">
+        <span class="status-pill ${statusClass(documentItem.status)}">${escapeHtml(translateStatus(documentItem.status))}</span>
+      </div>
+    </div>
+    <div class="card-actions">
+      <button class="btn-ghost" type="button" onclick="activateTab('notificaciones')">Ver notificación</button>
+      <a class="btn-ghost" href="/api/documents/${documentId}/file" target="_blank" rel="noopener noreferrer">Abrir archivo</a>
+    </div>
+  </article>
+  `;
+}
+
 /* ================================================================
 PANEL: RIESGOS, RECOMENDACIÓN, KPIs Y PAGOS
 ================================================================ */
@@ -588,20 +623,35 @@ async function loadPanelSummary() {
   const year = new Date().getFullYear();
   const quarter = currentQuarter();
 
-  const [vatResult, paymentsResult, dashboardResult] = await Promise.allSettled([
-    apiRequest(`/reports/vat?year=${year}&quarter=${quarter}`),
+  const [taxResult, healthResult, paymentsResult, dashboardResult, agendaResult, activityResult] = await Promise.allSettled([
+    apiRequest(`/taxes/models/303?year=${year}&quarter=${quarter}`),
+    apiRequest(`/business-health?year=${year}&quarter=${quarter}`),
     apiRequest("/payments"),
     apiRequest("/dashboard/today"),
+    apiRequest("/agenda?horizon=30"),
+    apiRequest("/activity?limit=300"),
   ]);
 
-  setText("panelPeriodNote", `Datos reales · trimestre en curso ${quarter}T ${year}.`);
+  const hour = new Date().getHours();
+  const greeting = hour < 14 ? "Buenos días" : hour < 21 ? "Buenas tardes" : "Buenas noches";
+  setText("greetingLine", greeting);
+  setText("panelPeriodNote", `Esto es lo que tu administrativo digital ha preparado · trimestre en curso ${quarter}T ${year}.`);
 
-  if (vatResult.status === "fulfilled") {
-    const vat = vatResult.value;
-    setText("mIva", formatMoney(vat.total_tax));
-    setText("mSpend", formatMoney(vat.total_amount));
-    setText("mIvaLabel", `IVA soportado ${vat.period}`);
-    setText("mSpendLabel", `gasto aprobado ${vat.period}`);
+  if (taxResult.status === "fulfilled") {
+    const tax = taxResult.value;
+    setText("mIva", formatMoney(tax.result));
+    setText("mIvaLabel", `IVA ${tax.result < 0 ? "a compensar" : "a ingresar"} estimado ${tax.period_label} (303)`);
+  }
+
+  if (healthResult.status === "fulfilled") {
+    const health = healthResult.value;
+    setText("mSpend", formatMoney(health.result));
+    setText(
+      "mSpendLabel",
+      health.income
+        ? `resultado ${health.period} · margen ${String(health.margin ?? 0).replace(".", ",")} %`
+        : `resultado ${health.period} (sube tus facturas emitidas)`
+    );
   }
 
   if (paymentsResult.status === "fulfilled") {
@@ -614,6 +664,113 @@ async function loadPanelSummary() {
   if (dashboardResult.status === "fulfilled") {
     renderRecommendation(dashboardResult.value.recommendation);
   }
+
+  if (agendaResult.status === "fulfilled") {
+    renderAgenda(agendaResult.value);
+  }
+
+  if (activityResult.status === "fulfilled") {
+    renderAgentWork(activityResult.value);
+  }
+}
+
+const AGENDA_LEVELS = {
+  overdue: ["Vencido", "status-danger"],
+  critical: ["Urgente", "status-danger"],
+  high: ["Esta semana", "status-warning"],
+  normal: ["Próximo", "status-neutral"],
+};
+
+const AGENDA_ICONS = {
+  tax: "🧾",
+  notification: "🏛️",
+  collection: "💶",
+  payment: "💳",
+  compliance: "🛡️",
+};
+
+function renderAgenda(agenda) {
+  const container = document.getElementById("agendaList");
+  const sub = document.getElementById("agendaSub");
+  if (!container) return;
+
+  const urgent = (agenda.counts?.overdue || 0) + (agenda.counts?.critical || 0);
+  if (sub) sub.textContent = urgent ? `${urgent} asunto(s) urgente(s) · próximos 30 días` : "Próximos 30 días";
+
+  if (!agenda.items.length) {
+    container.innerHTML = emptyState("🗓️", "Nada vence en los próximos 30 días", "El agente te avisará en cuanto aparezca un plazo.");
+    return;
+  }
+
+  container.innerHTML = agenda.items.slice(0, 10).map((item) => {
+    const [label, className] = AGENDA_LEVELS[item.level] || AGENDA_LEVELS.normal;
+    const days = Number(item.days_left);
+    const when = days < 0 ? `hace ${Math.abs(days)} d` : days === 0 ? "hoy" : `en ${days} d`;
+    const open = item.document_id && item.kind !== "notification"
+      ? `showDetail(${Number(item.document_id)}${item.kind === "payment" || item.kind === "collection" ? ", 'payment'" : ""})`
+      : `activateTab('${escapeHtml(item.tab)}')`;
+
+    return `
+      <button type="button" class="agenda-item level-${escapeHtml(item.level)}" onclick="${open}">
+        <span class="agenda-icon" aria-hidden="true">${AGENDA_ICONS[item.kind] || "•"}</span>
+        <span class="agenda-body">
+          <strong>${escapeHtml(item.title)}</strong>
+          <span>${escapeHtml(item.detail)}</span>
+        </span>
+        <span class="agenda-when">
+          <span class="status-pill ${className}">${escapeHtml(label)}</span>
+          <small>${formatDay(item.date)} · ${escapeHtml(when)}</small>
+        </span>
+      </button>
+    `;
+  }).join("");
+}
+
+const AGENT_WORK_GROUPS = [
+  ["document.uploaded", "📥", "documentos recibidos"],
+  ["document.processing.completed", "🔎", "documentos leídos"],
+  ["notification.detected", "🏛️", "notificaciones detectadas"],
+  ["bank.reconciled", "🔗", "pagos conciliados"],
+  ["invoice.approved", "✅", "facturas aprobadas"],
+  ["supplier_rule.learned", "🧠", "categorías aprendidas"],
+];
+
+function renderAgentWork(events) {
+  const container = document.getElementById("agentWork");
+  if (!container) return;
+
+  const since = Date.now() - 24 * 60 * 60 * 1000;
+  const recent = events.filter((event) => new Date(event.created_at).getTime() >= since);
+
+  const tiles = AGENT_WORK_GROUPS
+    .map(([action, icon, label]) => {
+      const count = recent.filter((event) => event.action === action || event.action === `${action}_with_warnings`).length;
+      return { icon, label, count };
+    })
+    .filter((tile) => tile.count > 0);
+
+  if (!tiles.length) {
+    container.innerHTML = `
+      <div class="agent-work-empty">
+        <span aria-hidden="true">🌙</span>
+        Sin actividad en las últimas 24 horas. Sube documentos, importa el banco o conecta Outlook y el agente empezará a trabajar.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <p class="agent-work-title">Trabajo del agente en las últimas 24 horas</p>
+    <div class="agent-work-tiles">
+      ${tiles.map((tile) => `
+        <div class="agent-work-tile">
+          <span aria-hidden="true">${tile.icon}</span>
+          <strong>${tile.count}</strong>
+          <small>${escapeHtml(tile.label)}</small>
+        </div>
+      `).join("")}
+    </div>
+  `;
 }
 
 function renderRecommendation(recommendation) {
@@ -712,6 +869,7 @@ async function loadTasks() {
 
     const sub = document.getElementById("reviewInboxSub");
     if (sub) sub.textContent = `${tasksCache.length} tarea(s) activas`;
+    setText("mRisks", tasksCache.length);
   } catch (error) {
     console.error("No se pudieron cargar tareas:", error);
     container.innerHTML = emptyState("⚠️", "No se pudo cargar la bandeja", error.message);
@@ -732,7 +890,10 @@ function renderTasks(tasks) {
   container.innerHTML = tasks.map((task) => {
     const priority = priorityClass[String(task.priority || "").toUpperCase()] || "medium";
     const invoice = task.document?.invoice || {};
-    const title = invoice.supplier_name || task.document?.original_filename || `Documento ${task.document_id}`;
+    const party = invoice.direction === "ISSUED" ? invoice.customer_name : invoice.supplier_name;
+    const title = task.task_type === "NOTIFICATION"
+      ? `🏛️ ${task.document?.original_filename || "Notificación"}`
+      : party || task.document?.original_filename || `Documento ${task.document_id}`;
 
     return `
       <article class="task-item priority-${priority}">
@@ -746,8 +907,13 @@ function renderTasks(tasks) {
           </p>
           <div class="card-actions">
             ${
-              task.document_id
+              task.task_type === "NOTIFICATION"
                 ? `
+                  <button type="button" class="btn-ghost" onclick="activateTab('notificaciones')">
+                    Ver notificación
+                  </button>
+                `
+                : `
                   <button
                     type="button"
                     class="btn-ghost"
@@ -755,12 +921,11 @@ function renderTasks(tasks) {
                   >
                     Abrir revisión
                   </button>
+                  <button type="button" class="act-btn act-ghost" onclick="resolveTask(${Number(task.id)})">
+                    Cerrar sin cambios
+                  </button>
                 `
-                : ""
             }
-            <button type="button" class="act-btn act-ghost" onclick="resolveTask(${Number(task.id)})">
-              Cerrar sin cambios
-            </button>
           </div>
         </div>
       </article>
@@ -1025,16 +1190,19 @@ function taxLinesHtml(invoice) {
 function paymentSectionHtml(invoice, documentId) {
   if (!invoice.id || invoice.review_status !== "APPROVED") return "";
 
+  const issued = invoice.direction === "ISSUED";
+  const noun = issued ? "cobro" : "pago";
+
   if (invoice.paid_at) {
     return `
       <div class="detail-section payment-box paid" id="paymentSection">
-        <h3>Pago</h3>
+        <h3>${issued ? "Cobro" : "Pago"}</h3>
         <p>
-          Pagada el <strong>${formatDay(invoice.paid_at)}</strong>
+          ${issued ? "Cobrada" : "Pagada"} el <strong>${formatDay(invoice.paid_at)}</strong>
           ${invoice.payment_method ? ` · ${escapeHtml(PAYMENT_METHOD_LABELS[invoice.payment_method] || invoice.payment_method)}` : ""}
         </p>
         <button type="button" class="btn-ghost" onclick="cancelPayment(${Number(invoice.id)}, ${documentId})">
-          Anular pago
+          Anular ${noun}
         </button>
       </div>
     `;
@@ -1042,14 +1210,14 @@ function paymentSectionHtml(invoice, documentId) {
 
   return `
     <div class="detail-section payment-box" id="paymentSection">
-      <h3>Registrar pago</h3>
+      <h3>Registrar ${noun}</h3>
       <div class="payment-form">
         <label>
-          Fecha de pago
+          Fecha de ${noun}
           <input type="date" id="paymentDate" value="${todayIso()}">
         </label>
         <label>
-          Forma de pago
+          Forma de ${noun}
           <select id="paymentMethod">
             ${Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => `
               <option value="${value}">${escapeHtml(label)}</option>
@@ -1057,9 +1225,10 @@ function paymentSectionHtml(invoice, documentId) {
           </select>
         </label>
         <button type="button" class="act-btn act-primary" onclick="markPaid(${Number(invoice.id)}, ${documentId})">
-          Marcar como pagada
+          Marcar como ${issued ? "cobrada" : "pagada"}
         </button>
       </div>
+      <p class="detail-hint">Si importas el extracto del banco, el agente lo concilia por ti en la pestaña Negocio.</p>
     </div>
   `;
 }
@@ -1078,8 +1247,11 @@ const AUDIT_LABELS = {
   "invoice.approved_with_warnings": "Aprobada con advertencias",
   "invoice.rejected": "Factura rechazada",
   "invoice.reopened": "Factura reabierta",
-  "invoice.paid": "Pago registrado",
-  "invoice.payment_cancelled": "Pago anulado",
+  "invoice.paid": "Pago/cobro registrado",
+  "invoice.payment_cancelled": "Pago/cobro anulado",
+  "bank.reconciled": "Conciliado con el banco",
+  "bank.unreconciled": "Conciliación deshecha",
+  "supplier_rule.learned": "El agente aprendió la categoría",
 };
 
 async function loadDetailHistory(documentId) {
@@ -1171,7 +1343,14 @@ async function showDetail(documentId, focus = null) {
 
           ${invoice.id ? `
             <fieldset class="detail-form-grid" ${readonly}>
-              ${detailInput({ id: "detailSupplierName", field: "supplier_name", label: "Proveedor", value: invoice.supplier_name, invoice })}
+              <label>
+                Tipo de factura
+                <select id="detailDirection" data-invoice-field="direction">
+                  <option value="RECEIVED" ${invoice.direction !== "ISSUED" ? "selected" : ""}>Recibida (gasto)</option>
+                  <option value="ISSUED" ${invoice.direction === "ISSUED" ? "selected" : ""}>Emitida (ingreso)</option>
+                </select>
+              </label>
+              ${detailInput({ id: "detailSupplierName", field: "supplier_name", label: "Emisor (proveedor)", value: invoice.supplier_name, invoice })}
               ${detailInput({ id: "detailSupplierTaxId", field: "supplier_tax_id", label: "NIF/CIF proveedor", value: invoice.supplier_tax_id, invoice })}
               ${detailInput({ id: "detailInvoiceNumber", field: "invoice_number", label: "Número de factura", value: invoice.invoice_number, invoice })}
               ${detailInput({ id: "detailInvoiceDate", field: "invoice_date", label: "Fecha de factura", type: "date", value: dateInputValue(invoice.invoice_date), invoice })}
@@ -1189,7 +1368,7 @@ async function showDetail(documentId, focus = null) {
               ${detailInput({ id: "detailSurcharge", field: "surcharge_total", label: "Recargo de equivalencia", type: "number", value: invoice.surcharge_total, invoice })}
               ${detailInput({ id: "detailTotal", field: "total", label: "Total", type: "number", value: invoice.total, invoice })}
               ${detailInput({ id: "detailCurrency", field: "currency", label: "Moneda", value: invoice.currency || "EUR", invoice, extra: 'maxlength="3"' })}
-              ${detailInput({ id: "detailCustomerName", field: "customer_name", label: "Cliente (tu empresa)", value: invoice.customer_name, invoice })}
+              ${detailInput({ id: "detailCustomerName", field: "customer_name", label: "Destinatario (cliente)", value: invoice.customer_name, invoice })}
               ${detailInput({ id: "detailCustomerTaxId", field: "customer_tax_id", label: "NIF/CIF cliente", value: invoice.customer_tax_id, invoice })}
               <label class="span-2">
                 Concepto
@@ -1225,6 +1404,9 @@ async function showDetail(documentId, focus = null) {
             ${invoice.review_status !== "APPROVED" ? `
               <button type="button" class="btn-ghost" onclick="reprocessDocument(${docId})">
                 Reprocesar
+              </button>
+              <button type="button" class="btn-ghost" onclick="convertToNotification(${docId})">
+                Es una notificación
               </button>
             ` : ""}
             <a class="btn-ghost" href="${fileUrl}" target="_blank" rel="noopener noreferrer">
@@ -1313,6 +1495,7 @@ async function saveInvoice(invoiceId, documentId) {
     currency: (inputValue("detailCurrency") || "EUR").toUpperCase(),
     category: inputValue("detailCategory"),
     concept: inputValue("detailConcept"),
+    direction: inputValue("detailDirection") || "RECEIVED",
   };
 
   // Con un único tipo de IVA, el desglose se recalcula a partir de base
@@ -1506,6 +1689,23 @@ async function cancelPayment(invoiceId, documentId) {
   }
 }
 
+async function convertToNotification(documentId) {
+  if (!window.confirm(
+    "Se tratará el documento como notificación administrativa (AEAT, Seguridad Social…) " +
+    "y dejará de contar como factura. ¿Continuar?"
+  )) return;
+
+  try {
+    await apiRequest(`/notifications/from-document/${documentId}`, { method: "POST" });
+    showMessage("Documento registrado como notificación. Revisa su plazo.", "success");
+    document.getElementById("documentDetailDialog")?.close();
+    await refreshAll();
+    activateTab("notificaciones");
+  } catch (error) {
+    showMessage(`No se pudo convertir: ${error.message}`, "error");
+  }
+}
+
 async function reprocessDocument(documentId) {
   if (!window.confirm("¿Quieres volver a ejecutar la extracción? Se sobrescribirán los datos extraídos.")) return;
 
@@ -1691,6 +1891,14 @@ function renderApiError(title, detail) {
 FUNCIONES GLOBALES
 ================================================================ */
 Object.assign(window, {
+  convertToNotification,
+  jsonRequest,
+  formatDate,
+  todayIso,
+  refreshAll,
+  translateStatus,
+  statusClass,
+  quarterRange,
   showDetail,
   saveInvoice,
   approveInvoice,

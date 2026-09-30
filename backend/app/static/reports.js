@@ -3,6 +3,7 @@
 (() => {
   let activeTab = "panel";
   let supplierTimer = null;
+  let supplierDirection = "RECEIVED";
 
   function money(value) {
     return window.formatMoney(value);
@@ -52,6 +53,7 @@
   function exportLedger(format) {
     const params = reportPeriodParams();
     params.set("format", format);
+    params.set("book", document.getElementById("exportBook")?.value || "received");
     if (document.getElementById("exportIncludePending")?.checked) {
       params.set("include_pending", "true");
     }
@@ -98,6 +100,14 @@
     if (report.total_withholding) extras.push(`Retenciones IRPF practicadas: ${money(report.total_withholding)} (modelo 111)`);
     if (report.total_surcharge) extras.push(`Recargo de equivalencia: ${money(report.total_surcharge)}`);
     document.getElementById("reportExtra").textContent = extras.join(" · ");
+
+    const issuedLine = document.getElementById("reportIssued");
+    if (issuedLine) {
+      issuedLine.textContent = report.issued_invoices
+        ? `Facturas emitidas: ${report.issued_invoices} · base ${money(report.issued_base)} · IVA repercutido ${money(report.issued_tax)} · ` +
+          `IVA repercutido − soportado: ${money(report.vat_balance)} (detalle en Impuestos → 303).`
+        : "Sin facturas emitidas aprobadas en el periodo (el IVA repercutido aparecerá al subirlas).";
+    }
 
     const warnings = document.getElementById("reportWarnings");
     warnings.innerHTML = (report.warnings || [])
@@ -187,15 +197,21 @@
     try {
       const params = new URLSearchParams();
       if (search) params.set("q", search);
+      params.set("direction", supplierDirection);
       const suppliers = await window.apiRequest(`/suppliers?${params.toString()}`);
+      const clients = supplierDirection === "ISSUED";
+
+      document.getElementById("supplierColName").textContent = clients ? "Cliente" : "Proveedor";
+      document.getElementById("supplierColTotal").textContent = clients ? "Facturado" : "Gasto aprobado";
+      document.getElementById("supplierColPending").textContent = clients ? "Pendiente de cobro" : "Pendiente de pago";
 
       if (summary) {
         const total = suppliers.reduce((sum, item) => sum + item.total_approved, 0);
-        summary.textContent = `${suppliers.length} proveedor(es) · ${money(total)} aprobado`;
+        summary.textContent = `${suppliers.length} ${clients ? "cliente(s)" : "proveedor(es)"} · ${money(total)} aprobado`;
       }
 
       if (!suppliers.length) {
-        body.innerHTML = `<tr><td colspan="8" class="empty-cell">${search ? "Ningún proveedor coincide con la búsqueda." : "Aún no hay proveedores. Sube facturas para empezar."}</td></tr>`;
+        body.innerHTML = `<tr><td colspan="8" class="empty-cell">${search ? "Nadie coincide con la búsqueda." : clients ? "Aún no hay clientes: sube tus facturas emitidas." : "Aún no hay proveedores. Sube facturas para empezar."}</td></tr>`;
         return;
       }
 
@@ -224,6 +240,16 @@
   }
 
   function setupSuppliers() {
+    document.getElementById("supplierDirection")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-direction]");
+      if (!button) return;
+      supplierDirection = button.dataset.direction;
+      document.querySelectorAll("#supplierDirection .segment").forEach((item) => {
+        item.classList.toggle("active", item === button);
+      });
+      loadSuppliers();
+    });
+
     document.getElementById("supplierSearch")?.addEventListener("input", () => {
       window.clearTimeout(supplierTimer);
       supplierTimer = window.setTimeout(loadSuppliers, 250);
@@ -238,6 +264,7 @@
       if (form) {
         form.reset();
         form.elements.q.value = button.dataset.supplier;
+        form.elements.direction.value = supplierDirection;
       }
       window.activateTab("facturas");
       form?.dispatchEvent(new Event("input"));

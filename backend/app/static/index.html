@@ -9,7 +9,7 @@
   <title>CapaFiscal · Gestión de facturas</title>
   <link
     rel="stylesheet"
-    href="/static/style.css?v=50"
+    href="/static/style.css?v=60"
   >
 </head>
 <body>
@@ -35,33 +35,28 @@
         multiple
         hidden
       >
-      <nav class="nav-tabs" id="navTabs">
-        <button type="button" class="nav-tab active" data-tab="panel">
-          Panel
-        </button>
-        <button type="button" class="nav-tab" data-tab="facturas">
-          Facturas
-          <span class="tab-count" id="cntFacturas">0</span>
-        </button>
-        <button type="button" class="nav-tab" data-tab="proveedores">
-          Proveedores
-        </button>
-        <button type="button" class="nav-tab" data-tab="informes">
-          Informes
-        </button>
-        <button type="button" class="nav-tab" data-tab="asistente">
-          Asistente
-        </button>
-        <button type="button" class="nav-tab" data-tab="actividad">
-          Actividad
-          <span class="tab-count" id="cntActivity">0</span>
-        </button>
-        <button type="button" class="nav-tab" data-tab="conectores">
-          Conectores
-        </button>
-      </nav>
     </div>
   </div>
+  <nav class="nav-tabs main-nav" id="navTabs" aria-label="Secciones">
+    <button type="button" class="nav-tab active" data-tab="panel">Hoy</button>
+    <button type="button" class="nav-tab" data-tab="facturas">
+      Facturas <span class="tab-count" id="cntFacturas">0</span>
+    </button>
+    <button type="button" class="nav-tab" data-tab="negocio">Negocio</button>
+    <button type="button" class="nav-tab" data-tab="impuestos">Impuestos</button>
+    <button type="button" class="nav-tab" data-tab="notificaciones">
+      Notificaciones <span class="tab-count tab-count-alert hidden" id="cntNotifications">0</span>
+    </button>
+    <button type="button" class="nav-tab" data-tab="cumplimiento">Cumplimiento</button>
+    <button type="button" class="nav-tab" data-tab="proveedores">Terceros</button>
+    <button type="button" class="nav-tab" data-tab="informes">Informes</button>
+    <button type="button" class="nav-tab" data-tab="asistente">Asistente</button>
+    <button type="button" class="nav-tab" data-tab="actividad">
+      Actividad <span class="tab-count" id="cntActivity">0</span>
+    </button>
+    <button type="button" class="nav-tab" data-tab="conectores">Conectores</button>
+    <button type="button" class="nav-tab" data-tab="empresa">Mi empresa</button>
+  </nav>
 </header>
 
 <main class="page">
@@ -79,20 +74,20 @@
     <div class="kpi-row">
       <div class="kpi kpi-risk">
         <span class="kpi-value" id="mRisks">0</span>
-        <span class="kpi-label">
-          documentos para revisar
+        <span class="kpi-label" id="mRisksLabel">
+          decisiones pendientes
         </span>
       </div>
       <div class="kpi">
         <span class="kpi-value" id="mIva">0 €</span>
         <span class="kpi-label" id="mIvaLabel">
-          IVA soportado del trimestre
+          IVA estimado del trimestre (303)
         </span>
       </div>
       <div class="kpi">
         <span class="kpi-value" id="mSpend">0 €</span>
         <span class="kpi-label" id="mSpendLabel">
-          gasto aprobado del trimestre
+          resultado del trimestre
         </span>
       </div>
       <div class="kpi kpi-payments">
@@ -103,7 +98,17 @@
       </div>
     </div>
 
+    <div id="agentWork" class="agent-work"></div>
+
     <div id="recommendationCard" class="recommendation-card hidden"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Agenda del agente</h2>
+        <span class="card-sub" id="agendaSub">Próximos 30 días</span>
+      </div>
+      <div id="agendaList" class="agenda-list"></div>
+    </div>
 
     <div
       id="openRisksPanel"
@@ -175,6 +180,14 @@
           >
         </label>
         <label>
+          Tipo
+          <select name="direction">
+            <option value="">Todas</option>
+            <option value="RECEIVED">Recibidas (gastos)</option>
+            <option value="ISSUED">Emitidas (ingresos)</option>
+          </select>
+        </label>
+        <label>
           Revisión
           <select name="review_status">
             <option value="">Todas</option>
@@ -225,18 +238,323 @@
     ></div>
   </section>
 
-  <!-- PROVEEDORES -->
-  <section class="tab-panel" id="tab-proveedores">
+  <!-- NEGOCIO -->
+  <section class="tab-panel" id="tab-negocio">
     <div class="section-title">
-      <h1>Proveedores</h1>
+      <h1>Salud del negocio</h1>
       <p>
-        Agregado de facturas recibidas por NIF/CIF. Los importes
-        incluyen solo facturas aprobadas.
+        Cómo va tu negocio: ingresos, gastos, resultado, IVA, cobros,
+        pagos y caja prevista.
+      </p>
+    </div>
+
+    <div class="card filter-card">
+      <div class="filter-toolbar compact-toolbar">
+        <label>
+          Año
+          <select id="healthYear"></select>
+        </label>
+        <label>
+          Periodo
+          <select id="healthQuarter">
+            <option value="1">1er trimestre</option>
+            <option value="2">2º trimestre</option>
+            <option value="3">3er trimestre</option>
+            <option value="4">4º trimestre</option>
+            <option value="">Año completo</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi kpi-income">
+        <span class="kpi-value" id="hIncome">0 €</span>
+        <span class="kpi-label">ingresos (base)</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-value" id="hExpenses">0 €</span>
+        <span class="kpi-label">gastos (base)</span>
+      </div>
+      <div class="kpi kpi-result">
+        <span class="kpi-value" id="hResult">0 €</span>
+        <span class="kpi-label" id="hResultLabel">resultado</span>
+      </div>
+      <div class="kpi kpi-payments">
+        <span class="kpi-value" id="hBalance">—</span>
+        <span class="kpi-label" id="hBalanceLabel">saldo en banco</span>
+      </div>
+    </div>
+
+    <div id="healthInsights"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Ingresos y gastos · últimos 12 meses</h2>
+        <div class="chart-legend" aria-hidden="true">
+          <span><i class="legend-swatch legend-income"></i>Ingresos</span>
+          <span><i class="legend-swatch legend-expense"></i>Gastos</span>
+        </div>
+      </div>
+      <div id="healthChart" class="month-chart"></div>
+    </div>
+
+    <div class="panel-grid">
+      <div class="card">
+        <div class="card-head">
+          <h2>Cobros pendientes</h2>
+          <span class="card-sub" id="receivablesSub"></span>
+        </div>
+        <div id="receivablesList" class="payments-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Indicadores</h2>
+        </div>
+        <div id="healthIndicators" class="indicator-list"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Previsión de tesorería · 90 días</h2>
+        <span class="card-sub" id="cashflowSub"></span>
+      </div>
+      <div id="cashflowWarnings"></div>
+      <div class="table-scroll">
+        <table class="data-table" id="cashflowTable">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Movimiento previsto</th>
+              <th class="num">Importe</th>
+              <th class="num">Saldo previsto</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="report-note" id="cashflowNote"></p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Banco y conciliación</h2>
+        <span class="card-sub" id="bankSub"></span>
+      </div>
+      <form class="bank-import" id="bankImportForm">
+        <label class="file-drop">
+          <input type="file" name="uploaded_file" accept=".csv,.txt,.xlsx,.xlsm" required>
+          <span>Extracto CSV o Excel descargado de tu banca online</span>
+        </label>
+        <label>
+          Cuenta
+          <input type="text" name="account_label" maxlength="100" placeholder="Ej.: Santander nómina">
+        </label>
+        <button type="submit" class="act-btn act-primary">Importar movimientos</button>
+      </form>
+      <div class="bank-toolbar">
+        <div class="segmented" id="bankFilter">
+          <button type="button" class="segment active" data-status="">Todos</button>
+          <button type="button" class="segment" data-status="SUGGESTED">Propuestos</button>
+          <button type="button" class="segment" data-status="UNMATCHED">Sin conciliar</button>
+          <button type="button" class="segment" data-status="MATCHED">Conciliados</button>
+        </div>
+        <button type="button" class="btn-ghost" id="confirmSafeMatches">
+          Confirmar coincidencias seguras
+        </button>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table" id="bankTable">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Concepto</th>
+              <th class="num">Importe</th>
+              <th>Factura</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- IMPUESTOS -->
+  <section class="tab-panel" id="tab-impuestos">
+    <div class="section-title">
+      <h1>Impuestos</h1>
+      <p>
+        Calendario fiscal y borradores de los modelos calculados en
+        continuo con tus facturas aprobadas.
+      </p>
+    </div>
+
+    <div class="card filter-card">
+      <div class="filter-toolbar compact-toolbar">
+        <label>
+          Año
+          <select id="taxYear"></select>
+        </label>
+        <p class="filter-summary" id="taxFormNote"></p>
+      </div>
+    </div>
+
+    <div class="tax-layout">
+      <div class="card">
+        <div class="card-head">
+          <h2>Calendario fiscal</h2>
+          <span class="card-sub" id="taxCalendarSub"></span>
+        </div>
+        <div id="taxCalendar" class="tax-calendar"></div>
+        <p class="report-note" id="taxCalendarNote"></p>
+      </div>
+
+      <div class="card" id="taxDraftCard">
+        <div class="card-head">
+          <h2 id="taxDraftTitle">Borrador</h2>
+          <span class="card-sub" id="taxDraftPeriod"></span>
+        </div>
+        <div id="taxDraft">
+          <p class="empty-inline">Elige un modelo del calendario para ver su borrador.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Modelo 347 · operaciones con terceros</h2>
+        <span class="card-sub" id="model347Sub"></span>
+      </div>
+      <div id="model347"></div>
+    </div>
+  </section>
+
+  <!-- NOTIFICACIONES -->
+  <section class="tab-panel" id="tab-notificaciones">
+    <div class="section-title">
+      <h1>Notificaciones</h1>
+      <p>
+        Requerimientos, liquidaciones, apremios y comunicaciones de AEAT,
+        Seguridad Social y otros organismos, con su plazo calculado.
       </p>
     </div>
 
     <div class="card">
       <div class="card-head">
+        <h2>Bandeja de notificaciones</h2>
+        <div class="segmented" id="notificationFilter">
+          <button type="button" class="segment active" data-open="true">Abiertas</button>
+          <button type="button" class="segment" data-open="false">Todas</button>
+        </div>
+      </div>
+      <p class="detail-hint">
+        Sube el PDF de la notificación con «Subir documentos»: el agente la
+        reconoce, calcula el plazo y crea una tarea. También puedes
+        registrarla a mano si solo has visto el aviso en DEHú o en la sede.
+      </p>
+      <div id="notificationList" class="aeat-list"></div>
+    </div>
+
+    <details class="card manual-form" id="notificationFormCard">
+      <summary><h2>Registrar notificación manualmente</h2></summary>
+      <form id="notificationForm" class="detail-form-grid notification-form">
+        <label>
+          Organismo
+          <select name="issuer" id="notificationIssuer"></select>
+        </label>
+        <label>
+          Tipo
+          <select name="notification_type" id="notificationType"></select>
+        </label>
+        <label>
+          Referencia / expediente
+          <input type="text" name="reference" maxlength="100">
+        </label>
+        <label>
+          Importe (si lo hay)
+          <input type="number" name="amount" step="0.01">
+        </label>
+        <label>
+          Puesta a disposición
+          <input type="date" name="available_at">
+        </label>
+        <label>
+          Fecha de notificación (acceso)
+          <input type="date" name="notified_at">
+        </label>
+        <label class="span-2">
+          Notas
+          <textarea name="notes" rows="2"></textarea>
+        </label>
+        <div class="span-2 card-actions">
+          <button type="submit" class="act-btn act-primary">Registrar y calcular plazo</button>
+        </div>
+      </form>
+    </details>
+  </section>
+
+  <!-- CUMPLIMIENTO -->
+  <section class="tab-panel" id="tab-cumplimiento">
+    <div class="section-title">
+      <h1>Estado de cumplimiento</h1>
+      <p>
+        Certificado digital, Verifactu, apoderamientos, protección de
+        datos y controles automáticos sobre tu documentación.
+      </p>
+    </div>
+
+    <div class="compliance-hero card">
+      <div class="compliance-score">
+        <strong id="complianceScore">—</strong>
+        <span>cumplimiento</span>
+      </div>
+      <div>
+        <h2>Tranquilidad normativa</h2>
+        <p id="complianceSummary" class="detail-hint"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Certificado digital</h2>
+        <span class="card-sub">Solo se guardan sus fechas y titular</span>
+      </div>
+      <form id="certificateForm" class="bank-import">
+        <label class="file-drop">
+          <input type="file" name="certificate" accept=".cer,.crt,.pem,.p12,.pfx" required>
+          <span>Certificado (.cer, .crt, .pem, .p12 o .pfx)</span>
+        </label>
+        <label>
+          Contraseña (solo .p12/.pfx)
+          <input type="password" name="password" autocomplete="off">
+        </label>
+        <button type="submit" class="act-btn act-primary">Leer caducidad</button>
+      </form>
+      <div id="certificateInfo"></div>
+    </div>
+
+    <div id="complianceGroups"></div>
+    <p class="report-note" id="complianceNote"></p>
+  </section>
+
+  <!-- PROVEEDORES -->
+  <section class="tab-panel" id="tab-proveedores">
+    <div class="section-title">
+      <h1>Proveedores y clientes</h1>
+      <p>
+        Agregado por NIF/CIF. Los importes incluyen solo facturas
+        aprobadas.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="segmented" id="supplierDirection" role="tablist">
+          <button type="button" class="segment active" data-direction="RECEIVED">Proveedores</button>
+          <button type="button" class="segment" data-direction="ISSUED">Clientes</button>
+        </div>
         <label class="inline-search">
           <input
             type="search"
@@ -251,13 +569,13 @@
         <table class="data-table" id="supplierTable">
           <thead>
             <tr>
-              <th>Proveedor</th>
+              <th id="supplierColName">Proveedor</th>
               <th>NIF/CIF</th>
               <th>Categoría principal</th>
               <th class="num">Facturas</th>
-              <th class="num">Gasto aprobado</th>
+              <th class="num" id="supplierColTotal">Gasto aprobado</th>
               <th class="num">IVA</th>
-              <th class="num">Pendiente de pago</th>
+              <th class="num" id="supplierColPending">Pendiente de pago</th>
               <th>Última factura</th>
             </tr>
           </thead>
@@ -291,6 +609,13 @@
             <option value="3">3er trimestre</option>
             <option value="4">4º trimestre</option>
             <option value="">Año completo</option>
+          </select>
+        </label>
+        <label>
+          Libro
+          <select id="exportBook">
+            <option value="received">Facturas recibidas</option>
+            <option value="issued">Facturas expedidas</option>
           </select>
         </label>
         <label class="activity-checkbox">
@@ -334,6 +659,7 @@
         </div>
       </div>
       <p class="report-extra" id="reportExtra"></p>
+      <p class="report-extra" id="reportIssued"></p>
 
       <div class="report-grid">
         <div>
@@ -418,10 +744,11 @@
       <div class="chat-window" id="chatWindow" aria-live="polite"></div>
       <div class="chat-suggestions" id="chatSuggestions">
         <button type="button" class="chip">¿Cuánto IVA llevo este trimestre?</button>
+        <button type="button" class="chip">¿Qué modelos tengo que presentar?</button>
+        <button type="button" class="chip">¿Cómo va el negocio?</button>
+        <button type="button" class="chip">¿Qué notificaciones tengo pendientes?</button>
         <button type="button" class="chip">¿Qué pagos tengo pendientes?</button>
         <button type="button" class="chip">¿Qué riesgos hay abiertos?</button>
-        <button type="button" class="chip">¿Qué tareas tengo pendientes?</button>
-        <button type="button" class="chip">Resumen de situación</button>
       </div>
       <form class="chat-input" id="chatForm">
         <input
@@ -479,6 +806,11 @@
             <option value="invoice">Facturas</option>
             <option value="task">Tareas</option>
             <option value="report">Informes</option>
+            <option value="notification">Notificaciones</option>
+            <option value="bank">Banco</option>
+            <option value="tax">Impuestos</option>
+            <option value="compliance">Cumplimiento</option>
+            <option value="company">Mi empresa</option>
             <option value="connector">Conectores</option>
           </select>
         </label>
@@ -528,6 +860,76 @@
     </div>
     <div id="connectorsList"></div>
   </section>
+  <!-- MI EMPRESA -->
+  <section class="tab-panel" id="tab-empresa">
+    <div class="section-title">
+      <h1>Mi empresa</h1>
+      <p>
+        Con tus datos el agente distingue facturas emitidas y recibidas,
+        elige los modelos que te tocan y calcula el ahorro con tu coste real.
+      </p>
+    </div>
+
+    <div class="card">
+      <form id="companyForm" class="detail-form-grid">
+        <label>
+          Razón social / nombre
+          <input type="text" name="name" maxlength="255">
+        </label>
+        <label>
+          NIF / CIF
+          <input type="text" name="tax_id" maxlength="30">
+        </label>
+        <label>
+          Forma jurídica
+          <select name="legal_form">
+            <option value="SOCIEDAD">Sociedad</option>
+            <option value="AUTONOMO">Autónomo</option>
+          </select>
+        </label>
+        <label>
+          Actividad
+          <input type="text" name="activity" maxlength="255" placeholder="Ej.: taller mecánico, hostelería…">
+        </label>
+        <label>
+          Email de avisos
+          <input type="email" name="email" maxlength="255">
+        </label>
+        <label>
+          Coste por hora del trabajo administrativo (€)
+          <input type="number" name="hourly_cost" step="0.5" min="0">
+        </label>
+        <p class="span-2 detail-hint" id="companyHint"></p>
+        <div class="span-2 card-actions">
+          <button type="submit" class="act-btn act-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Memoria del agente</h2>
+        <span class="card-sub">Categorías aprendidas de tus correcciones</span>
+      </div>
+      <p class="detail-hint">
+        Cuando corriges la categoría de una factura, el agente la recuerda
+        para ese proveedor o cliente y la aplica a las siguientes.
+      </p>
+      <div class="table-scroll">
+        <table class="data-table" id="rulesTable">
+          <thead>
+            <tr>
+              <th>NIF/CIF</th>
+              <th>Categoría</th>
+              <th class="num">Veces aplicada</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 </main>
 
 <footer class="site-footer">
@@ -551,9 +953,14 @@
 
 <div id="appMessages" class="app-messages"></div>
 
-<script src="/static/app.js?v=50"></script>
-<script src="/static/reports.js?v=1"></script>
-<script src="/static/assistant.js?v=1"></script>
-<script src="/static/activity.js?v=2"></script>
+<script src="/static/app.js?v=60"></script>
+<script src="/static/reports.js?v=2"></script>
+<script src="/static/assistant.js?v=2"></script>
+<script src="/static/activity.js?v=3"></script>
+<script src="/static/business.js?v=1"></script>
+<script src="/static/taxes.js?v=1"></script>
+<script src="/static/notifications.js?v=1"></script>
+<script src="/static/compliance.js?v=1"></script>
+<script src="/static/company.js?v=1"></script>
 </body>
 </html>
