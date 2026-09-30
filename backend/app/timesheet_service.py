@@ -118,6 +118,8 @@ def clock(database: Session, employee_id: int, *, actor: str = "user", now: date
 
     now = (now or local_now()).replace(second=0, microsecond=0)
     current = open_entry(database, employee_id)
+    if current is None:
+        check_employed(employee, now.date())
 
     if current:
         if now <= current.clock_in:
@@ -140,6 +142,13 @@ def clock(database: Session, employee_id: int, *, actor: str = "user", now: date
         event_data={"entry_id": entry.id, "time": now.isoformat(timespec="minutes")},
     )
     return {"action": action, "entry": serialize_entry(entry, now)}
+
+
+def check_employed(employee: Employee, day: date) -> None:
+    if employee.hire_date and day < employee.hire_date:
+        raise TimesheetError(f"{display_name(employee)} no está de alta hasta el {employee.hire_date:%d/%m/%Y}.")
+    if employee.termination_date and day > employee.termination_date:
+        raise TimesheetError(f"{display_name(employee)} causó baja el {employee.termination_date:%d/%m/%Y}.")
 
 
 def parse_time(day: date, value: str | None) -> datetime | None:
@@ -186,8 +195,10 @@ def save_manual(
 ) -> TimeEntry:
     if not reason or len(reason.strip()) < 3:
         raise TimesheetError("Indica el motivo del registro manual o de la corrección (queda en el historial).")
-    if database.get(Employee, employee_id) is None:
+    employee = database.get(Employee, employee_id)
+    if employee is None:
         raise TimesheetError("Persona no encontrada.")
+    check_employed(employee, work_date)
 
     clock_in = parse_time(work_date, start)
     clock_out = parse_time(work_date, end)

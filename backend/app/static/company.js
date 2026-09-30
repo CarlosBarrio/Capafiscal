@@ -29,6 +29,11 @@
     form.elements.iban.value = company.iban || "";
     form.elements.bic.value = company.bic || "";
     form.elements.at_ep_rate.value = company.at_ep_rate ?? "";
+    for (const key of ["address", "postal_code", "city", "phone", "invoice_footer", "advisor_email"]) {
+      form.elements[key].value = company[key] || "";
+    }
+    form.elements.default_payment_days.value = company.default_payment_days ?? "";
+    form.elements.late_interest_rate.value = company.late_interest_rate ?? "";
 
     const hint = document.getElementById("companyHint");
 
@@ -69,7 +74,7 @@
       const body = Object.fromEntries(
         [...data.entries()].map(([key, value]) => [key, String(value).trim() || null])
       );
-      for (const key of ["hourly_cost", "at_ep_rate"]) {
+      for (const key of ["hourly_cost", "at_ep_rate", "default_payment_days", "late_interest_rate"]) {
         if (body[key] !== null) body[key] = Number(String(body[key]).replace(",", "."));
       }
 

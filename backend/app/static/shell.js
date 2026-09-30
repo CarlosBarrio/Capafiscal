@@ -8,21 +8,30 @@
   const SECTIONS = {
     panel: ["Inicio", "Hoy", "home"],
     asistente: ["Inicio", "Asistente", "sparkles"],
-    facturas: ["Operación", "Facturas", "file"],
+    facturas: ["Operación", "Facturas recibidas", "file"],
+    ventas: ["Operación", "Ventas y cobros", "invoice"],
     notificaciones: ["Operación", "Notificaciones", "landmark"],
-    actividad: ["Operación", "Actividad", "activity"],
+    salida: ["Operación", "Bandeja de salida", "send"],
     negocio: ["Finanzas", "Negocio", "trending"],
     impuestos: ["Finanzas", "Impuestos", "receipt"],
-    informes: ["Finanzas", "Informes", "chart"],
+    informes: ["Finanzas", "Informes y cierre", "chart"],
     proveedores: ["Finanzas", "Terceros", "briefcase"],
     equipo: ["Personas", "Equipo", "users"],
+    jornada: ["Personas", "Jornada", "clock"],
     nominas: ["Personas", "Nóminas", "wallet"],
+    automatizaciones: ["Empresa", "Automatizaciones", "zap"],
     cumplimiento: ["Empresa", "Cumplimiento", "shield"],
     conectores: ["Empresa", "Conectores", "plug"],
+    actividad: ["Empresa", "Actividad", "activity"],
     empresa: ["Empresa", "Mi empresa", "building"],
   };
 
   const ACTIONS = [
+    { label: "Nueva factura", hint: "Ventas · emitir y registrar", icon: "invoice", run: () => window.newSalesInvoice?.() },
+    { label: "Reclamar impagos", hint: "Ventas · cobros vencidos", icon: "coins", run: () => { window.activateTab("ventas"); window.setTimeout(() => document.querySelector('#salesViews [data-view="cobros"]')?.click(), 50); } },
+    { label: "Fichar entrada o salida", hint: "Jornada", icon: "clock", run: () => window.activateTab("jornada") },
+    { label: "Revisar mensajes pendientes", hint: "Bandeja de salida", icon: "send", run: () => window.activateTab("salida") },
+    { label: "Enviar el trimestre a la gestoría", hint: "Informes y cierre", icon: "archive", run: () => window.activateTab("informes") },
     { label: "Subir documentos", hint: "Facturas o notificaciones en PDF", icon: "upload", run: () => document.getElementById("fileInput")?.click() },
     { label: "Nueva persona", hint: "Equipo", icon: "users", run: () => { window.activateTab("equipo"); window.setTimeout(() => document.getElementById("newEmployeeButton")?.click(), 50); } },
     { label: "Preparar nómina del mes", hint: "Nóminas", icon: "wallet", run: () => { window.activateTab("nominas"); document.getElementById("payrollCreateForm")?.scrollIntoView({ behavior: "smooth" }); } },
@@ -184,6 +193,12 @@
     document.getElementById("sidebarClose")?.addEventListener("click", () => setSidebar(false));
     document.getElementById("sidebarBackdrop")?.addEventListener("click", () => setSidebar(false));
     document.getElementById("searchTrigger")?.addEventListener("click", openPalette);
+
+    // Cualquier botón «Cerrar» de un diálogo.
+    document.addEventListener("click", (event) => {
+      const close = event.target.closest("[data-close-dialog]");
+      if (close) close.closest("dialog")?.close();
+    });
 
     const palette = document.getElementById("palette");
     palette.addEventListener("click", (event) => {

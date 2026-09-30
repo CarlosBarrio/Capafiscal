@@ -47,6 +47,11 @@ class OutboxError(ValueError):
     pass
 
 
+def format_iban(value: str | None) -> str:
+    compact = (value or "").replace(" ", "").upper()
+    return " ".join(compact[index:index + 4] for index in range(0, len(compact), 4))
+
+
 def smtp_configured() -> bool:
     return bool(settings.smtp_host and (settings.smtp_from or settings.smtp_user))
 
@@ -340,7 +345,7 @@ def prepare_invoice_email(database: Session, invoice: SalesInvoice, *, created_b
         f"Hola,\n\n"
         f"Te adjuntamos la factura {invoice.code} de {format_day(invoice.issue_date)} "
         f"por importe de {format_eur(invoice.total)}, con vencimiento el {format_day(invoice.due_date)}.\n\n"
-        + (f"Puedes abonarla por transferencia a la cuenta {company.iban}.\n\n" if company and company.iban else "")
+        + (f"Puedes abonarla por transferencia a la cuenta {format_iban(company.iban)}.\n\n" if company and company.iban else "")
         + "Cualquier duda, responde a este correo.\n\n"
         f"Un saludo,\n{(company.name if company else '') or ''}"
     )

@@ -293,7 +293,9 @@ def reminder_text(level: int, invoice: Invoice, company: CompanyProfile | None, 
     number = invoice.invoice_number or "sin número"
     amount = format_eur(invoice.total)
     days = (today - due).days
-    iban = f"\n\nCuenta para el pago: {company.iban}" if company and company.iban else ""
+    from app.outbox_service import format_iban
+
+    iban = f"\n\nCuenta para el pago: {format_iban(company.iban)}" if company and company.iban else ""
 
     if level == 1:
         subject = f"Recordatorio: factura {number} pendiente de pago"
@@ -332,7 +334,7 @@ def reminder_text(level: int, invoice: Invoice, company: CompanyProfile | None, 
             f"de medidas de lucha contra la morosidad en las operaciones comerciales, la deuda "
             f"devenga:\n"
             f"- Principal: {amount}\n"
-            f"- Intereses de demora al {interest['rate']:.2f} % anual hasta hoy: {format_eur(interest['amount'])}"
+            f"- Intereses de demora al {interest['rate']:.2f} % anual hasta hoy: ".replace(".", ",") + f"{format_eur(interest['amount'])}"
             f"{compensation}\n\n"
             f"Adjuntamos la carta de requerimiento. De no recibir el pago, nos veremos obligados a "
             f"iniciar las acciones legales oportunas para su reclamación.{iban}\n\n"
@@ -407,6 +409,7 @@ def build_letter_pdf(database: Session, invoice_id: int, today: date | None = No
     from reportlab.lib.units import mm
     from reportlab.pdfgen import canvas
 
+    from app.outbox_service import format_iban
     from app.sales_service import format_day
 
     today = today or date.today()
@@ -479,7 +482,7 @@ def build_letter_pdf(database: Session, invoice_id: int, today: date | None = No
     y -= 8 * mm
     rows = [
         ("Principal (factura)", format_eur(invoice.total)),
-        (f"Intereses de demora ({interest['rate']:.2f} % anual, {interest['days']} días)", format_eur(interest["amount"])),
+        (f"Intereses de demora ({interest['rate']:.2f} % anual, {interest['days']} días)".replace(".", ","), format_eur(interest["amount"])),
     ]
     if compensation:
         rows.append(("Indemnización por costes de cobro (art. 8)", format_eur(compensation)))
@@ -495,9 +498,10 @@ def build_letter_pdf(database: Session, invoice_id: int, today: date | None = No
     pdf.drawRightString(right - 6 * mm, y - 1 * mm, format_eur(total_claim))
 
     y -= 14 * mm
+    pdf.setFont("Helvetica", 10)
     closing = [
         "Les rogamos procedan al pago en el plazo máximo de DIEZ DÍAS desde la recepción de esta carta"
-        + (f", mediante transferencia a la cuenta {company.iban}." if company and company.iban else "."),
+        + (f", mediante transferencia a la cuenta {format_iban(company.iban)}." if company and company.iban else "."),
         "Transcurrido dicho plazo sin haber recibido el pago, nos reservamos el derecho a ejercitar las "
         "acciones judiciales que correspondan para el cobro de la deuda, incluido el proceso monitorio, "
         "con los gastos que ello conlleve.",

@@ -188,7 +188,7 @@ def apply_customer_changes(database: Session, customer: Customer, data: dict[str
             select(Customer).where(Customer.tax_id == customer.tax_id, Customer.id != (customer.id or 0))
         )
         if duplicate:
-            raise SalesError(f"Ya existe un cliente con el NIF {customer.tax_id}: {duplicate.name}.")
+            raise SalesError(f"Ya existe un cliente con el NIF {customer.tax_id}: {duplicate.name.rstrip('.')}.")
 
     return customer
 
@@ -1069,7 +1069,7 @@ def build_invoice_pdf(
     pdf.setFont("Helvetica", 8.5)
     pdf.setFillColor(muted)
     payment = invoice.payment_terms or (
-        f"Transferencia a {company.iban}" if company and company.iban else "Transferencia bancaria"
+        f"Transferencia a {' '.join(company.iban[i:i + 4] for i in range(0, len(company.iban), 4))}" if company and company.iban else "Transferencia bancaria"
     )
     pdf.drawString(left, y, f"Forma de pago: {payment[:110]}")
     if invoice.notes:

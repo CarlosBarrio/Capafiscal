@@ -88,6 +88,9 @@
       actions.push(`<button type="button" class="btn-ghost" data-run-action="reopen">Volver a borrador</button>`);
     }
 
+    if (!draft) {
+      actions.push(`<button type="button" class="btn-ghost" data-run-action="email">${window.icon("mail")} Enviar recibos por email</button>`);
+    }
     actions.push(`<a class="btn-ghost" href="/api/payroll/runs/${run.id}/payslips.pdf" target="_blank" rel="noopener noreferrer">${window.icon("doc")} Recibos PDF</a>`);
     actions.push(`<a class="btn-ghost" href="/api/payroll/runs/${run.id}/summary.xlsx">${window.icon("download")} Resumen Excel</a>`);
 
@@ -178,6 +181,16 @@
         window.showMessage("Nómina marcada como pagada.", "success");
       } else if (action === "reopen") {
         await window.jsonRequest(`/payroll/runs/${currentRunId}/status`, "POST", { status: "DRAFT" });
+      } else if (action === "email") {
+        const result = await window.jsonRequest(`/payroll/runs/${currentRunId}/email`, "POST", {});
+        window.showMessage(
+          result.created
+            ? `${result.created} recibo(s) preparado(s) en la bandeja de salida${result.without_email.length ? ` · sin email: ${result.without_email.join(", ")}` : ""}.`
+            : "Los recibos de esta nómina ya estaban preparados o enviados.",
+          result.without_email.length ? "warning" : "success",
+        );
+        window.dispatchEvent(new CustomEvent("capafiscal:outbox-changed"));
+        return;
       } else if (action === "delete") {
         if (!window.confirm("¿Eliminar este borrador de nómina?")) return;
         await window.apiRequest(`/payroll/runs/${currentRunId}`, { method: "DELETE" });

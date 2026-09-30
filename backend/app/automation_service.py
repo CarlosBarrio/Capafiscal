@@ -125,10 +125,16 @@ def job_timesheet(database: Session, now: datetime) -> tuple[int, str]:
     alerts = timesheet_alerts(database, now=now.replace(tzinfo=None))
     if not alerts:
         return 0, "Registro de jornada al día."
+    labels = {
+        "forgotten": "fichaje(s) sin salida",
+        "long_day": "jornada(s) de más de 9 h",
+        "short_rest": "descanso(s) entre jornadas inferiores a 12 h",
+        "missing": "persona(s) con días laborables sin registro",
+    }
     kinds: dict[str, int] = {}
     for alert in alerts:
-        kinds[alert["title"]] = kinds.get(alert["title"], 0) + 1
-    return len(alerts), "; ".join(f"{count} × {title.lower()}" for title, count in kinds.items()) + "."
+        kinds[alert["kind"]] = kinds.get(alert["kind"], 0) + 1
+    return len(alerts), "Detectado: " + ", ".join(f"{count} {labels[kind]}" for kind, count in kinds.items()) + "."
 
 
 def job_advisor(database: Session, now: datetime) -> tuple[int, str]:

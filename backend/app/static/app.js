@@ -700,6 +700,8 @@ const AGENDA_ICONS = {
   compliance: "shield",
   team: "users",
   payroll: "wallet",
+  outbox: "send",
+  timesheet: "clock",
 };
 
 function renderAgenda(agenda) {
@@ -747,6 +749,10 @@ const AGENT_WORK_GROUPS = [
   ["invoice.approved", "check", "facturas aprobadas"],
   ["supplier_rule.learned", "brain", "categorías aprendidas"],
   ["payroll.approved", "wallet", "nóminas aprobadas"],
+  ["sales_invoice.issued", "invoice", "facturas emitidas"],
+  ["outbox.sent", "send", "mensajes enviados"],
+  ["automation.dunning", "coins", "revisiones de cobros"],
+  ["automation.recurring_invoices", "repeat", "revisiones de recurrentes"],
 ];
 
 function renderAgentWork(events) {

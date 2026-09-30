@@ -25,6 +25,12 @@ humana cuando hace falta criterio.
 | **Nóminas** | **Paso de nóminas automático**: borrador mensual de toda la plantilla (12 o 14 pagas, días trabajados, horas extra, incentivos y anticipos) con cotizaciones 2026 (incluye MEI) y retención de IRPF estimada · aprobar → **recibos en PDF**, **remesa SEPA** (pain.001) para subir al banco, resumen en Excel y **asiento contable** (640/642/4751/476/465) · alimenta el modelo 111, la tesorería (neto a fin de mes y seguros sociales el mes siguiente) y la salud del negocio · simulador de coste de contratación |
 | **Terceros** | Proveedores y clientes por NIF: importes, IVA, pendiente y última factura |
 | **Informes** | IVA soportado y repercutido por trimestre, gasto por categoría y mes · **libros registro de facturas recibidas y expedidas** en Excel o CSV |
+| **Ventas y cobros** | **Emisión de facturas** con numeración correlativa por serie, **registro de facturación con huella SHA-256 encadenada** y URL del QR tributario (RD 1007/2023, preparado para VERI\*FACTU), PDF, rectificativas y duplicado · al emitir entran solas en el libro de emitidas (303, 347, cobros y tesorería) · **facturas recurrentes** (cuotas, igualas, alquileres) que el agente genera, emite y deja listas para enviar · clientes con plazo de pago y retención |
+| **Reclamación de impagos** | Cada mañana el agente revisa las facturas vencidas y redacta el mensaje que toca: recordatorio amable, segundo aviso a los 15 días y **requerimiento formal con carta PDF** a partir de 30, con **intereses de demora** por semestre y 40 € de costes de cobro entre empresas (Ley 3/2004) · retraso medio histórico por cliente |
+| **Bandeja de salida** | Todo lo que redacta el agente (facturas, reclamaciones, recibos de nómina, resumen diario, cierre para la gestoría) espera tu visto bueno · envío por **SMTP** o descarga como **borrador .eml** que Outlook abre listo para enviar, con los adjuntos |
+| **Registro de jornada** | Obligatorio (art. 34.9 ET): fichar entrada/salida con un clic, registros manuales y correcciones **con motivo auditado**, resumen mensual frente a la jornada prevista, **alertas** de olvidos, jornadas de más de 9 h, descanso inferior a 12 h y días sin registro, **PDF mensual para firmar** y Excel |
+| **Automatizaciones** | El agente trabaja solo con horario: conciliación bancaria, facturas recurrentes, resumen diario, reclamaciones, vigilancia de jornada, **borrador de nómina el día 25** y **cierre trimestral para la gestoría** · activar/desactivar, ejecutar a mano, historial y **horas y coste ahorrados** del mes |
+| **Cierre para la gestoría** | Un ZIP con libros registro, borradores de modelos, facturas, nóminas y movimientos bancarios del trimestre, con un LEEME de incidencias, y el email a tu asesor ya redactado |
 | **Asistente** | Preguntas sobre IVA y 303 de un trimestre, modelos a presentar, salud del negocio, notificaciones, pagos, un proveedor, riesgos o tareas |
 | **Conectores** | Outlook (Microsoft Graph) para importar adjuntos · carga manual · extractos bancarios |
 | **Navegación** | Menú lateral agrupado (Operación, Finanzas, Personas, Empresa) · buscador y acciones rápidas con **Ctrl + K** (secciones, facturas, personas) · diseño adaptado a móvil |
@@ -125,6 +131,14 @@ backend/
     team_routes.py        API de equipo, proyectos, ausencias y nóminas
     team_service.py       Fichas, incorporación, organigrama, ausencias, CV
     payroll_service.py    Cálculo de nóminas, recibos PDF, SEPA, Excel, asiento
+    ops_routes.py         API de ventas, cobros, bandeja de salida, jornada,
+                          automatizaciones y cierre para la gestoría
+    sales_service.py      Clientes, emisión, registro encadenado, recurrentes
+    dunning_service.py    Cobros vencidos, intereses de demora, reclamaciones
+    outbox_service.py     Bandeja de salida: SMTP y borradores .eml
+    timesheet_service.py  Registro de jornada, alertas, PDF y Excel
+    automation_service.py Automatizaciones programadas y resumen diario
+    advisor_service.py    Paquete trimestral para la gestoría
     operations_service.py Panel, riesgos, agentes y asistente
     task_service.py       Bandeja de revisión
     outlook_connector.py  Conector de Outlook
