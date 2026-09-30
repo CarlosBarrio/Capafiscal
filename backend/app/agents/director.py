@@ -93,9 +93,29 @@ class Director(Agent):
     name = "Director de cartera"
     role = "Prioriza el trabajo y te dice cada mañana qué revisar primero."
     icon = "chart"
+    handles = ("notification", "invoice", "deadline")
+    needs_case = False
+    consumes = ("expediente trabajado", "hallazgos con riesgo y confianza", "plazos e importes")
+    produces = ("prioridad 0-100", "nivel", "¿merece revisión humana?", "estado", "titular")
 
     def run(self, ctx: AgentContext) -> StepResult:
         case = ctx.case
+        if case is None:
+            # Nada que supere el umbral: no se molesta a nadie.
+            low = [item for item in ctx.findings if item.agente == "detector"]
+            ctx.facts["decision"] = "sin nada anómalo" if not low else f"{len(low)} aviso(s) de riesgo bajo, sin expediente"
+            return StepResult(
+                summary=("No merece revisión: " + ctx.facts["decision"] + ". Queda archivada y en la memoria.") if ctx.event and ctx.event.kind == "invoice" else "Nada que revisar.",
+                output={"review": False, "decision": ctx.facts["decision"]},
+            )
+        severity = ctx.signals.get("severity")
+        if case.kind == "ANOMALY" and severity:
+            from app.agents.detector import SEVERITY
+
+            # Riesgo del Detector + si además hay IVA en juego (Fiscal).
+            score = SEVERITY[severity] + (10 if ctx.signals.get("tax_risk") else 0)
+            ctx.facts.update({"severity": severity, "severity_score": score})
+            case.facts = {**(case.facts or {}), "severity": severity, "severity_score": score}
         prioritize(ctx.database, case, ctx.today)
         days = (case.deadline - ctx.today).days if case.deadline else None
         status_text = {
@@ -107,7 +127,7 @@ class Director(Agent):
             summary=f"Prioridad {case.priority}/100 ({LEVEL_WORDS[case.level].lower()}); {status_text}"
             + (f"; vence en {days} días" if days is not None and days >= 0 else "; plazo vencido" if days is not None else "")
             + ".",
-            output={"priority": case.priority, "level": case.level, "status": case.status, "headline": case.headline},
+            output={"priority": case.priority, "level": case.level, "status": case.status, "headline": case.headline, "review": case.status == "WAITING_HUMAN"},
         )
 
 

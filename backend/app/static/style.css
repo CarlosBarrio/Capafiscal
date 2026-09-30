@@ -2612,3 +2612,36 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 
 .case-banner-eyebrow { flex-wrap: wrap; }
 .case-banner-eyebrow .mono { white-space: nowrap; }
+
+/* Plataforma de agentes: rutas, hallazgos y recomendación */
+.finding { padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: 10px; background: var(--surface); }
+.finding + .finding { margin-top: 8px; }
+.finding.risk-high { border-left-color: var(--red); }
+.finding.risk-medium { border-left-color: var(--amber); }
+.finding-top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.finding-top .status-pill.mini { margin-left: 0; }
+.finding p { margin: 6px 0; font-size: 13px; color: var(--ink-2); }
+.finding small { display: block; font-size: 12px; }
+.recommendation { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: var(--brand-050); color: var(--ink); font-weight: 600; font-size: 13.5px; }
+.recommendation .icon { width: 17px; height: 17px; color: var(--brand); flex-shrink: 0; margin-top: 2px; }
+.recommendation small { display: block; color: var(--muted); font-weight: 500; font-size: 11.5px; }
+.add-action { display: flex; gap: 8px; margin-top: 8px; }
+.add-action input { flex: 1; min-width: 0; }
+.route-banner { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; padding: 10px 12px; border-radius: 10px; background: var(--brand-050); font-size: 13px; }
+.route-banner span { color: var(--ink-2); }
+.route-list { display: flex; flex-direction: column; }
+.route-row { display: grid; grid-template-columns: 190px 1fr; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.route-row:last-child { border-bottom: none; }
+.route-name small { display: block; color: var(--muted); font-size: 12px; }
+.route-chain { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.route-node { display: inline-flex; gap: 4px; align-items: center; height: 26px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 999px; font-size: 12px; color: var(--ink-2); background: var(--surface); }
+.route-node .icon { width: 13px; height: 13px; }
+.route-node.is-conditional { border-style: dashed; color: var(--muted); }
+.route-node.is-human { border-color: var(--brand); color: var(--brand); background: var(--brand-050); font-weight: 600; }
+.route-arrow { color: var(--muted); font-size: 12px; }
+.agent-contract { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; margin: 8px 0 0; font-size: 12px; }
+.agent-contract dt { color: var(--muted); font-weight: 600; }
+.agent-contract dd { margin: 0; color: var(--ink-2); }
+@media (max-width: 720px) {
+  .route-row { grid-template-columns: 1fr; gap: 6px; }
+}

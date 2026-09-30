@@ -58,15 +58,13 @@ DOC_STATUS_LABELS = {
     "provided": "Aportado",
     "not_applicable": "No aplica",
 }
-ANOMALY_LABELS = {
-    "IMPORTE_ATIPICO": "Importe atípico",
-    "PROVEEDOR_NUEVO": "Proveedor nuevo",
-    "IVA_INUSUAL": "IVA inusual",
-    "POSIBLE_DUPLICADO": "Posible duplicado",
-    "FACTURA_FALTA": "Factura que falta",
-    "MOVIMIENTO_SIN_FACTURA": "Movimiento sin factura",
-    "IVA_TENDENCIA": "IVA fuera de tendencia",
-}
+def _anomaly_labels() -> dict[str, str]:
+    from app.agents.detector import ANOMALY_TYPES
+
+    return {code: item["label"] for code, item in ANOMALY_TYPES.items()} | {"FACTURA_SOSPECHOSA": "Factura sospechosa"}
+
+
+ANOMALY_LABELS = _anomaly_labels()
 MAX_ATTACHMENT = 15 * 1024 * 1024
 ALLOWED = {".pdf", ".jpg", ".jpeg", ".png", ".txt", ".xlsx", ".xls", ".csv", ".doc", ".docx", ".zip"}
 
@@ -134,7 +132,7 @@ def serialize_case(database: Session, case: Case, *, full: bool = False, today: 
         {
             "facts": {
                 key: facts.get(key)
-                for key in ("insights", "fiscal_notes", "tax_references", "affected", "intake_warnings", "embargo_pending", "source", "document_name", "deadline_rule", "severity", "evidence", "median", "history")
+                for key in ("insights", "fiscal_notes", "tax_references", "affected", "intake_warnings", "embargo_pending", "source", "document_name", "deadline_rule", "severity", "evidence", "median", "history", "supplier_history", "invoice", "invoice_tax", "period", "recommendation", "human_decision")
                 if facts.get(key) not in (None, [], {})
             },
             "documents": [{**item, "status_label": DOC_STATUS_LABELS.get(item.get("status"), item.get("status"))} for item in documents],
@@ -165,6 +163,8 @@ def serialize_case(database: Session, case: Case, *, full: bool = False, today: 
                 for item in case.events
             ],
             "run": serialize_run(last_run) if last_run else None,
+            "route": facts.get("route"),
+            "findings": facts.get("findings") or [],
             "notification_id": case.notification_id,
             "document_id": case.document_id,
             "filing_reference": case.filing_reference,
@@ -179,7 +179,7 @@ def serialize_case(database: Session, case: Case, *, full: bool = False, today: 
 def list_cases(database: Session, *, view: str = "open", today: date | None = None) -> list[dict[str, Any]]:
     statement = select(Case)
     if view == "open":
-        statement = statement.where(Case.status.in_(OPEN_STATUSES), Case.kind == "NOTIFICATION")
+        statement = statement.where(Case.status.in_(OPEN_STATUSES), Case.kind.in_(["NOTIFICATION", "DEADLINE"]))
     elif view == "anomalies":
         statement = statement.where(Case.status.in_(OPEN_STATUSES), Case.kind == "ANOMALY")
     elif view == "closed":
@@ -223,6 +223,13 @@ def update_case(database: Session, case: Case, data: dict[str, Any], actor: str)
                 break
         case.required_documents = documents
 
+    if data.get("add_action"):
+        label = str(data["add_action"]).strip()[:200]
+        if label:
+            case.proposed_actions = [*(case.proposed_actions or []), {"label": label, "done": False, "by": "human"}]
+            record_decision(case, "modified", actor, label)
+            event(database, case, f"Acción añadida: {label}", actor=actor)
+
     if "deadline" in data and data["deadline"]:
         case.deadline = data["deadline"]
         event(database, case, f"Plazo ajustado al {case.deadline:%d/%m/%Y}", actor=actor)
@@ -242,17 +249,36 @@ def sync_notification(database: Session, case: Case, status: str) -> None:
                 notification.closed_at = datetime.now(timezone.utc)
 
 
+def record_decision(case: Case, decision: str, actor: str, note: str | None) -> None:
+    """La decisión humana queda en el expediente: la Memoria y el Detector aprenden de ella."""
+    case.facts = {
+        **(case.facts or {}),
+        "human_decision": {"decision": decision, "actor": actor, "note": note, "at": datetime.now(timezone.utc).isoformat()},
+    }
+
+
 def approve(database: Session, case: Case, actor: str) -> Case:
     if case.status not in {"WAITING_HUMAN", "WAITING_DOCS", "OPEN"}:
         raise CaseError("Este expediente no está pendiente de aprobación.")
     missing = [item["label"] for item in (case.required_documents or []) if item.get("status") in {"missing", "requested", "partial"}]
-    case.status = "READY_TO_FILE"
-    event(
-        database,
-        case,
-        "Escrito aprobado: listo para presentar en la sede electrónica" + (f" (atención: faltan {len(missing)} documento(s))" if missing else ""),
-        actor=actor,
-    )
+    if case.kind == "ANOMALY":
+        # Una anomalía no se presenta: aprobar es aceptar la recomendación.
+        recommendation = (case.facts or {}).get("recommendation") or next((item["label"] for item in (case.proposed_actions or [])), "Revisado")
+        case.status = "RESOLVED"
+        case.resolution = f"Recomendación aprobada: {recommendation}"
+        case.resolved_at = datetime.now(timezone.utc)
+        record_decision(case, "approved", actor, recommendation)
+        event(database, case, case.resolution, actor=actor)
+    else:
+        case.status = "READY_TO_FILE"
+        record_decision(case, "approved", actor, None)
+        event(
+            database,
+            case,
+            ("Aprobado: listo para presentar" if case.kind == "DEADLINE" else "Escrito aprobado: listo para presentar en la sede electrónica")
+            + (f" (atención: faltan {len(missing)} documento(s))" if missing else ""),
+            actor=actor,
+        )
     add_audit_event(database, action="case.approved", entity_type="case", entity_id=case.id, actor=actor, event_data={"code": case.code, "missing": missing})
     return case
 
@@ -271,6 +297,7 @@ def resolve(database: Session, case: Case, *, resolution: str | None, dismiss: b
     case.status = "DISMISSED" if dismiss else "RESOLVED"
     case.resolution = (resolution or "").strip() or ("Descartado: no requiere acción." if dismiss else "Resuelto.")
     case.resolved_at = datetime.now(timezone.utc)
+    record_decision(case, "rejected" if dismiss else "resolved", actor, case.resolution)
     for request in case.requests:
         if request.status == "PENDING":
             request.status = "CANCELLED"

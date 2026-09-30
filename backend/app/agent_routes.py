@@ -67,6 +67,7 @@ def case_detail(case_id: int, database: DatabaseDependency) -> dict[str, Any]:
 class CaseUpdate(BaseModel):
     draft_response: str | None = Field(default=None, max_length=50000)
     action_index: int | None = None
+    add_action: str | None = Field(default=None, max_length=200)
     done: bool | None = None
     document_code: str | None = Field(default=None, max_length=60)
     document_detail: str | None = Field(default=None, max_length=500)
@@ -149,13 +150,12 @@ def case_reopen(case_id: int, database: DatabaseDependency, actor_header: ActorH
 
 @router.post("/cases/{case_id}/rerun", tags=["Expedientes"])
 def case_rerun(case_id: int, database: DatabaseDependency) -> dict[str, Any]:
-    from app.agents.orchestrator import process_notification
+    from app.agents.orchestrator import rerun_case
     from app.case_service import serialize_case
 
     case = case_or_404(database, case_id)
-    if not case.notification_id:
-        raise HTTPException(status_code=409, detail="Solo se reprocesan expedientes de notificaciones.")
-    process_notification(database, case.notification_id, trigger="manual")
+    if rerun_case(database, case) is None and not case.notification_id:
+        raise HTTPException(status_code=409, detail="Este expediente no se puede volver a trabajar (lo abrió el barrido del Detector).")
     database.commit()
     database.refresh(case)
     return serialize_case(database, case, full=True)
@@ -276,6 +276,91 @@ def agents_scan(database: DatabaseDependency) -> dict[str, Any]:
     result = run_anomaly_scan(database, trigger="manual")
     database.commit()
     return result
+
+
+@router.get("/agents/routes", tags=["Agentes"])
+def agents_routes() -> dict[str, Any]:
+    """Qué ruta sigue cada tipo de caso y el contrato de entrada/salida de cada agente."""
+    from app.agents.orchestrator import AGENTS
+    from app.agents.orchestrator import routes_overview
+
+    return {"routes": routes_overview(), "contracts": [agent.contract() | {"name": agent.name} for agent in AGENTS.values()]}
+
+
+@router.post("/agents/deadlines/watch", tags=["Agentes"])
+def agents_deadlines(database: DatabaseDependency) -> dict[str, Any]:
+    from app.agents.orchestrator import watch_deadlines
+
+    cases = watch_deadlines(database, trigger="manual")
+    database.commit()
+    return {"created": len(cases), "cases": [{"id": case.id, "code": case.code, "title": case.title} for case in cases]}
+
+
+class EventNotification(BaseModel):
+    issuer: str | None = Field(default=None, max_length=30)
+    notification_type: str | None = Field(default=None, max_length=40)
+    title: str | None = Field(default=None, max_length=255)
+    reference: str | None = Field(default=None, max_length=100)
+    summary: str | None = Field(default=None, max_length=5000)
+    notes: str | None = Field(default=None, max_length=5000)
+    amount: float | None = None
+    available_at: date | None = None
+    notified_at: date | None = None
+    deadline: date | None = None
+
+
+class EventIn(BaseModel):
+    kind: str = Field(pattern="^(notification|invoice|deadline)$")
+    source: str = Field(default="api", max_length=40)
+    notification: EventNotification | None = None
+    invoice_id: int | None = None
+    model: str | None = Field(default=None, pattern="^(303|130|111|115)$")
+    year: int | None = Field(default=None, ge=2000, le=2100)
+    quarter: int | None = Field(default=None, ge=1, le=4)
+    due: date | None = None
+
+
+@router.post("/events", tags=["Agentes"], status_code=201)
+def post_event(payload: EventIn, database: DatabaseDependency, actor_header: ActorHeader = None) -> dict[str, Any]:
+    """Entrada común para cualquier fuente (DEHú, correo, banco, plazos…):
+    evento → Vigilante → Expediente → Orquestador → agentes → Director → humano."""
+    from app.agents.base import Event
+    from app.agents.orchestrator import process_deadline
+    from app.agents.orchestrator import process_event
+    from app.agents.orchestrator import process_invoice
+    from app.case_service import serialize_case
+    from app.notification_service import ISSUERS
+    from app.notification_service import NOTIFICATION_TYPES
+    from app.notification_service import create_notification
+
+    case = None
+    if payload.kind == "notification":
+        if payload.notification is None:
+            raise HTTPException(status_code=422, detail="Falta la notificación.")
+        data = payload.notification.model_dump()
+        if data.get("issuer") and data["issuer"] not in ISSUERS:
+            raise HTTPException(status_code=422, detail="Organismo no válido.")
+        if data.get("notification_type") and data["notification_type"] not in NOTIFICATION_TYPES:
+            raise HTTPException(status_code=422, detail="Tipo de notificación no válido.")
+        notification = create_notification(database, document=None, data=data, actor=normalize_actor(actor_header) or payload.source)
+        database.flush()
+        case = process_event(database, Event("notification", source=payload.source, ref_id=notification.id), trigger=payload.source)
+    elif payload.kind == "invoice":
+        if payload.invoice_id is None:
+            raise HTTPException(status_code=422, detail="Falta invoice_id.")
+        case = process_invoice(database, payload.invoice_id, trigger=payload.source)
+    else:
+        if not (payload.model and payload.year and payload.quarter):
+            raise HTTPException(status_code=422, detail="Faltan modelo, año y trimestre.")
+        from app.tax_service import quarterly_due_date
+
+        due = payload.due or quarterly_due_date(payload.year, payload.quarter)
+        case = process_deadline(database, model=payload.model, year=payload.year, quarter=payload.quarter, due=due, trigger=payload.source)
+    database.commit()
+    run = database.scalar(select(AgentRun).order_by(AgentRun.id.desc()).limit(1))
+    from app.agents.orchestrator import serialize_run
+
+    return {"case": serialize_case(database, case, full=True) if case else None, "run": serialize_run(run) if run else None}
 
 
 @router.get("/memory/search", tags=["Agentes"])

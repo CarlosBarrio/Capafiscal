@@ -1,0 +1,10 @@
+{
+  "id": "deadline_303_001",
+  "descripcion": "Faltan 15 días para el 303: se abre expediente con el borrador, las facturas sin revisar y los pasos hasta presentarlo.",
+  "entrada": {"tipo": "deadline", "model": "303", "days_to_due": 15},
+  "ruta_esperada": "plazo",
+  "agentes_esperados": ["vigilante", "expedientes", "fiscal", "memoria", "detector", "gestor", "director"],
+  "resultado_esperado": {"expediente": true, "kind": "DEADLINE", "procedure": "MODELO_303", "status": "WAITING_HUMAN"},
+  "evidencias_esperadas": ["Modelo 303"],
+  "accion_esperada": "Presentar el 303"
+}

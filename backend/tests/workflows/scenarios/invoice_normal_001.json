@@ -1,0 +1,14 @@
+{
+  "id": "invoice_normal_001",
+  "descripcion": "Factura mensual normal: pasa por el Detector y no molesta a nadie.",
+  "entrada": {
+    "tipo": "invoice",
+    "historial": {"supplier": "TELEFONICA DE ESPANA S.A.U.", "tax_id": "A82018474", "totals": [60.5, 61, 60.5, 62, 60.5]},
+    "factura": {"number": "TF-0099", "total": 61.2, "days_ago": 2}
+  },
+  "ruta_esperada": "documento_normal",
+  "agentes_esperados": ["vigilante", "expedientes", "detector", "director"],
+  "resultado_esperado": {"expediente": false},
+  "evidencias_esperadas": [],
+  "accion_esperada": null
+}

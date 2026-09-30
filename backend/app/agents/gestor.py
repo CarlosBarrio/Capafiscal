@@ -15,6 +15,7 @@ from sqlalchemy import select
 from app.agents import llm
 from app.agents.base import Agent
 from app.agents.base import AgentContext
+from app.agents.base import RISK_ORDER
 from app.agents.base import StepResult
 from app.agents.base import eur
 from app.agents.base import evidence
@@ -150,13 +151,111 @@ def resolve(database, code: str, period: dict[str, Any] | None, facts: dict[str,
     return result
 
 
+def supplier_query_draft(invoice: Any, findings: list[Any], company: Any) -> str:
+    """Borrador de consulta al proveedor (no sale sin visto bueno)."""
+    points = "\n".join(f"  • {item.por_que}" for item in findings if item.agente == "detector")
+    return (
+        f"Asunto: Consulta sobre su factura {invoice.invoice_number or ''}\n\n"
+        f"Buenos días:\n\nAntes de tramitar su factura {invoice.invoice_number or ''} de {invoice.invoice_date:%d/%m/%Y} "
+        f"por {eur(invoice.total)}, necesitamos aclarar lo siguiente:\n\n{points}\n\n"
+        "¿Pueden confirmarnos si es correcta o, en su caso, enviarnos la factura rectificativa?\n\n"
+        f"Un saludo,\n{(company.name if company else None) or '[Tu empresa]'}"
+    )
+
+
 class GestorIncidencias(Agent):
     code = "gestor"
     name = "Gestor de incidencias"
     role = "Trabaja el expediente: qué piden, qué falta, qué hacer y el borrador de respuesta."
     icon = "briefcase"
+    handles = ("notification", "invoice", "deadline")
+    consumes = ("expediente", "hallazgos de Fiscal, Memoria y Detector", "catálogo de trámites y documentos")
+    produces = ("documentos necesarios y quién los aporta", "acciones propuestas", "recomendación", "borrador de respuesta", "plazo interno", "señal missing_documents")
 
     def run(self, ctx: AgentContext) -> StepResult:
+        kind = ctx.event.kind if ctx.event else "notification"
+        if kind == "invoice":
+            return self.run_invoice(ctx)
+        if kind == "deadline":
+            return self.run_deadline(ctx)
+        return self.run_notification(ctx)
+
+    def run_invoice(self, ctx: AgentContext) -> StepResult:
+        case = ctx.case
+        invoice = ctx.facts["invoice_obj"]
+        detected = [item for item in ctx.findings if item.agente == "detector"]
+        others = [item for item in ctx.findings if item.agente != "detector"]
+        actions: list[dict[str, Any]] = []
+
+        def add(label: str | None) -> None:
+            if label and all(label != item["label"] for item in actions):
+                actions.append({"label": label, "done": False})
+
+        high = any(item.riesgo == "high" for item in detected)
+        if not invoice.paid_at and (high or any(item.tipo == "POSIBLE_DUPLICADO" for item in detected)):
+            add("Retener el pago de esta factura hasta aclararlo")
+        for item in sorted(detected, key=lambda finding: -RISK_ORDER[finding.riesgo]):
+            add(item.siguiente)
+        for item in others:
+            add(item.siguiente)
+        add("Si todo es correcto, descártalo explicando por qué: la próxima vez se tendrá en cuenta")
+
+        done = {action["label"] for action in (case.proposed_actions or []) if action.get("done")}
+        extra = [action for action in (case.proposed_actions or []) if action.get("by") == "human"]
+        for action in actions:
+            action["done"] = action["label"] in done
+        case.proposed_actions = actions + [action for action in extra if action["label"] not in {item["label"] for item in actions}]
+
+        recommendation = actions[0]["label"]
+        ctx.facts["recommendation"] = recommendation
+        said = recommendation[:1].lower() + recommendation[1:].rstrip(".")
+        ctx.facts["insights"] = [item.por_que for item in [*detected, *others]]
+        headline = detected[0].resultado if detected else "Factura a revisar"
+        case.summary = f"{headline.rstrip('.')}. {detected[0].por_que if detected else ''}".strip() + f" Recomendación: {said}."
+        company = ctx.database.scalar(select(CompanyProfile).limit(1))
+        if detected and not case.draft_edited:
+            case.draft_response = supplier_query_draft(invoice, detected, company)
+        case.required_documents = case.required_documents or []
+        return StepResult(
+            summary=f"Recomendación: {said}. {len(actions)} acción(es) propuestas" + ("; borrador de consulta al proveedor listo." if detected else "."),
+            output={"recommendation": recommendation, "actions": actions, "has_draft": bool(case.draft_response)},
+            evidence=[evidence("finding", f"{item.resultado} ({item.agente})") for item in ctx.findings[:6]],
+        )
+
+    def run_deadline(self, ctx: AgentContext) -> StepResult:
+        case = ctx.case
+        period = ctx.facts["period"]
+        reference = (ctx.facts.get("tax_references") or [{}])[0]
+        anomalies = ctx.facts.get("anomalies") or []
+        actions: list[dict[str, Any]] = []
+        if reference.get("invoices_pending"):
+            actions.append({"label": f"Revisar las {reference['invoices_pending']} factura(s) pendientes del {period['quarter']}T", "done": False})
+        relevant = [item for item in anomalies if item["severity"] in {"medium", "high"}]
+        if relevant:
+            actions.append({"label": f"Resolver {len(relevant)} anomalía(s) antes de presentar (Expedientes · Anomalías)", "done": False})
+        actions.append({"label": f"Revisar el borrador del {period['model']} y su resultado", "done": False})
+        actions.append({"label": f"Presentar el {period['model']} en la sede de la AEAT y registrar el justificante", "done": False})
+        done = {action["label"] for action in (case.proposed_actions or []) if action.get("done")}
+        for action in actions:
+            action["done"] = action["label"] in done
+        case.proposed_actions = actions
+
+        deadline = ctx.facts.get("deadline")
+        case.internal_deadline = max(ctx.today, subtract_business_days(deadline, 3)) if deadline else None
+        result = reference.get("draft_result")
+        case.summary = (
+            f"El {period['model']} del {period['quarter']}T {period['year']} vence el {deadline:%d/%m/%Y}."
+            + (f" Borrador: {eur(result)}." if result is not None else "")
+            + (f" Antes: {actions[0]['label'].lower()}." if len(actions) > 2 else " Todo listo para revisar y presentar.")
+        )
+        ctx.facts["recommendation"] = actions[0]["label"]
+        ctx.facts["insights"] = ctx.facts.get("fiscal_notes", [])
+        return StepResult(
+            summary=f"{len(actions)} paso(s) hasta presentar; objetivo: tenerlo el {case.internal_deadline:%d/%m}." if case.internal_deadline else f"{len(actions)} paso(s) hasta presentar.",
+            output={"actions": actions, "internal_deadline": case.internal_deadline},
+        )
+
+    def run_notification(self, ctx: AgentContext) -> StepResult:
         database = ctx.database
         case = ctx.case
         facts = ctx.facts
@@ -306,6 +405,7 @@ class GestorIncidencias(Agent):
         case.proposed_actions = actions
         case.summary = summary
         facts["insights"] = insights
+        facts["recommendation"] = actions[0]["label"] if actions else None
 
         result_summary = f"{len(ready)} de {len(documents)} documento(s) preparados por el agente" if documents else "Sin documentación que aportar"
         if missing:
@@ -320,4 +420,5 @@ class GestorIncidencias(Agent):
             output={"documents": documents, "actions": actions, "insights": insights, "internal_deadline": internal, "has_draft": bool(draft)},
             evidence=[evidence("document_check", f"{item['label']}: {item['status']}", note=item["note"]) for item in documents],
             engine=engine,
+            signals={"missing_documents": sum(1 for item in missing if item["source"] in {"internal", "third"})},
         )

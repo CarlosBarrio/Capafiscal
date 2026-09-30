@@ -25,7 +25,12 @@
     missing: "status-danger",
     not_applicable: "status-neutral",
   };
-  const KIND_LABELS = { document: "Documento", notification: "Notificación", case: "Expediente" };
+  const KIND_LABELS = { document: "Documento", notification: "Notificación", case: "Expediente", filing: "Presentación" };
+  const RISK_CLASS = { high: "status-danger", medium: "status-warning", low: "status-neutral" };
+  const RISK_LABELS = { high: "Riesgo alto", medium: "Riesgo medio", low: "Riesgo bajo" };
+  const AGENT_NAMES = { vigilante: "Vigilante", expedientes: "Expedientes", fiscal: "Fiscal", memoria: "Memoria", detector: "Detector", gestor: "Gestor", perseguidor: "Perseguidor", director: "Director" };
+  const AGENT_ICONS = { vigilante: "eye", expedientes: "archive", fiscal: "receipt", memoria: "brain", detector: "alert", gestor: "briefcase", perseguidor: "send", director: "chart" };
+  const PIPELINE_LABELS = { notification: "Notificación", invoice: "Factura", deadline: "Plazo", anomalies: "Barrido del Detector" };
   const SOURCE_ICONS = { case: "archive", tax: "receipt", collection: "coins", payment: "card", compliance: "shield", team: "users", payroll: "wallet", outbox: "send", timesheet: "clock" };
 
   let active = false;
@@ -186,7 +191,7 @@
     document.querySelectorAll("#caseDialog .case-pane").forEach((item) => item.classList.toggle("hidden", item.dataset.pane !== name));
     const docsTab = document.querySelector('#caseTabs [data-pane="documentacion"]');
     const draftTab = document.querySelector('#caseTabs [data-pane="respuesta"]');
-    docsTab.classList.toggle("hidden", current?.kind === "ANOMALY");
+    docsTab.classList.toggle("hidden", current?.kind !== "NOTIFICATION" && !(current?.documents || []).length);
     draftTab.classList.toggle("hidden", !current?.has_draft && current?.kind === "ANOMALY");
   }
 
@@ -201,7 +206,7 @@
         <p>${esc(item.title)}</p>
       </div>
       <div class="case-banner-side">
-        ${item.kind === "NOTIFICATION" ? `<div class="case-countdown"><strong>${esc(big)}</strong><small>${esc(small)}</small></div>` : ""}
+        ${["NOTIFICATION", "DEADLINE"].includes(item.kind) ? `<div class="case-countdown"><strong>${esc(big)}</strong><small>${esc(small)}</small></div>` : ""}
         <span class="status-pill ${STATUS_CLASS[item.status] || "status-neutral"}">${esc(item.status_label)}</span>
         <button type="button" class="icon-button" data-close-dialog aria-label="Cerrar">${window.icon("close")}</button>
       </div>
@@ -244,7 +249,32 @@
         `).join("")}
       </div>` : "";
 
-    const anomalyEvidence = item.kind === "ANOMALY" && facts.evidence?.length ? `
+    const findings = (item.findings || []).length ? `
+      <div class="summary-block">
+        <h3>Hallazgos con evidencia</h3>
+        ${item.findings.map((finding) => `
+          <div class="finding risk-${esc(finding.riesgo)}">
+            <div class="finding-top">
+              <span class="status-pill mini ${RISK_CLASS[finding.riesgo] || "status-neutral"}">${esc(RISK_LABELS[finding.riesgo] || finding.riesgo)}</span>
+              <strong>${esc(finding.resultado)}</strong>
+            </div>
+            <p>${esc(finding.por_que)}</p>
+            ${finding.evidencia?.length ? `<div class="trace-evidence">${finding.evidencia.slice(0, 5).map((ev) => `<button type="button" class="chip" ${ev.document_id ? `data-open-document="${ev.document_id}"` : ""}>${esc(ev.label)}</button>`).join("")}</div>` : ""}
+            <small class="muted">Detectado por: ${esc(AGENT_NAMES[finding.agente] || finding.agente)} · confianza ${Math.round((finding.confianza || 0) * 100)} %${finding.fecha ? ` · ${esc(day(finding.fecha))}` : ""}${finding.siguiente ? ` · Siguiente: ${esc(finding.siguiente)}` : ""}</small>
+          </div>`).join("")}
+      </div>` : "";
+
+    const history = facts.supplier_history;
+    const supplier = history ? `
+      <div class="summary-block">
+        <h3>Historial del proveedor</h3>
+        ${factRow("Facturas anteriores", history.invoices ? `${history.invoices}<small>desde ${esc(day(history.first_date))}</small>` : "Ninguna: es la primera")}
+        ${factRow("Importe habitual", history.median_total !== null && history.median_total !== undefined ? `${money(history.median_total)}<small>mediana · máx. ${money(history.max_total)}</small>` : "")}
+        ${factRow("Últimos 12 meses", history.invoices ? money(history.total_12m) : "")}
+        ${factRow("Sin pagar", history.invoices ? String(history.unpaid) : "")}
+      </div>` : "";
+
+    const anomalyEvidence = item.kind === "ANOMALY" && !(item.findings || []).length && facts.evidence?.length ? `
       <div class="summary-block">
         <h3>Evidencia</h3>
         ${facts.evidence.map((ev) => `<button type="button" class="antecedent" ${ev.document_id ? `data-open-document="${ev.document_id}"` : ""}><span class="antecedent-kind">Factura</span><span><strong>${esc(ev.label)}</strong><small>${ev.document_id ? "Abrir el documento" : ""}</small></span></button>`).join("")}
@@ -257,14 +287,20 @@
         <div>
           <div class="summary-block">
             <h3>Qué hay que hacer</h3>
+            ${facts.recommendation ? `<p class="recommendation">${window.icon("sparkles")}<span><small>Recomendación de los agentes</small>${esc(facts.recommendation)}</span></p>` : ""}
             <ul class="check-list">
               ${(item.actions || []).map((action, index) => `
                 <li class="check-item">
                   <input type="checkbox" class="check-toggle" data-action-index="${index}" ${action.done ? "checked" : ""} aria-label="${esc(action.label)}">
-                  <span class="check-text"><strong class="${action.done ? "is-done" : ""}">${esc(action.label)}</strong></span>
+                  <span class="check-text"><strong class="${action.done ? "is-done" : ""}">${esc(action.label)}</strong>${action.by === "human" ? `<small class="muted">añadida por ti</small>` : ""}</span>
                 </li>`).join("")}
             </ul>
+            <form class="add-action" id="caseAddAction">
+              <input type="text" maxlength="200" placeholder="Añadir o cambiar lo que hay que hacer…" aria-label="Nueva acción">
+              <button type="submit" class="btn-ghost">Añadir</button>
+            </form>
           </div>
+          ${findings}
           ${antecedents}
           ${anomalyEvidence}
         </div>
@@ -279,9 +315,11 @@
             ${factRow("Plazo", item.deadline ? `${esc(day(item.deadline))}${facts.deadline_rule ? `<small>${esc(facts.deadline_rule)}</small>` : ""}` : "Sin plazo conocido")}
             ${factRow("Objetivo interno", item.internal_deadline ? `${esc(day(item.internal_deadline))} <small>margen de seguridad de 2 días hábiles</small>` : "")}
             ${factRow("Origen", esc(facts.document_name || facts.source || ""))}
+            ${item.route ? factRow("Ruta", `${esc(item.route.label)}<small>${esc(item.route.reason || "")}</small>`) : ""}
             ${item.document_id ? `<button type="button" class="btn-ghost" data-open-document="${item.document_id}">${window.icon("doc")} Ver el documento original</button>` : ""}
           </div>
           ${references ? `<div class="summary-block"><h3>Impacto fiscal</h3>${references}</div>` : ""}
+          ${supplier}
           ${embargo}
         </div>
       </div>
@@ -356,6 +394,12 @@
     const engines = [...new Set(run.steps.map((step) => step.engine))];
     let elapsed = 0;
     document.getElementById("casePaneTrace").innerHTML = `
+      ${current.route ? `
+        <div class="route-banner">
+          <strong>Ruta: ${esc(current.route.label)}</strong><span>${esc(current.route.reason || "")}</span>
+          ${current.route.escalated ? `<span class="value-negative">Empezó como «documento normal»; el Detector la escaló a «${esc(current.route.label)}».</span>` : ""}
+          ${(current.route.chained || []).map((link) => `<span>+ ${link.added.map((code) => esc(AGENT_NAMES[code] || code)).join(", ")} tras ${esc(AGENT_NAMES[link.after] || link.after)}: ${esc(link.reason)}</span>`).join("")}
+        </div>` : ""}
       <p class="detail-hint">Recorrido del ${esc(window.formatDate(run.started_at))} · ${run.steps.length} agentes · ${total} ms · motor: ${esc(engines.join(", "))} · disparado por ${esc({ upload: "la subida del documento", manual: "ti", schedule: "el planificador", system: "el sistema" }[run.trigger] || run.trigger)}</p>
       <ol class="trace">
         ${run.steps.map((step) => {
@@ -397,9 +441,15 @@
     const actions = [];
     const open = ["WAITING_HUMAN", "WAITING_DOCS", "OPEN"].includes(item.status);
     if (item.kind === "ANOMALY" && open) {
+      if (item.route) actions.push(`<button type="button" class="btn-ghost" data-case-action="rerun">${window.icon("repeat")} Volver a pasar los agentes</button>`);
       actions.push(`<button type="button" class="btn-ghost" data-case-action="dismiss">Es correcto, descartar</button>`);
       actions.push(`<span class="spacer"></span>`);
-      actions.push(`<button type="button" class="act-btn act-primary" data-case-action="resolve">${window.icon("check")} Resuelto</button>`);
+      actions.push(`<button type="button" class="btn-ghost" data-case-action="resolve">Resuelto de otra forma</button>`);
+      actions.push(`<button type="button" class="act-btn act-primary" data-case-action="approve">${window.icon("check")} Aprobar recomendación</button>`);
+    } else if (item.kind === "DEADLINE" && open) {
+      actions.push(`<button type="button" class="btn-ghost" data-case-action="rerun">${window.icon("repeat")} Recalcular</button>`);
+      actions.push(`<span class="spacer"></span>`);
+      actions.push(`<button type="button" class="act-btn act-primary" data-case-action="approve">${window.icon("check")} Listo para presentar</button>`);
     } else if (open) {
       if (item.notification_id) actions.push(`<button type="button" class="btn-ghost" data-case-action="rerun">${window.icon("repeat")} Volver a pasar los agentes</button>`);
       actions.push(`<button type="button" class="btn-ghost" data-case-action="dismiss">Descartar</button>`);
@@ -436,8 +486,12 @@
         const draft = document.getElementById("caseDraft");
         if (draft && draft.value !== current.draft_response) await patch({ draft_response: draft.value });
         if (missing && !window.confirm(`Faltan ${missing} documento(s). ¿Aprobar la respuesta igualmente?`)) return;
+        const kind = current.kind;
         current = await window.jsonRequest(`/cases/${id}/approve`, "POST", {});
-        window.showMessage("Respuesta aprobada: descarga el paquete y preséntalo en la sede electrónica.", "success");
+        window.showMessage(
+          kind === "ANOMALY" ? "Recomendación aprobada y anotada en la memoria." : kind === "DEADLINE" ? "Listo para presentar." : "Respuesta aprobada: descarga el paquete y preséntalo en la sede electrónica.",
+          "success",
+        );
       } else if (action === "file") {
         const reference = window.prompt("Número de registro de entrada del justificante (opcional):", "");
         if (reference === null) return;
@@ -497,7 +551,7 @@
       <div class="agents-intro-body">
         <div>
           <h2>Tu equipo de ${data.agents.length} agentes</h2>
-          <p>Trabajan en cadena: el Vigilante detecta, Expedientes asigna, Fiscal mide el impacto, Memoria busca antecedentes, el Gestor prepara la respuesta, el Perseguidor consigue lo que falta y el Director prioriza. Tú solo revisas las excepciones.</p>
+          <p>Cada cosa que ocurre (una notificación, una factura, un plazo) abre un expediente y el orquestador decide qué agentes hacen falta. Si un agente encuentra algo, se encadenan los siguientes. Todo acaba en una recomendación con evidencia que tú apruebas, cambias o rechazas.</p>
         </div>
         <div class="agents-engine">
           <span class="status-pill ${data.ai_enabled ? "status-info" : "status-neutral"}">${data.ai_enabled ? `IA: ${esc(data.engine)}` : "Reglas y plantillas"}</span>
@@ -517,13 +571,24 @@
           <span><strong>${agent.steps}</strong> tareas este mes</span>
           ${agent.avg_ms ? `<span><strong>${agent.avg_ms}</strong> ms de media</span>` : ""}
         </div>
+        ${agent.contract ? `
+          <dl class="agent-contract">
+            <dt>Entrada</dt><dd>${esc(agent.contract.input.join(" · "))}</dd>
+            <dt>Salida</dt><dd>${esc(agent.contract.output.join(" · "))}</dd>
+          </dl>` : ""}
         ${agent.last_summary ? `<div class="agent-last">${window.icon("clock")}<span>${esc(agent.last_summary)}</span></div>` : ""}
       </article>
+    `).join("");
+    document.getElementById("agentRoutes").innerHTML = (data.routes || []).map((route) => `
+      <div class="route-row">
+        <span class="route-name"><strong>${esc(route.label)}</strong><small>${esc(PIPELINE_LABELS[route.event] || route.event)}</small></span>
+        <span class="route-chain">${route.steps.map((code) => `<span class="route-node ${route.only_if_anomaly.includes(code) ? "is-conditional" : ""}" title="${route.only_if_anomaly.includes(code) ? "Solo si el Detector encuentra algo" : ""}">${window.icon(AGENT_ICONS[code] || "sparkles")}${esc(AGENT_NAMES[code] || code)}</span>`).join(`<span class="route-arrow">→</span>`)}<span class="route-arrow">→</span><span class="route-node is-human">${window.icon("users")}Tú</span></span>
+      </div>
     `).join("");
     document.getElementById("agentRuns").innerHTML = runs.length ? runs.map((run) => `
       <button type="button" class="run-item" ${run.case_id ? `data-open-case="${run.case_id}"` : ""}>
         <span class="run-chain">${run.steps.map((step) => `<span class="run-node status-${esc(step.status.toLowerCase())}" title="${esc(step.agent_name)}: ${esc(step.summary)}">${window.icon(step.icon)}</span>`).join("")}</span>
-        <span class="run-text"><strong>${esc(run.summary || run.pipeline)}</strong><small>${esc({ notification: "Notificación", anomalies: "Detector" }[run.pipeline] || run.pipeline)} · ${esc(window.formatDate(run.started_at))}</small></span>
+        <span class="run-text"><strong>${esc(run.summary || run.pipeline)}</strong><small>${esc(PIPELINE_LABELS[run.pipeline] || run.pipeline)} · ${esc(window.formatDate(run.started_at))}</small></span>
       </button>
     `).join("") : `<p class="empty-inline">Aún no hay recorridos.</p>`;
   }
@@ -621,6 +686,15 @@
         window.showMessage(error.message, "error");
       }
     });
+    document.getElementById("watchDeadlines").addEventListener("click", async () => {
+      try {
+        const result = await window.jsonRequest("/agents/deadlines/watch", "POST", {});
+        window.showMessage(result.created ? `${result.created} plazo(s) con expediente: ${result.cases.map((item) => item.title).join(", ")}.` : "Ningún modelo vence en los próximos 15 días sin expediente.", "success");
+        refreshBackground();
+      } catch (error) {
+        window.showMessage(error.message, "error");
+      }
+    });
     document.getElementById("processPending").addEventListener("click", async () => {
       try {
         const result = await window.jsonRequest("/agents/process-pending", "POST", {});
@@ -635,6 +709,14 @@
     document.getElementById("caseTabs").addEventListener("click", (event) => {
       const button = event.target.closest(".segment");
       if (button) showPane(button.dataset.pane);
+    });
+    dialog.addEventListener("submit", (event) => {
+      if (event.target.id !== "caseAddAction") return;
+      event.preventDefault();
+      const input = event.target.querySelector("input");
+      const label = input.value.trim();
+      if (!label) return;
+      patch({ add_action: label }).then(() => window.showMessage("Acción añadida: queda anotada como decisión tuya.", "success")).catch((error) => window.showMessage(error.message, "error"));
     });
     dialog.addEventListener("click", async (event) => {
       const action = event.target.closest("[data-case-action]");

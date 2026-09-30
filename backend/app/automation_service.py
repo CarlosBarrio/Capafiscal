@@ -199,6 +199,16 @@ def job_anomalies(database: Session, now: datetime) -> tuple[int, str]:
     return result["created"], f"{result['created']} anomalía(s) nuevas y {result['closed']} cerrada(s) solas."
 
 
+def job_deadlines(database: Session, now: datetime) -> tuple[int, str]:
+    from app.agents.orchestrator import DEADLINE_LEAD_DAYS
+    from app.agents.orchestrator import watch_deadlines
+
+    cases = watch_deadlines(database, trigger="schedule", today=now.date())
+    if not cases:
+        return 0, f"Ningún modelo vence en los próximos {DEADLINE_LEAD_DAYS} días sin expediente."
+    return len(cases), f"{len(cases)} plazo(s) con expediente preparado: " + ", ".join(f"{case.code} ({case.title})" for case in cases) + "."
+
+
 def job_follow_up(database: Session, now: datetime) -> tuple[int, str]:
     from app.agents.perseguidor import follow_up
 
@@ -211,6 +221,7 @@ def job_follow_up(database: Session, now: datetime) -> tuple[int, str]:
 AUTOMATIONS: tuple[Automation, ...] = (
     Automation("AGENT_PIPELINE", "Orquestador de expedientes", "Cada notificación nueva recorre los agentes de punta a punta: la detecta, la asigna, mira el impacto fiscal, busca antecedentes, reúne la documentación y prepara la respuesta.", "Cada 5 minutos", 0, 5, "interval", job_agents, 45, "Agente", "expedientes"),
     Automation("ANOMALY_SCAN", "Detector de anomalías", "Cruza facturas, banco e histórico y abre un expediente cuando algo no cuadra: importes atípicos, duplicados, IVA inusual, facturas que faltan o pagos sin factura.", "Cada día · 06:45", 6, 45, "daily", job_anomalies, 15, "Agente", "expedientes"),
+    Automation("DEADLINE_WATCH", "Vigilante de plazos", "15 días antes de cada 303, 130, 111 o 115 abre su expediente: borrador del modelo, facturas sin revisar, anomalías del periodo y pasos hasta presentarlo.", "Cada día · 07:10", 7, 10, "daily", job_deadlines, 10, "Agente", "expedientes"),
     Automation("FOLLOW_UP", "Perseguidor de documentación", "Recuerda a quien debe aportar documentación, con cortesía creciente, hasta que la sube; después la verifica.", "Cada día · 09:30", 9, 30, "daily", job_follow_up, 10, "Agente", "expedientes"),
     Automation("BANK_MATCH", "Conciliación bancaria", "Cruza los movimientos importados con facturas pendientes y propone el cobro o pago.", "Cada día · 06:30", 6, 30, "daily", job_bank, 3, "Finanzas", "negocio"),
     Automation("RECURRING_INVOICES", "Facturas recurrentes", "Genera (y emite si lo indicas) las cuotas, igualas y alquileres que se facturan cada periodo.", "Cada día · 07:00", 7, 0, "daily", job_recurring, 10, "Ventas", "ventas"),

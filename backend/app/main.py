@@ -256,14 +256,20 @@ def get_missing_invoice_fields(
 
 
 def run_agents_for_document(database, document_id: int | None) -> None:
-    """Si el documento es una notificación, el orquestador la trabaja ya."""
+    """Ha llegado algo: el orquestador decide qué agentes lo trabajan.
+
+    Notificación → su ruta (requerimiento, embargo…). Factura recibida →
+    Detector y, si hay algo raro, expediente de «factura sospechosa».
+    """
     if not document_id:
         return
 
     from sqlalchemy import select as sql_select
 
+    from app.agents.orchestrator import process_invoice
     from app.agents.orchestrator import process_notification
     from app.models import FiscalNotification
+    from app.models import Invoice
 
     try:
         notification = database.scalar(
@@ -271,7 +277,11 @@ def run_agents_for_document(database, document_id: int | None) -> None:
         )
         if notification is not None:
             process_notification(database, notification.id, trigger="upload")
-            database.commit()
+        else:
+            invoice = database.scalar(sql_select(Invoice).where(Invoice.document_id == document_id))
+            if invoice is not None and invoice.direction != "ISSUED":
+                process_invoice(database, invoice.id, trigger="upload")
+        database.commit()
     except Exception:
         database.rollback()
         logging.getLogger(__name__).exception("Los agentes no pudieron procesar el documento %s", document_id)

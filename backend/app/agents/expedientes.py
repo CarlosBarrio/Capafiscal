@@ -22,6 +22,7 @@ from app.extractor import is_valid_spanish_tax_id
 from app.extractor import normalize_search_text
 from app.extractor import normalize_tax_id
 from app.models import Case
+from app.models import CaseEvent
 from app.models import Customer
 from app.models import Employee
 from app.models import Invoice
@@ -97,13 +98,124 @@ def directory(database) -> dict[str, dict]:
     return people
 
 
+def open_case_for_event(ctx: AgentContext, *, announce: bool = True) -> Case:
+    """Abre el expediente de una factura o un plazo (las notificaciones lo abren en ``run``)."""
+    database = ctx.database
+    event = ctx.event
+    year = ctx.today.year
+    if event.kind == "invoice":
+        invoice = ctx.facts["invoice_obj"]
+        from app.agents.detector import SEVERITY
+
+        severity = ctx.signals.get("severity") or "medium"
+        case = Case(
+            code=next_case_code(database, year),
+            kind="ANOMALY",
+            procedure="FACTURA_SOSPECHOSA",
+            title=f"Factura sospechosa de {invoice.supplier_name or 'proveedor'} · {invoice.invoice_number or 's/n'}"[:255],
+            status="OPEN",
+            facts={"origin": "invoice", "severity": severity, "severity_score": SEVERITY[severity]},
+            required_documents=[],
+            proposed_actions=[],
+            antecedents=[],
+            fingerprint=f"factura:{invoice.id}",
+            subject_type="supplier",
+            subject_name=invoice.supplier_name,
+            subject_tax_id=invoice.supplier_tax_id,
+            reference=invoice.invoice_number,
+            amount=invoice.total,
+            document_id=invoice.document_id,
+            deadline=invoice.due_date if not invoice.paid_at and invoice.due_date and invoice.due_date >= ctx.today else None,
+        )
+    else:
+        period = ctx.facts["period"]
+        case = Case(
+            code=next_case_code(database, year),
+            kind="DEADLINE",
+            procedure=f"MODELO_{period['model']}",
+            title=f"Modelo {period['model']} · {period['quarter']}T {period['year']}",
+            status="OPEN",
+            facts={"origin": "deadline"},
+            required_documents=[],
+            proposed_actions=[],
+            antecedents=[],
+            fingerprint=f"plazo:{period['model']}:{period['year']}-{period['quarter']}",
+            subject_type="company",
+            subject_name=company_name(database) or "Tu empresa",
+            organism="AEAT",
+            reference=ctx.facts.get("reference"),
+            deadline=ctx.facts.get("deadline"),
+        )
+    database.add(case)
+    database.flush()
+    ctx.case = case
+    if announce:
+        database.add(
+            CaseEvent(case_id=case.id, kind="agent", actor="expedientes", title=f"Expedientes · Abierto {case.code}: {case.title}"[:255], data={"event": event.kind})
+        )
+    return case
+
+
 class ClasificadorExpedientes(Agent):
     code = "expedientes"
     name = "Expedientes"
     role = "Identifica a quién afecta cada documento, qué trámite es y abre el expediente."
     icon = "archive"
+    handles = ("notification", "invoice", "deadline")
+    needs_case = False
+    consumes = ("evento del Vigilante", "texto del documento", "directorio de NIF (empresa, plantilla, clientes, proveedores)")
+    produces = ("expediente (abierto o reutilizado)", "a quién afecta", "trámite y subtipo", "tercero afectado")
 
     def run(self, ctx: AgentContext) -> StepResult:
+        kind = ctx.event.kind if ctx.event else "notification"
+        if kind == "invoice":
+            return self.run_invoice(ctx)
+        if kind == "deadline":
+            return self.run_deadline(ctx)
+        return self.run_notification(ctx)
+
+    def run_invoice(self, ctx: AgentContext) -> StepResult:
+        invoice = ctx.facts["invoice_obj"]
+        known = directory(ctx.database)
+        tax_id = (invoice.supplier_tax_id or "").upper() or None
+        match = known.get(tax_id) if tax_id else None
+        previous = 0
+        if tax_id:
+            previous = ctx.database.scalar(
+                select(func.count()).select_from(Invoice).where(Invoice.supplier_tax_id == tax_id, Invoice.id != invoice.id)
+            ) or 0
+        role = (match or {}).get("type", "supplier")
+        subject = {"type": "supplier", "name": invoice.supplier_name or (match or {}).get("name"), "tax_id": tax_id, "ref_id": None}
+        ctx.facts.update({"procedure": "FACTURA", "procedure_label": "Factura recibida", "subject": subject, "supplier_known": previous > 0, "supplier_previous": previous})
+        notes = []
+        if role in {"employee", "customer"}:
+            notes.append(f"el NIF es también de {SUBJECT_LABELS[role]} ({match['name']})")
+        who = f"{subject['name'] or 'proveedor sin nombre'}" + (f" ({tax_id})" if tax_id else " (sin NIF)")
+        if ctx.case is not None:
+            summary = f"Actualizado {ctx.case.code}: proveedor {who}, {previous} factura(s) anteriores."
+        elif previous:
+            summary = f"Proveedor conocido: {who}, {previous} factura(s) anteriores. Expediente solo si el Detector encuentra algo."
+        else:
+            summary = f"Proveedor nuevo: {who}. Expediente solo si el Detector encuentra algo."
+        if notes:
+            summary += " Ojo: " + "; ".join(notes) + "."
+        return StepResult(
+            summary=summary,
+            output={"subject": subject, "previous_invoices": previous, "case_code": ctx.case.code if ctx.case else None},
+            evidence=[evidence("tax_id", f"{tax_id} → {subject['name']}")] if tax_id else [],
+        )
+
+    def run_deadline(self, ctx: AgentContext) -> StepResult:
+        created = ctx.case is None
+        case = ctx.case or open_case_for_event(ctx, announce=False)
+        case.deadline = ctx.facts.get("deadline")
+        ctx.facts.update({"procedure": case.procedure, "procedure_label": f"Presentación del modelo {ctx.facts['period']['model']}", "subject": {"type": "company", "name": case.subject_name}})
+        return StepResult(
+            summary=f"{'Abierto' if created else 'Actualizado'} {case.code}: {case.title}, a presentar por {(case.subject_name or 'tu empresa').rstrip('.')}.",
+            output={"case_code": case.code, "procedure": case.procedure},
+        )
+
+    def run_notification(self, ctx: AgentContext) -> StepResult:
         database = ctx.database
         notification = ctx.facts["notification"]
         normalized = normalize_search_text(ctx.text)

@@ -1,4 +1,15 @@
-"""Piezas comunes: contexto compartido, resultado de un paso y registro."""
+"""
+Piezas comunes de la plataforma de agentes.
+
+  Event       lo que ha ocurrido (notificación, factura, plazo…): la entrada.
+  AgentContext lo que los agentes se pasan durante un recorrido.
+  Agent       un empleado digital con un contrato explícito: qué consume
+              (``consumes``), qué produce (``produces``) y para qué tipos de
+              evento sirve (``handles``). Así se reutiliza en otros procesos.
+  StepResult  lo que devuelve cada paso: resumen, datos, evidencias,
+              hallazgos (Finding) y señales para encadenar agentes.
+  Finding     el hallazgo con evidencia, común a todos los agentes.
+"""
 from __future__ import annotations
 
 import time
@@ -16,6 +27,67 @@ from app.models import Case
 from app.models import CaseEvent
 
 
+EVENT_KINDS = {
+    "notification": "Notificación administrativa",
+    "invoice": "Factura recibida",
+    "deadline": "Plazo programado",
+}
+
+
+@dataclass
+class Event:
+    """Ha ocurrido algo. Toda entrada al sistema pasa por aquí."""
+
+    kind: str  # notification | invoice | deadline
+    source: str = "system"  # upload, dehu, email, schedule, manual…
+    ref_id: int | None = None  # id de la notificación, factura…
+    payload: dict[str, Any] = field(default_factory=dict)
+
+    def describe(self) -> str:
+        return EVENT_KINDS.get(self.kind, self.kind)
+
+
+RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
+RISK_LABELS = {"low": "bajo", "medium": "medio", "high": "alto"}
+
+
+@dataclass
+class Finding:
+    """Un hallazgo con evidencia. Misma forma venga del agente que venga:
+    qué se detectó, por qué, con qué datos, riesgo, confianza, de qué
+    documento sale, cuándo y qué debería pasar después."""
+
+    agente: str
+    tipo: str
+    resultado: str
+    por_que: str
+    riesgo: str = "low"
+    confianza: float = 0.8
+    datos: dict[str, Any] = field(default_factory=dict)
+    evidencia: list[dict[str, Any]] = field(default_factory=list)
+    documento_origen: int | None = None
+    fecha: str | None = None
+    siguiente: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return jsonable(
+            {
+                "agente": self.agente,
+                "tipo": self.tipo,
+                "resultado": self.resultado,
+                "por_que": self.por_que,
+                "riesgo": self.riesgo,
+                "riesgo_label": RISK_LABELS.get(self.riesgo, self.riesgo),
+                "confianza": round(self.confianza, 2),
+                "datos": self.datos,
+                "evidencia": self.evidencia,
+                "documento_origen": self.documento_origen,
+                "fecha": self.fecha,
+                "siguiente": self.siguiente,
+            }
+        )
+
+
 @dataclass
 class AgentContext:
     """Lo que los agentes se pasan de uno a otro durante un recorrido."""
@@ -27,6 +99,10 @@ class AgentContext:
     text: str = ""
     facts: dict[str, Any] = field(default_factory=dict)
     trigger: str = "system"
+    event: Event | None = None
+    route: str | None = None
+    findings: list[Finding] = field(default_factory=list)
+    signals: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -36,15 +112,31 @@ class StepResult:
     evidence: list[dict[str, Any]] = field(default_factory=list)
     engine: str = "reglas"
     status: str = "OK"
+    findings: list[Finding] = field(default_factory=list)
+    signals: dict[str, Any] = field(default_factory=dict)
 
 
 class Agent:
-    """Un empleado digital con un rol concreto."""
+    """Un empleado digital con un rol concreto y un contrato de entrada/salida."""
 
     code = "agent"
     name = "Agente"
     role = ""
     icon = "sparkles"
+    handles: tuple[str, ...] = ("notification",)
+    needs_case = True
+    consumes: tuple[str, ...] = ()
+    produces: tuple[str, ...] = ()
+
+    @classmethod
+    def contract(cls) -> dict[str, Any]:
+        return {
+            "code": cls.code,
+            "handles": list(cls.handles),
+            "needs_case": cls.needs_case,
+            "input": list(cls.consumes),
+            "output": list(cls.produces),
+        }
 
     def run(self, ctx: AgentContext) -> StepResult:  # pragma: no cover - interfaz
         raise NotImplementedError
@@ -63,13 +155,20 @@ def run_step(ctx: AgentContext, run: AgentRun, agent: Agent, position: int) -> S
         result = StepResult(summary=f"No se pudo completar: {error}", status="ERROR")
 
     duration = int((time.perf_counter() - started) * 1000)
+    output = dict(result.output)
+    if result.findings:
+        output["findings"] = [item.to_dict() for item in result.findings]
+        ctx.findings.extend(result.findings)
+    if result.signals:
+        output["signals"] = result.signals
+        ctx.signals.update(result.signals)
     step = AgentStep(
         run_id=run.id,
         position=position,
         agent=agent.code,
         status=result.status,
         summary=result.summary,
-        output=jsonable(result.output),
+        output=jsonable(output),
         evidence=jsonable(result.evidence),
         engine=result.engine,
         duration_ms=duration,

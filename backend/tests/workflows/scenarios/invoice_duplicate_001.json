@@ -1,0 +1,14 @@
+{
+  "id": "invoice_duplicate_001",
+  "descripcion": "Llega otra vez una factura con el mismo número del mismo proveedor: duplicado con confianza alta, no deducir el IVA dos veces.",
+  "entrada": {
+    "tipo": "invoice",
+    "historial": {"supplier": "LIMPIEZAS NORTE S.L.", "tax_id": "B09123456", "totals": [300, 300, 310, 305, 300]},
+    "factura": {"number": "E-4", "total": 300, "days_ago": 2, "duplicate_of": "E-4"}
+  },
+  "ruta_esperada": "factura_sospechosa",
+  "agentes_esperados": ["vigilante", "expedientes", "memoria", "detector", "fiscal", "gestor", "director"],
+  "resultado_esperado": {"expediente": true, "kind": "ANOMALY", "procedure": "FACTURA_SOSPECHOSA", "hallazgos": ["POSIBLE_DUPLICADO", "IVA_EN_RIESGO"], "riesgo": "high"},
+  "evidencias_esperadas": ["LIMPIEZAS NORTE S.L. · E-4"],
+  "accion_esperada": "Retener el pago de esta factura hasta aclararlo"
+}

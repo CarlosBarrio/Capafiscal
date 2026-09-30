@@ -1,0 +1,10 @@
+{
+  "id": "notification_002",
+  "descripcion": "Segundo requerimiento parecido: la Memoria encuentra el anterior como antecedente.",
+  "entrada": {"tipo": "notification", "previas": ["requerimiento_303"], "texto": "requerimiento_303_1t"},
+  "ruta_esperada": "requerimiento",
+  "agentes_esperados": ["vigilante", "expedientes", "fiscal", "memoria", "gestor", "perseguidor", "director"],
+  "resultado_esperado": {"expediente": true, "kind": "NOTIFICATION", "procedure": "COMPROBACION_LIMITADA", "antecedente": "2026CL0099887"},
+  "evidencias_esperadas": ["Notificación: Requerimiento"],
+  "accion_esperada": "Reunir la documentación"
+}

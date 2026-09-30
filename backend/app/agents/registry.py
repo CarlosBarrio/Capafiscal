@@ -29,7 +29,7 @@ AGENTS: list[dict[str, Any]] = [
     {"code": "director", "name": "Director de cartera", "icon": "chart", "need": "¿Qué reviso primero?",
      "role": "Prioriza todos los expedientes y te dice cada mañana qué revisar primero."},
     {"code": "detector", "name": "Detector de anomalías", "icon": "alert", "need": "Avísame si algo no cuadra",
-     "role": "Cruza facturas, banco e histórico con estadística robusta y avisa de importes atípicos, duplicados, IVA inusual o facturas que faltan."},
+     "role": "Motor reutilizable: importes atípicos, duplicados, IVA atípico, pagos sin factura, facturas sin pago, proveedores nuevos, cambios de comportamiento, facturas que faltan y patrones interrumpidos."},
 ]
 AGENTS_BY_CODE = {item["code"]: item for item in AGENTS}
 
@@ -49,12 +49,21 @@ def agents_overview(database: Session) -> dict[str, Any]:
             last_summaries[agent] = step.summary
     runs = database.scalar(select(func.count()).select_from(AgentRun).where(AgentRun.started_at >= month_start)) or 0
 
+    from app.agents.orchestrator import AGENTS as INSTANCES
+    from app.agents.orchestrator import routes_overview
+
     return {
+        "routes": routes_overview(),
         "engine": llm.engine_label(),
         "ai_enabled": llm.available(),
         "runs_this_month": runs,
         "agents": [
-            {**agent, **stats.get(agent["code"], {"steps": 0, "avg_ms": 0, "last": None}), "last_summary": last_summaries.get(agent["code"])}
+            {
+                **agent,
+                **stats.get(agent["code"], {"steps": 0, "avg_ms": 0, "last": None}),
+                "last_summary": last_summaries.get(agent["code"]),
+                "contract": INSTANCES[agent["code"]].contract() if agent["code"] in INSTANCES else None,
+            }
             for agent in AGENTS
         ],
     }

@@ -15,7 +15,7 @@
   >
   <link
     rel="stylesheet"
-    href="/static/style.css?v=90"
+    href="/static/style.css?v=91"
   >
 </head>
 <body>
@@ -655,6 +655,7 @@
       </div>
       <div class="card-actions">
         <button type="button" class="btn-ghost" id="scanAnomalies"><svg class="icon"><use href="#i-alert"/></svg> Buscar anomalías</button>
+        <button type="button" class="btn-ghost" id="watchDeadlines"><svg class="icon"><use href="#i-calendar"/></svg> Preparar plazos</button>
         <button type="button" class="btn-ghost" id="processPending"><svg class="icon"><use href="#i-play"/></svg> Procesar pendientes</button>
       </div>
     </div>
@@ -665,6 +666,10 @@
 
     <div class="case-view hidden" data-case-view="agents">
       <div class="agents-intro card" id="agentsIntro"></div>
+      <div class="card">
+        <div class="card-head"><h2>Rutas</h2><span class="card-sub">Ha ocurrido algo → expediente → el orquestador decide qué agentes hacen falta</span></div>
+        <div class="route-list" id="agentRoutes"></div>
+      </div>
       <div class="agents-grid" id="agentsGrid"></div>
       <div class="card">
         <div class="card-head"><h2>Últimos recorridos</h2><span class="card-sub">Cada ejecución del orquestador, paso a paso</span></div>
@@ -1913,7 +1918,7 @@
 <script src="/static/company.js?v=3"></script>
 <script src="/static/team.js?v=1"></script>
 <script src="/static/payroll.js?v=2"></script>
-<script src="/static/cases.js?v=1"></script>
+<script src="/static/cases.js?v=2"></script>
 <script src="/static/sales.js?v=2"></script>
 <script src="/static/outbox.js?v=3"></script>
 <script src="/static/timesheet.js?v=3"></script>

@@ -1,16 +1,22 @@
 """
-Detector de anomalías: cruza facturas, banco e histórico y avisa cuando algo
-no cuadra con lo habitual. Estadística robusta (mediana y MAD), sin cajas
-negras: cada aviso trae los números que lo justifican.
+Detector de anomalías: un motor de comprobaciones reutilizable.
 
-Comprobaciones:
-  1. Importe atípico para ese proveedor
-  2. Proveedor nuevo con un importe alto
-  3. Tipo de IVA distinto del habitual del proveedor
-  4. Posible factura duplicada (mismo proveedor e importe, número distinto)
-  5. Factura recurrente que no ha llegado este mes
-  6. Movimiento bancario relevante sin factura
-  7. Cambio brusco del IVA a ingresar frente a trimestres anteriores
+Cruza facturas, banco e histórico y avisa cuando algo no cuadra con lo
+habitual. Estadística robusta (mediana y MAD), sin cajas negras: cada aviso
+es un ``Finding`` con qué detectó, por qué, con qué datos, nivel de riesgo,
+confianza y qué debería pasar después.
+
+El mismo motor se usa de tres formas:
+  · ``check_invoice``   una factura concreta (al llegar: caso «factura sospechosa»)
+  · ``scan``            barrido de toda la empresa (cada mañana)
+  · el agente, dentro de cualquier ruta del orquestador
+
+Tipos (ANOMALY_TYPES): importe atípico, duplicado, IVA atípico, pago sin
+factura, cobro sin factura, factura sin pago, proveedor nuevo, cambio de
+comportamiento, factura que falta, patrón interrumpido y tendencia del IVA.
+
+Aprende de las personas: si alguien ya revisó algo parecido del mismo
+proveedor y lo dio por correcto, el aviso baja de riesgo y lo dice.
 """
 from __future__ import annotations
 
@@ -27,8 +33,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents.base import RISK_ORDER
 from app.agents.base import Agent
 from app.agents.base import AgentContext
+from app.agents.base import Finding
 from app.agents.base import StepResult
 from app.agents.base import eur
 from app.agents.base import evidence
@@ -44,9 +52,26 @@ RECENT_DAYS = 60
 MAD_THRESHOLD = 3.5
 BANK_MIN_AMOUNT = 300
 BANK_MIN_AGE_DAYS = 10
+UNPAID_MIN_AMOUNT = 300
+UNPAID_GRACE_DAYS = 15
 MONTHS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
 
 SEVERITY = {"high": 60, "medium": 45, "low": 30}
+
+ANOMALY_TYPES: dict[str, dict[str, str]] = {
+    "IMPORTE_ATIPICO": {"label": "Importe atípico", "next": "Comprueba el concepto con el proveedor antes de pagarla o aprobarla."},
+    "POSIBLE_DUPLICADO": {"label": "Posible duplicado", "next": "Compara las dos facturas y, si es el mismo servicio, rechaza una y pide el abono."},
+    "IVA_INUSUAL": {"label": "IVA atípico", "next": "Revisa el tipo de IVA de la factura; si es un error, pide una rectificativa antes de deducirlo."},
+    "PAGO_SIN_FACTURA": {"label": "Pago sin factura", "next": "Localiza la factura del pago y súbela, o márcalo como no deducible."},
+    "COBRO_SIN_FACTURA": {"label": "Cobro sin factura", "next": "Emite o registra la factura de ese cobro."},
+    "MOVIMIENTO_SIN_FACTURA": {"label": "Movimiento sin factura", "next": "Localiza o emite la factura del movimiento."},
+    "FACTURA_SIN_PAGO": {"label": "Factura sin pago", "next": "Confirma si está pagada (y concilia el pago) o prográmala antes de que genere recargos."},
+    "PROVEEDOR_NUEVO": {"label": "Proveedor nuevo", "next": "Verifica el NIF y la cuenta de pago del proveedor antes de pagar."},
+    "CAMBIO_COMPORTAMIENTO": {"label": "Cambio de comportamiento", "next": "Pregunta al proveedor por qué ha cambiado su forma de facturar."},
+    "FACTURA_FALTA": {"label": "Factura que falta", "next": "Pídela al proveedor o búscala en el correo: sin ella no puedes deducir el IVA."},
+    "PATRON_INTERRUMPIDO": {"label": "Patrón interrumpido", "next": "Confirma si el servicio o la relación se ha dado de baja o si faltan facturas."},
+    "IVA_TENDENCIA": {"label": "IVA fuera de tendencia", "next": "Revisa si faltan facturas recibidas o si hay ventas atípicas antes de presentar el 303."},
+}
 
 
 def received_invoices(database: Session) -> list[Invoice]:
@@ -66,6 +91,28 @@ def supplier_key(invoice: Invoice) -> str | None:
     return invoice.supplier_tax_id or (invoice.supplier_name or "").strip().upper() or None
 
 
+def supplier_invoices(database: Session, invoice: Invoice) -> list[Invoice]:
+    """Histórico del proveedor de una factura (incluida ella), por fecha."""
+    key = supplier_key(invoice)
+    if not key:
+        return [invoice]
+    condition = Invoice.supplier_tax_id == key if invoice.supplier_tax_id else Invoice.supplier_name == invoice.supplier_name
+    items = [
+        item for item in database.scalars(
+            select(Invoice).where(
+                condition,
+                (Invoice.direction.is_(None)) | (Invoice.direction != "ISSUED"),
+                Invoice.total.is_not(None),
+                Invoice.invoice_date.is_not(None),
+            )
+        ).all()
+        if item.id == invoice.id or item.review_status != "REJECTED"
+    ]
+    if invoice not in items:
+        items.append(invoice)
+    return sorted(items, key=lambda item: (item.invoice_date or date.min, item.id))
+
+
 def invoice_rate(invoice: Invoice) -> float | None:
     if invoice.tax_lines:
         rates = {float(line.tax_rate) for line in invoice.tax_lines if line.tax_rate is not None}
@@ -76,7 +123,40 @@ def invoice_rate(invoice: Invoice) -> float | None:
     return None
 
 
-def anomaly(fingerprint: str, procedure: str, title: str, detail: str, severity: str, *, amount: Any = None, facts: dict[str, Any] | None = None, evidence_items: list | None = None) -> dict[str, Any]:
+def invoice_label(invoice: Invoice) -> str:
+    return f"{invoice.supplier_name or 'Proveedor'} · {invoice.invoice_number or 's/n'}"
+
+
+def anomaly(
+    fingerprint: str,
+    procedure: str,
+    title: str,
+    detail: str,
+    severity: str,
+    *,
+    amount: Any = None,
+    facts: dict[str, Any] | None = None,
+    evidence_items: list | None = None,
+    confidence: float = 0.8,
+    next_step: str | None = None,
+    document_id: int | None = None,
+    when: date | None = None,
+) -> dict[str, Any]:
+    """Un aviso del detector. Lleva dentro su ``Finding`` estándar."""
+    facts = facts or {}
+    finding = Finding(
+        agente="detector",
+        tipo=procedure,
+        resultado=title,
+        por_que=detail,
+        riesgo=severity,
+        confianza=confidence,
+        datos={key: value for key, value in facts.items() if key not in {"document_id"}},
+        evidencia=evidence_items or [],
+        documento_origen=document_id if document_id is not None else facts.get("document_id"),
+        fecha=when.isoformat() if when else None,
+        siguiente=next_step or ANOMALY_TYPES.get(procedure, {}).get("next"),
+    )
     return {
         "fingerprint": fingerprint,
         "procedure": procedure,
@@ -84,12 +164,329 @@ def anomaly(fingerprint: str, procedure: str, title: str, detail: str, severity:
         "detail": detail,
         "severity": severity,
         "amount": float(amount) if amount is not None else None,
-        "facts": facts or {},
+        "facts": facts,
         "evidence": evidence_items or [],
+        "finding": finding.to_dict(),
     }
 
 
+def to_finding(item: dict[str, Any]) -> Finding:
+    data = item["finding"]
+    return Finding(
+        agente=data["agente"], tipo=data["tipo"], resultado=data["resultado"], por_que=data["por_que"],
+        riesgo=data["riesgo"], confianza=data["confianza"], datos=data["datos"], evidencia=data["evidencia"],
+        documento_origen=data["documento_origen"], fecha=data["fecha"], siguiente=data["siguiente"],
+    )
+
+
+# ---------------------------------------------------------------------
+# Comprobaciones sobre una factura (con el histórico de su proveedor)
+# ---------------------------------------------------------------------
+
+
+def check_atypical(invoice: Invoice, items: list[Invoice]) -> list[dict[str, Any]]:
+    history_items = [item for item in items if item.id != invoice.id and item.invoice_date < invoice.invoice_date and float(item.total) > 0]
+    history = [float(item.total) for item in history_items]
+    if len(history) < 4 or float(invoice.total) <= 0:
+        return []
+    logs = [math.log(value) for value in history]
+    median = statistics.median(logs)
+    mad = statistics.median([abs(value - median) for value in logs]) or 0.05
+    z = 0.6745 * (math.log(float(invoice.total)) - median) / mad
+    usual = math.exp(median)
+    if abs(z) < MAD_THRESHOLD or abs(float(invoice.total) - usual) < 50:
+        return []
+    ratio = float(invoice.total) / usual
+    name = invoice.supplier_name or supplier_key(invoice)
+    percent = round((ratio - 1) * 100)
+    sources = [item.invoice_number or f"#{item.id}" for item in history_items[-4:]]
+    comparison = f"un {percent} % superior a" if ratio > 1 else "muy por debajo de"
+    return [
+        anomaly(
+            f"atipico:{invoice.id}",
+            "IMPORTE_ATIPICO",
+            f"Factura de {name} fuera de lo habitual",
+            f"La factura {invoice.invoice_number or ''} de {invoice.invoice_date:%d/%m/%Y} es de {eur(invoice.total)}, "
+            f"{comparison} lo habitual ({eur(usual)} de mediana en {len(history)} facturas).",
+            "high" if ratio >= 3 or ratio <= 0.2 else "medium",
+            amount=invoice.total,
+            facts={
+                "invoice_id": invoice.id, "document_id": invoice.document_id, "supplier_key": supplier_key(invoice),
+                "median": round(usual, 2), "history": len(history), "z": round(z, 2), "ratio": round(ratio, 2),
+                "percent": percent, "sources": sources,
+            },
+            evidence_items=[evidence("invoice", invoice_label(invoice), document_id=invoice.document_id)]
+            + [evidence("invoice", f"Histórico: {invoice_label(item)} · {eur(item.total)}", document_id=item.document_id) for item in history_items[-3:]],
+            confidence=min(0.95, 0.6 + len(history) * 0.05),
+            when=invoice.invoice_date,
+        )
+    ]
+
+
+def check_new_supplier(invoice: Invoice, items: list[Invoice], p90: float | None) -> list[dict[str, Any]]:
+    others = [item for item in items if item.id != invoice.id]
+    if others or not p90 or float(invoice.total) < max(p90, 1000):
+        return []
+    name = invoice.supplier_name or supplier_key(invoice)
+    return [
+        anomaly(
+            f"nuevo:{invoice.id}",
+            "PROVEEDOR_NUEVO",
+            f"Proveedor nuevo con un importe alto: {name}",
+            f"Primera factura de {name} y ya es de {eur(invoice.total)} (más que el 90 % de tus facturas, {eur(p90)}).",
+            "medium",
+            amount=invoice.total,
+            facts={"invoice_id": invoice.id, "document_id": invoice.document_id, "supplier_key": supplier_key(invoice), "p90": p90},
+            evidence_items=[evidence("invoice", invoice_label(invoice), document_id=invoice.document_id)],
+            confidence=0.7,
+            when=invoice.invoice_date,
+        )
+    ]
+
+
+def check_vat(invoice: Invoice, items: list[Invoice]) -> list[dict[str, Any]]:
+    rate = invoice_rate(invoice)
+    known = [value for value in (invoice_rate(item) for item in items if item.id != invoice.id) if value is not None]
+    if rate is None or len(known) < 3:
+        return []
+    usual_rate = max(set(known), key=known.count)
+    share = known.count(usual_rate) / len(known)
+    if rate == usual_rate or share < 0.75:
+        return []
+    name = invoice.supplier_name or supplier_key(invoice)
+    return [
+        anomaly(
+            f"iva:{invoice.id}",
+            "IVA_INUSUAL",
+            f"IVA inusual en una factura de {name}",
+            f"La factura {invoice.invoice_number or ''} aplica un {rate:g} % de IVA, pero {name} factura al {usual_rate:g} % en el {share:.0%} de los casos. Puede ser un error en la factura o en la lectura.",
+            "medium",
+            amount=invoice.tax_total,
+            facts={"invoice_id": invoice.id, "document_id": invoice.document_id, "supplier_key": supplier_key(invoice), "rate": rate, "usual_rate": usual_rate, "share": round(share, 2)},
+            evidence_items=[evidence("invoice", invoice_label(invoice), document_id=invoice.document_id)],
+            confidence=round(0.5 + share * 0.4, 2),
+            when=invoice.invoice_date,
+        )
+    ]
+
+
+def check_duplicate(invoice: Invoice, items: list[Invoice], *, include_flagged: bool = False) -> list[dict[str, Any]]:
+    name = invoice.supplier_name or supplier_key(invoice)
+    if include_flagged and invoice.duplicate_status in {"STRONG", "PROBABLE"}:
+        original = next((item for item in items if item.id == invoice.duplicate_of_invoice_id), None)
+        same_number = invoice.duplicate_status == "STRONG"
+        return [
+            anomaly(
+                f"duplicado:{invoice.duplicate_of_invoice_id}:{invoice.id}",
+                "POSIBLE_DUPLICADO",
+                f"Factura duplicada de {name}",
+                (f"Ya tienes registrada la factura {invoice.invoice_number} de {name}: mismo proveedor y mismo número."
+                 if same_number else
+                 f"Ya hay una factura de {name} del mismo día y por el mismo importe ({eur(invoice.total)})."),
+                "high",
+                amount=invoice.total,
+                facts={"invoice_id": invoice.id, "invoice_ids": [invoice.duplicate_of_invoice_id, invoice.id], "document_id": invoice.document_id, "supplier_key": supplier_key(invoice), "match": invoice.duplicate_status.lower()},
+                evidence_items=[evidence("invoice", invoice_label(item), document_id=item.document_id) for item in (original, invoice) if item],
+                confidence=0.95 if same_number else 0.85,
+                when=invoice.invoice_date,
+            )
+        ]
+    if invoice.duplicate_status != "NONE":
+        return []  # ya lo avisa la revisión de facturas
+    same_amount = [item for item in items if item.id != invoice.id and item.total == invoice.total]
+    if len(same_amount) >= 3:
+        return []  # cuota fija (alquiler, gestoría, suscripción): repetir importe es lo normal
+    for other in items:
+        if (
+            other.id != invoice.id
+            and (other.invoice_date, other.id) < (invoice.invoice_date, invoice.id)
+            and other.total == invoice.total
+            and other.invoice_number != invoice.invoice_number
+            and abs((invoice.invoice_date - other.invoice_date).days) <= 45
+        ):
+            return [
+                anomaly(
+                    f"duplicado:{other.id}:{invoice.id}",
+                    "POSIBLE_DUPLICADO",
+                    f"Posible factura duplicada de {name}",
+                    f"{invoice.invoice_number or 's/n'} ({invoice.invoice_date:%d/%m}) y {other.invoice_number or 's/n'} ({other.invoice_date:%d/%m}) tienen el mismo importe, {eur(invoice.total)}. Comprueba que no se trata del mismo servicio facturado dos veces.",
+                    "medium",
+                    amount=invoice.total,
+                    facts={"invoice_id": invoice.id, "invoice_ids": [other.id, invoice.id], "document_id": invoice.document_id, "supplier_key": supplier_key(invoice), "days_apart": abs((invoice.invoice_date - other.invoice_date).days)},
+                    evidence_items=[evidence("invoice", invoice_label(item), document_id=item.document_id) for item in (other, invoice)],
+                    confidence=0.6,
+                    when=invoice.invoice_date,
+                )
+            ]
+    return []
+
+
+def check_behavior(invoice: Invoice, items: list[Invoice]) -> list[dict[str, Any]]:
+    """Proveedor que factura una vez al mes y de pronto factura varias veces seguidas."""
+    earlier = [item for item in items if (item.invoice_date, item.id) < (invoice.invoice_date, invoice.id)]
+    if len(earlier) < 4:
+        return []
+    gaps = [(b.invoice_date - a.invoice_date).days for a, b in zip(earlier, earlier[1:])]
+    usual_gap = statistics.median(gaps) if gaps else 0
+    if usual_gap < 25:
+        return []
+    burst = [item for item in items if abs((item.invoice_date - invoice.invoice_date).days) <= 10 and item.id != invoice.id and item.invoice_date <= invoice.invoice_date]
+    if len(burst) < 2:
+        return []
+    name = invoice.supplier_name or supplier_key(invoice)
+    return [
+        anomaly(
+            f"comportamiento:{invoice.id}",
+            "CAMBIO_COMPORTAMIENTO",
+            f"{name} ha cambiado su forma de facturar",
+            f"Suele facturarte cada {round(usual_gap)} días y en los últimos 10 días te ha enviado {len(burst) + 1} facturas.",
+            "medium",
+            amount=invoice.total,
+            facts={"invoice_id": invoice.id, "document_id": invoice.document_id, "supplier_key": supplier_key(invoice), "usual_gap_days": round(usual_gap), "recent_count": len(burst) + 1},
+            evidence_items=[evidence("invoice", invoice_label(item), document_id=item.document_id) for item in [*burst, invoice]],
+            confidence=0.65,
+            when=invoice.invoice_date,
+        )
+    ]
+
+
+def check_unpaid(invoice: Invoice, today: date, last_bank_date: date | None) -> list[dict[str, Any]]:
+    """Factura recibida vencida y sin pago en el banco (solo si el banco llega hasta después del vencimiento)."""
+    if invoice.paid_at or invoice.review_status == "REJECTED" or float(invoice.total or 0) < UNPAID_MIN_AMOUNT:
+        return []
+    due = invoice.due_date or invoice.invoice_date + timedelta(days=60)
+    if today < due + timedelta(days=UNPAID_GRACE_DAYS) or last_bank_date is None or last_bank_date < due + timedelta(days=UNPAID_GRACE_DAYS):
+        return []
+    name = invoice.supplier_name or supplier_key(invoice)
+    days = (today - due).days
+    return [
+        anomaly(
+            f"sinpago:{invoice.id}",
+            "FACTURA_SIN_PAGO",
+            f"Factura de {name} vencida y sin pago",
+            f"La factura {invoice.invoice_number or ''} de {eur(invoice.total)} venció el {due:%d/%m/%Y} (hace {days} días) y no aparece ningún pago en el banco.",
+            "medium" if days > 30 or float(invoice.total) >= 1000 else "low",
+            amount=invoice.total,
+            facts={"invoice_id": invoice.id, "document_id": invoice.document_id, "supplier_key": supplier_key(invoice), "due": due, "days_overdue": days, "bank_until": last_bank_date},
+            evidence_items=[evidence("invoice", invoice_label(invoice), document_id=invoice.document_id)],
+            confidence=0.7 if invoice.due_date else 0.55,
+            when=due,
+        )
+    ]
+
+
+def check_invoice(database: Session, invoice: Invoice, today: date, *, include_flagged: bool = True) -> list[dict[str, Any]]:
+    """Todas las comprobaciones de una factura concreta."""
+    if invoice.total is None or invoice.invoice_date is None:
+        return []
+    items = supplier_invoices(database, invoice)
+    totals = sorted(float(item.total) for item in received_invoices(database) if item.total)
+    p90 = totals[int(len(totals) * 0.9)] if len(totals) >= 10 else None
+    findings = (
+        check_duplicate(invoice, items, include_flagged=include_flagged)
+        + check_atypical(invoice, items)
+        + check_new_supplier(invoice, items, p90)
+        + check_vat(invoice, items)
+        + check_behavior(invoice, items)
+    )
+    return apply_feedback(database, findings)
+
+
+# ---------------------------------------------------------------------
+# Comprobaciones periódicas (patrones, banco, IVA)
+# ---------------------------------------------------------------------
+
+
+def check_missing(key: str, items: list[Invoice], today: date, *, party: str = "supplier") -> list[dict[str, Any]]:
+    """Factura mensual que no ha llegado (1 mes) o patrón que se ha cortado (2+ meses)."""
+    if today.day < 10 or not items:
+        return []
+    name = (items[-1].supplier_name if party == "supplier" else items[-1].customer_name) or key
+    months_seen = {(item.invoice_date.year, item.invoice_date.month) for item in items}
+    first_of_month = today.replace(day=1)
+
+    def month(offset: int) -> tuple[int, int]:
+        value = add_months(first_of_month, -offset)
+        return value.year, value.month
+
+    # Cuántos meses seguidos faltan (desde el pasado) y si antes era regular.
+    gap = 0
+    while gap < 6 and month(gap + 1) not in months_seen:
+        gap += 1
+    if gap == 0:
+        return []
+    regular = all(month(gap + offset) in months_seen for offset in range(1, 4))
+    if not regular:
+        return []
+    usual = statistics.median(float(item.total) for item in items[-6:])
+    last = month(1)
+    if gap == 1 and party == "supplier":
+        return [
+            anomaly(
+                f"falta:{key}:{last[0]}-{last[1]:02d}",
+                "FACTURA_FALTA",
+                f"No ha llegado la factura de {MONTHS[last[1] - 1]} de {name}",
+                f"{name} te factura todos los meses (aprox. {eur(usual)}) y la de {MONTHS[last[1] - 1]} no está. Sin ella no puedes deducirte el IVA.",
+                "low",
+                amount=usual,
+                facts={"supplier": name, "supplier_key": key, "month": f"{last[0]}-{last[1]:02d}"},
+                confidence=0.75,
+            )
+        ]
+    if gap < 2:
+        return []
+    since = month(gap)
+    who = "te facturaba" if party == "supplier" else "te compraba"
+    return [
+        anomaly(
+            f"patron:{party}:{key}:{since[0]}-{since[1]:02d}",
+            "PATRON_INTERRUMPIDO",
+            f"{name} ya no {'factura' if party == 'supplier' else 'compra'} como antes",
+            f"{name} {who} todos los meses (aprox. {eur(usual)}) y lleva {gap} meses sin {'facturas' if party == 'supplier' else 'ventas'} (desde {MONTHS[since[1] - 1]}).",
+            "medium" if party == "customer" else "low",
+            amount=usual,
+            facts={"party": party, "name": name, "supplier_key": key, "months_missing": gap, "since": f"{since[0]}-{since[1]:02d}"},
+            confidence=0.7,
+            next_step=None if party == "supplier" else "Contacta con el cliente: puede haberse ido a la competencia o tener un problema de pago.",
+        )
+    ]
+
+
+def bank_findings(database: Session, today: date) -> list[dict[str, Any]]:
+    limit_date = today - timedelta(days=BANK_MIN_AGE_DAYS)
+    transactions = database.scalars(
+        select(BankTransaction).where(
+            BankTransaction.match_status == "UNMATCHED",
+            BankTransaction.booking_date <= limit_date,
+            BankTransaction.booking_date >= today - timedelta(days=120),
+        )
+    ).all()
+    findings = []
+    for transaction in transactions:
+        amount = float(transaction.amount)
+        if abs(amount) < BANK_MIN_AMOUNT:
+            continue
+        outflow = amount < 0
+        findings.append(
+            anomaly(
+                f"banco:{transaction.id}",
+                "PAGO_SIN_FACTURA" if outflow else "COBRO_SIN_FACTURA",
+                f"{'Pago' if outflow else 'Cobro'} de {eur(abs(amount))} sin factura",
+                f"El {transaction.booking_date:%d/%m/%Y}: «{transaction.description[:90]}». "
+                + ("Si es un gasto de la actividad, falta la factura para deducirlo." if outflow else "Si es una venta, falta emitir o registrar la factura."),
+                "medium" if abs(amount) >= 1000 else "low",
+                amount=abs(amount),
+                facts={"transaction_id": transaction.id, "direction": "out" if outflow else "in", "description": transaction.description[:120], "booking_date": transaction.booking_date},
+                evidence_items=[evidence("bank", f"{transaction.booking_date:%d/%m/%Y} · {transaction.description[:60]} · {eur(amount)}", transaction_id=transaction.id)],
+                confidence=0.7,
+                when=transaction.booking_date,
+            )
+        )
+    return findings
+
+
 def scan(database: Session, today: date) -> list[dict[str, Any]]:
+    """Barrido completo de la empresa con todas las comprobaciones."""
     findings: list[dict[str, Any]] = []
     invoices = received_invoices(database)
     recent_from = today - timedelta(days=RECENT_DAYS)
@@ -101,154 +498,38 @@ def scan(database: Session, today: date) -> list[dict[str, Any]]:
 
     all_totals = sorted(float(invoice.total) for invoice in invoices if invoice.total)
     p90 = all_totals[int(len(all_totals) * 0.9)] if len(all_totals) >= 10 else None
+    last_bank_date = database.scalar(select(BankTransaction.booking_date).order_by(BankTransaction.booking_date.desc()).limit(1))
 
     for key, items in by_supplier.items():
-        items.sort(key=lambda invoice: invoice.invoice_date)
-        name = items[-1].supplier_name or key
-        recent = [invoice for invoice in items if invoice.invoice_date >= recent_from]
-
-        # 1) Importe atípico (MAD sobre log del importe)
-        for invoice in recent:
-            history = [float(item.total) for item in items if item.id != invoice.id and item.invoice_date < invoice.invoice_date and float(item.total) > 0]
-            if len(history) < 4 or float(invoice.total) <= 0:
-                continue
-            logs = [math.log(value) for value in history]
-            median = statistics.median(logs)
-            mad = statistics.median([abs(value - median) for value in logs]) or 0.05
-            z = 0.6745 * (math.log(float(invoice.total)) - median) / mad
-            usual = math.exp(median)
-            if abs(z) >= MAD_THRESHOLD and abs(float(invoice.total) - usual) >= 50:
-                ratio = float(invoice.total) / usual
-                findings.append(
-                    anomaly(
-                        f"atipico:{invoice.id}",
-                        "IMPORTE_ATIPICO",
-                        f"Factura de {name} fuera de lo habitual",
-                        f"La factura {invoice.invoice_number or ''} de {invoice.invoice_date:%d/%m/%Y} es de {eur(invoice.total)}, "
-                        f"{'un ' + format(ratio, '.1f').replace('.', ',') + ' veces' if ratio > 1 else 'muy por debajo de'} lo habitual "
-                        f"({eur(usual)} de mediana en {len(history)} facturas).",
-                        "high" if ratio >= 3 or ratio <= 0.2 else "medium",
-                        amount=invoice.total,
-                        facts={"invoice_id": invoice.id, "document_id": invoice.document_id, "median": usual, "history": len(history), "z": round(z, 2)},
-                        evidence_items=[evidence("invoice", f"{name} · {invoice.invoice_number}", document_id=invoice.document_id)],
-                    )
-                )
-
-        # 2) Proveedor nuevo con importe alto
-        first = items[0]
-        if len(items) == 1 and first.invoice_date >= recent_from and p90 and float(first.total) >= max(p90, 1000):
-            findings.append(
-                anomaly(
-                    f"nuevo:{first.id}",
-                    "PROVEEDOR_NUEVO",
-                    f"Proveedor nuevo con un importe alto: {name}",
-                    f"Primera factura de {name} y ya es de {eur(first.total)} (más que el 90 % de tus facturas). Comprueba que el proveedor y la cuenta de pago son correctos.",
-                    "medium",
-                    amount=first.total,
-                    facts={"invoice_id": first.id, "document_id": first.document_id, "p90": p90},
-                    evidence_items=[evidence("invoice", f"{name} · {first.invoice_number}", document_id=first.document_id)],
-                )
-            )
-
-        # 3) IVA distinto del habitual
-        rates = [invoice_rate(item) for item in items]
-        known = [rate for rate in rates if rate is not None]
-        if len(known) >= 4:
-            usual_rate = max(set(known), key=known.count)
-            share = known.count(usual_rate) / len(known)
-            for invoice, rate in zip(items, rates):
-                if invoice.invoice_date < recent_from or rate is None or rate == usual_rate or share < 0.75:
-                    continue
-                findings.append(
-                    anomaly(
-                        f"iva:{invoice.id}",
-                        "IVA_INUSUAL",
-                        f"IVA inusual en una factura de {name}",
-                        f"La factura {invoice.invoice_number or ''} aplica un {rate:g} % de IVA, pero {name} factura al {usual_rate:g} % en el {share:.0%} de los casos. Puede ser un error en la factura o en la lectura.",
-                        "medium",
-                        amount=invoice.tax_total,
-                        facts={"invoice_id": invoice.id, "document_id": invoice.document_id, "rate": rate, "usual_rate": usual_rate},
-                        evidence_items=[evidence("invoice", f"{name} · {invoice.invoice_number}", document_id=invoice.document_id)],
-                    )
-                )
-
-        # 4) Posible duplicado: mismo importe en 45 días con número distinto
-        for index, invoice in enumerate(items):
+        items.sort(key=lambda invoice: (invoice.invoice_date, invoice.id))
+        for invoice in items:
             if invoice.invoice_date < recent_from:
                 continue
-            for other in items[:index]:
-                if (
-                    other.total == invoice.total
-                    and other.invoice_number != invoice.invoice_number
-                    and abs((invoice.invoice_date - other.invoice_date).days) <= 45
-                    and invoice.duplicate_status == "NONE"
-                ):
-                    findings.append(
-                        anomaly(
-                            f"duplicado:{other.id}:{invoice.id}",
-                            "POSIBLE_DUPLICADO",
-                            f"Posible factura duplicada de {name}",
-                            f"{invoice.invoice_number or 's/n'} ({invoice.invoice_date:%d/%m}) y {other.invoice_number or 's/n'} ({other.invoice_date:%d/%m}) tienen el mismo importe, {eur(invoice.total)}. Comprueba que no se trata del mismo servicio facturado dos veces.",
-                            "medium",
-                            amount=invoice.total,
-                            facts={"invoice_ids": [other.id, invoice.id], "document_id": invoice.document_id},
-                            evidence_items=[evidence("invoice", f"{name} · {item.invoice_number}", document_id=item.document_id) for item in (other, invoice)],
-                        )
-                    )
-                    break
+            findings += check_atypical(invoice, items)
+            findings += check_new_supplier(invoice, items, p90)
+            findings += check_vat(invoice, items)
+            findings += check_duplicate(invoice, items)
+            findings += check_behavior(invoice, items)
+        for invoice in items:
+            findings += check_unpaid(invoice, today, last_bank_date)
+        findings += check_missing(key, items, today)
 
-        # 5) Factura recurrente que no ha llegado
-        last_month_end = today.replace(day=1) - timedelta(days=1)
-        last_month = (last_month_end.year, last_month_end.month)
-        months_seen = {(item.invoice_date.year, item.invoice_date.month) for item in items}
-        previous_months = [
-            (add_months(last_month_end.replace(day=1), -offset).year, add_months(last_month_end.replace(day=1), -offset).month)
-            for offset in range(1, 4)
-        ]
-        if today.day >= 10 and all(month in months_seen for month in previous_months) and last_month not in months_seen:
-            usual = statistics.median(float(item.total) for item in items[-6:])
-            findings.append(
-                anomaly(
-                    f"falta:{key}:{last_month[0]}-{last_month[1]:02d}",
-                    "FACTURA_FALTA",
-                    f"No ha llegado la factura de {MONTHS[last_month[1] - 1]} de {name}",
-                    f"{name} te factura todos los meses (aprox. {eur(usual)}) y la de {MONTHS[last_month[1] - 1]} no está. Pídela o búscala en el correo: sin ella no puedes deducirte el IVA.",
-                    "low",
-                    amount=usual,
-                    facts={"supplier": name, "month": f"{last_month[0]}-{last_month[1]:02d}"},
-                )
-            )
-
-    # 6) Movimientos bancarios sin factura
-    limit_date = today - timedelta(days=BANK_MIN_AGE_DAYS)
-    transactions = database.scalars(
-        select(BankTransaction).where(
-            BankTransaction.match_status == "UNMATCHED",
-            BankTransaction.booking_date <= limit_date,
-            BankTransaction.booking_date >= today - timedelta(days=120),
-        )
+    # Clientes que compraban cada mes y han dejado de hacerlo.
+    issued = database.scalars(
+        select(Invoice).where(Invoice.direction == "ISSUED", Invoice.invoice_date.is_not(None), Invoice.total.is_not(None))
     ).all()
-    for transaction in transactions:
-        amount = float(transaction.amount)
-        if abs(amount) < BANK_MIN_AMOUNT:
-            continue
-        outflow = amount < 0
-        findings.append(
-            anomaly(
-                f"banco:{transaction.id}",
-                "MOVIMIENTO_SIN_FACTURA",
-                f"{'Pago' if outflow else 'Cobro'} de {eur(abs(amount))} sin factura",
-                f"El {transaction.booking_date:%d/%m/%Y}: «{transaction.description[:90]}». "
-                + ("Si es un gasto de la actividad, falta la factura para deducirlo." if outflow else "Si es una venta, falta emitir o registrar la factura."),
-                "medium" if abs(amount) >= 1000 else "low",
-                amount=abs(amount),
-                facts={"transaction_id": transaction.id, "direction": "out" if outflow else "in"},
-            )
-        )
+    by_customer: dict[str, list[Invoice]] = defaultdict(list)
+    for invoice in issued:
+        key = invoice.customer_tax_id or (invoice.customer_name or "").strip().upper()
+        if key:
+            by_customer[key].append(invoice)
+    for key, items in by_customer.items():
+        items.sort(key=lambda invoice: (invoice.invoice_date, invoice.id))
+        findings += [item for item in check_missing(key, items, today, party="customer") if item["procedure"] == "PATRON_INTERRUMPIDO"]
 
-    # 7) IVA trimestral con cambio brusco
+    findings += bank_findings(database, today)
     findings += vat_trend(database, today)
-    return findings
+    return apply_feedback(database, findings)
 
 
 def vat_trend(database: Session, today: date) -> list[dict[str, Any]]:
@@ -278,12 +559,66 @@ def vat_trend(database: Session, today: date) -> list[dict[str, Any]]:
             f"iva303:{today.year}-{quarter}",
             "IVA_TENDENCIA",
             f"El IVA del {quarter}T {today.year} se sale de lo habitual",
-            f"El borrador del 303 va en {eur(current)} frente a una media de {eur(average)} en los trimestres anteriores. Revisa si faltan facturas recibidas o si hay ventas atípicas.",
+            f"El borrador del 303 va en {eur(current)} frente a una media de {eur(average)} en los trimestres anteriores.",
             "medium",
             amount=current,
-            facts={"current": current, "average": average},
+            facts={"current": current, "average": average, "quarters": len(history)},
+            confidence=0.6,
         )
     ]
+
+
+# ---------------------------------------------------------------------
+# Lo que las personas ya decidieron
+# ---------------------------------------------------------------------
+
+
+def human_feedback(database: Session) -> dict[tuple[str, str], dict[str, Any]]:
+    """(proveedor, tipo) → la última vez que una persona lo descartó."""
+    feedback: dict[tuple[str, str], dict[str, Any]] = {}
+    for case in database.scalars(select(Case).where(Case.kind == "ANOMALY", Case.status == "DISMISSED").order_by(Case.id)).all():
+        facts = case.facts or {}
+        key = facts.get("supplier_key")
+        if not key:
+            continue
+        types = facts.get("finding_types") or [case.procedure]
+        for kind in types:
+            feedback[(key, kind)] = {
+                "case_id": case.id,
+                "code": case.code,
+                "date": (case.resolved_at or case.updated_at or case.created_at).date().isoformat() if (case.resolved_at or case.updated_at or case.created_at) else None,
+                "resolution": case.resolution,
+            }
+    return feedback
+
+
+def apply_feedback(database: Session, findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    feedback = human_feedback(database)
+    if not feedback:
+        return findings
+    for item in findings:
+        key = item["facts"].get("supplier_key")
+        previous = feedback.get((key, item["procedure"])) if key else None
+        if not previous:
+            continue
+        lowered = {"high": "medium", "medium": "low", "low": "low"}[item["severity"]]
+        note = f" Ya revisaste algo parecido de este proveedor ({previous['code']}) y lo diste por correcto" + (f": «{previous['resolution']}»." if previous.get("resolution") else ".")
+        item["severity"] = lowered
+        item["detail"] += note
+        item["facts"]["previous_review"] = previous
+        item["finding"].update(
+            riesgo=lowered,
+            confianza=round(item["finding"]["confianza"] * 0.6, 2),
+            por_que=item["detail"],
+        )
+        item["finding"]["datos"]["previous_review"] = previous
+    return findings
+
+
+def max_risk(findings: list[dict[str, Any]]) -> str | None:
+    if not findings:
+        return None
+    return max((item["severity"] for item in findings), key=lambda value: RISK_ORDER[value])
 
 
 class DetectorAnomalias(Agent):
@@ -291,18 +626,42 @@ class DetectorAnomalias(Agent):
     name = "Detector de anomalías"
     role = "Cruza facturas, banco e histórico y avisa de lo que no cuadra."
     icon = "alert"
+    handles = ("invoice", "deadline", "scan")
+    needs_case = False
+    consumes = ("factura o periodo", "histórico del proveedor", "movimientos bancarios")
+    produces = ("anomalías (qué, por qué, datos, riesgo, confianza, siguiente paso)", "señal anomaly/severity")
 
     def run(self, ctx: AgentContext) -> StepResult:
-        findings = scan(ctx.database, ctx.today)
-        ctx.facts["findings"] = findings
+        event = ctx.event
+        if event is not None and event.kind == "invoice":
+            invoice = ctx.database.get(Invoice, event.ref_id)
+            findings = check_invoice(ctx.database, invoice, ctx.today) if invoice else []
+            scope = "esta factura"
+        else:
+            findings = scan(ctx.database, ctx.today)
+            if event is not None and event.kind == "deadline":
+                findings = [item for item in findings if item["procedure"] not in {"PATRON_INTERRUMPIDO", "CAMBIO_COMPORTAMIENTO"}]
+            scope = "facturas, banco e IVA"
+        ctx.facts["anomalies"] = findings
+
         by_type: dict[str, int] = defaultdict(int)
         for item in findings:
             by_type[item["procedure"]] += 1
+        risk = max_risk(findings)
+        relevant = [item for item in findings if item["severity"] in {"medium", "high"}]
+        if not findings:
+            summary = f"Todo cuadra en {scope}: sin anomalías."
+        elif len(findings) == 1:
+            summary = f"{findings[0]['title']}: {findings[0]['detail']}"
+        else:
+            summary = f"{len(findings)} posible(s) anomalía(s) en {scope}; riesgo máximo {({'high': 'alto', 'medium': 'medio', 'low': 'bajo'})[risk]}."
         return StepResult(
-            summary=f"{len(findings)} posible(s) anomalía(s) en facturas, banco e IVA." if findings else "Todo cuadra: sin anomalías.",
-            output={"by_type": dict(by_type), "count": len(findings)},
+            summary=summary,
+            output={"by_type": dict(by_type), "count": len(findings), "max_risk": risk},
             evidence=[evidence("anomaly", item["title"]) for item in findings[:10]],
             engine="estadística (mediana/MAD)",
+            findings=[to_finding(item) for item in findings],
+            signals={"anomaly": bool(relevant), "severity": risk, "anomaly_count": len(findings)},
         )
 
 
@@ -316,7 +675,7 @@ def run_anomaly_scan(database: Session, *, trigger: str = "schedule", today: dat
     database.add(run)
     database.flush()
     run_step(ctx, run, DetectorAnomalias(), 1)
-    findings = ctx.facts.get("findings", [])
+    findings = ctx.facts.get("anomalies", [])
 
     created = 0
     fingerprints = set()
@@ -325,6 +684,9 @@ def run_anomaly_scan(database: Session, *, trigger: str = "schedule", today: dat
         case = database.scalar(select(Case).where(Case.fingerprint == item["fingerprint"]))
         if case is not None:
             continue  # ya avisado (abierto o descartado por una persona)
+        invoice_id = item["facts"].get("invoice_id")
+        if invoice_id and database.scalar(select(Case.id).where(Case.fingerprint == f"factura:{invoice_id}")):
+            continue  # esa factura ya tiene su expediente (caso «factura sospechosa»)
         case = Case(
             code=next_case_code(database, today.year),
             kind="ANOMALY",
@@ -334,21 +696,33 @@ def run_anomaly_scan(database: Session, *, trigger: str = "schedule", today: dat
             summary=item["detail"],
             amount=Decimal(str(item["amount"])) if item["amount"] is not None else None,
             fingerprint=item["fingerprint"],
-            facts={**item["facts"], "severity": item["severity"], "severity_score": SEVERITY[item["severity"]], "evidence": item["evidence"]},
+            document_id=item["facts"].get("document_id"),
+            facts={
+                **item["facts"], "origin": "scan", "severity": item["severity"], "severity_score": SEVERITY[item["severity"]],
+                "evidence": item["evidence"], "findings": [item["finding"]], "finding_types": [item["procedure"]],
+            },
             required_documents=[],
-            proposed_actions=[{"label": "Revisarlo y confirmar si es correcto o un error", "done": False}],
+            proposed_actions=[{"label": item["finding"]["siguiente"] or "Revisarlo y confirmar si es correcto o un error", "done": False}],
             antecedents=[],
             subject_type="company",
         )
+        invoice = database.get(Invoice, invoice_id) if invoice_id else None
+        if invoice is not None:
+            case.subject_type, case.subject_name, case.subject_tax_id = "supplier", invoice.supplier_name, invoice.supplier_tax_id
+        elif item["facts"].get("supplier") or item["facts"].get("name"):
+            case.subject_type = "customer" if item["facts"].get("party") == "customer" else "supplier"
+            case.subject_name = item["facts"].get("supplier") or item["facts"].get("name")
         database.add(case)
         database.flush()
         prioritize(database, case, today)
-        database.add(CaseEvent(case_id=case.id, kind="agent", actor="detector", title=f"Detector de anomalías · {item['title']}", detail=item["detail"], data={"run_id": run.id}))
+        database.add(CaseEvent(case_id=case.id, kind="agent", actor="detector", title=f"Detector de anomalías · {item['title']}"[:255], detail=item["detail"], data={"run_id": run.id}))
         created += 1
 
-    # Las que ya no se dan se cierran solas.
+    # Las que ya no se dan se cierran solas (solo las que abrió el barrido).
     closed = 0
     for case in database.scalars(select(Case).where(Case.kind == "ANOMALY", Case.status == "WAITING_HUMAN")).all():
+        if (case.facts or {}).get("origin", "scan") != "scan":
+            continue
         if case.fingerprint and case.fingerprint not in fingerprints:
             case.status = "RESOLVED"
             case.resolution = "Resuelta automáticamente: la condición ya no se da (por ejemplo, llegó la factura o se concilió el movimiento)."

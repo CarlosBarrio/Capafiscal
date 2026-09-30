@@ -163,6 +163,9 @@ class Perseguidor(Agent):
     name = "Perseguidor"
     role = "Pide la documentación que falta, recuerda y deja de insistir cuando llega."
     icon = "send"
+    handles = ("notification", "invoice", "deadline")
+    consumes = ("expediente con documentos que faltan (fuente interna o tercero)",)
+    produces = ("peticiones con enlace de subida", "borrador del mensaje (espera visto bueno)", "seguimiento y recordatorios")
 
     def run(self, ctx: AgentContext) -> StepResult:
         case = ctx.case

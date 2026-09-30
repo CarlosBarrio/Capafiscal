@@ -11,15 +11,37 @@ humana cuando hace falta criterio.
 
 ## Cómo trabaja: un equipo de agentes
 
-Cada notificación que llega recorre siete agentes de punta a punta y llega a
-la persona ya trabajada, con un único «Revisar y aprobar»:
+Ha ocurrido algo → se abre (o no) un expediente → el expediente decide qué
+agentes necesita. Todo acaba en una recomendación con evidencia que la
+persona aprueba, cambia o rechaza:
 
 ```
-Vigilante → Expedientes → Fiscal → Memoria → Gestor → Perseguidor → Director
- detecta     a quién       qué modelo   antecedentes   qué piden, qué   pide lo que    prioriza y
- y descarga  afecta y      y periodo;   con evidencia  hay, qué falta,  falta y deja   decide qué
-             qué trámite   diferencias                 borrador         de insistir    ves hoy
+FUENTES (subida, correo, DEHú*, facturas, plazos)
+   → Vigilante → Expedientes → ORQUESTADOR: ¿qué ruta?
+      → Fiscal · Memoria · Detector · Gestor · Perseguidor (según la ruta y los resultados)
+         → Director → recomendación + evidencia → TÚ: aprobar / modificar / rechazar
+            → acción y memoria (la próxima vez se tiene en cuenta)
 ```
+
+| Ruta | Agentes |
+|---|---|
+| Requerimiento o acto administrativo | Vigilante → Expedientes → Fiscal → Memoria → Gestor → Perseguidor → Director |
+| Embargo | Vigilante → Expedientes → Memoria → Gestor → Director |
+| Documento normal (factura) | Vigilante → Expedientes → Detector → Director |
+| Factura sospechosa | Vigilante → Expedientes → Memoria → Detector → Fiscal → Gestor → Director |
+| Plazo de presentación (303, 130, 111, 115) | Vigilante → Expedientes → Fiscal → Memoria → Detector → Gestor → Director |
+
+- **Encadenado por resultados**: si el Detector encuentra una anomalía, el
+  orquestador añade Memoria, Fiscal y Gestor (y una factura «normal» pasa a
+  «sospechosa»); si el Gestor ve documentos que no puede preparar, añade al
+  Perseguidor. La traza guarda la ruta y por qué se añadió cada agente.
+- **Contratos**: cada agente declara qué consume, qué produce y qué eventos
+  atiende (`GET /api/agents/routes`), para reutilizarlo en procesos nuevos.
+- **Hallazgos con evidencia** (`Finding`): qué se detectó, por qué, con qué
+  datos, riesgo, confianza, documento de origen, fecha, agente y siguiente paso.
+- **Entrada común** `POST /api/events` (notificación, factura o plazo): así se
+  enganchan nuevas fuentes. *La conexión oficial con DEHú (alta, certificado,
+  apoderamiento) está pendiente; cuando exista, entregará aquí.*
 
 Ejemplo real: llega una diligencia de embargo de créditos contra un proveedor.
 El agente identifica al proveedor por su NIF, encuentra que le debes una
@@ -29,10 +51,13 @@ contestación, y lo pone el primero de tu lista.
 
 - **Traza completa**: cada recorrido guarda qué hizo cada agente, en cuánto
   tiempo, con qué evidencia y con qué motor (reglas o IA).
-- **Detector de anomalías** (estadística robusta): importes atípicos por
-  proveedor, proveedor nuevo con importe alto, IVA inusual, posibles
-  duplicados, facturas recurrentes que no han llegado, pagos sin factura y
-  cambios bruscos del IVA. Se cierran solas cuando la condición desaparece.
+- **Detector de anomalías**: motor reutilizable (mediana/MAD, sin cajas
+  negras) con importe atípico, duplicado, IVA atípico, pago o cobro sin
+  factura, factura sin pago, proveedor nuevo, cambio de comportamiento,
+  factura que falta y patrón interrumpido. Se usa sobre una factura al
+  llegar, en el barrido diario y dentro de cualquier ruta. Aprende de las
+  personas: si ya diste por correcto algo parecido del mismo proveedor, el
+  aviso baja de riesgo y te lo recuerda.
 - **Perseguidor**: pide la documentación con un enlace personal de subida
   (sin usuario), recuerda con cortesía creciente, verifica lo recibido y deja
   de insistir.
@@ -132,7 +157,11 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Los tests usan una base de datos temporal y no tocan tus datos.
+Los tests usan una base de datos temporal y no tocan tus datos. Están en
+`tests/unit`, `tests/integration`, `tests/agents` y `tests/workflows`. Esta
+última es la batería de evaluación de agentes: cada caso de
+`tests/workflows/scenarios/*.json` describe entrada → agentes ejecutados →
+resultado → evidencias → acción esperada; para añadir un caso basta un JSON.
 
 ## Actualizar una instalación existente
 
