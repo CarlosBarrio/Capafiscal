@@ -675,3 +675,11 @@ def invoice_memory(invoice_id: int, database: DatabaseDependency) -> dict[str, A
     if invoice is None:
         raise HTTPException(status_code=404, detail="Factura no encontrada.")
     return unusual(database, invoice)
+
+
+@router.get("/search", tags=["Agentes"])
+def universal_search(database: DatabaseDependency, q: str = Query(..., min_length=1, max_length=120)) -> dict[str, Any]:
+    """Búsqueda universal: facturas, terceros, expedientes, movimientos, documentos, modelos fiscales y cierres. Solo lee."""
+    from app.search import search
+
+    return search(database, q)

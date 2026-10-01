@@ -1025,7 +1025,7 @@ function ensureDetailDialog() {
 
   dialog = document.createElement("dialog");
   dialog.id = "documentDetailDialog";
-  dialog.className = "document-detail-dialog";
+  dialog.className = "document-detail-dialog sheet";  // panel lateral: el detalle sin perder la lista
   dialog.innerHTML = `
     <div class="detail-dialog-header">
       <h2 id="documentDetailTitle">Detalle de factura</h2>

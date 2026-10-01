@@ -3026,3 +3026,27 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
     .bank-connection { flex-direction: column; }
 }
 .bank-connect-row select { max-width: 320px; }
+
+/* Menú: lo que no es el núcleo, plegado en «Más» (Radar jurídico, Asistente, Equipo, y Nóminas y Jornada aparcadas) */
+.nav-more > summary { cursor: pointer; list-style: none; }
+.nav-more > summary::-webkit-details-marker { display: none; }
+.nav-more > summary::after { content: " +"; }
+.nav-more[open] > summary::after { content: " −"; }
+.nav-parked { margin-left: auto; color: var(--faint); font-size: 11px; }
+
+/* Panel lateral (detalle de documento, expediente y novedad): se abre a la derecha y la lista sigue a la vista */
+.document-detail-dialog.sheet {
+    width: min(880px, 100vw);
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0 0 0 auto;
+    border-radius: 0;
+    border-left: 1px solid var(--line);
+}
+.document-detail-dialog.sheet::backdrop { background: rgba(28, 25, 20, 0.18); backdrop-filter: none; }
+.document-detail-dialog.sheet[open] { animation: sheet-in 180ms ease-out; }
+@keyframes sheet-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .document-detail-dialog.sheet[open] { animation: none; } }
+@media (max-width: 720px) { .document-detail-dialog.sheet { width: 100vw; border-left: none; } }
+.work-item:focus-within { background: var(--surface-2, transparent); }

@@ -1,5 +1,12 @@
 # CapaFiscal · instrucciones para agentes
 
+## Producto: «CapaFiscal trabaja por mí»
+
+Solo se añade lo que ahorra horas, evita errores, anticipa problemas o quita decisiones repetitivas.
+Los datos se introducen una vez y recorren el circuito (factura → contabilidad → conciliación → IVA →
+tesorería → detector). Nada de agentes nuevos, chatbots, CRM, cuadros de mando o automatizaciones de
+escaparate. El trabajo se presenta en una sola lista (Centro de trabajo) con lo comprobado y su acción.
+
 ## Frontend: mejorar, no rediseñar
 
 CapaFiscal ya tiene un sistema visual (`backend/app/static/style.css`: tokens en `:root`,

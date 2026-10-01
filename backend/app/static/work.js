@@ -182,6 +182,19 @@
   window.addEventListener("capafiscal:data-changed", () => {
     if (document.getElementById("tab-panel")?.classList.contains("active")) load();
   });
+  // Teclado: j / k recorren la lista y Enter abre la acción del elemento con el foco.
+  document.addEventListener("keydown", (event) => {
+    if (!["j", "k"].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!document.getElementById("tab-panel")?.classList.contains("active")) return;
+    if (event.target.closest("input, textarea, select, [contenteditable], dialog[open]") || document.querySelector("dialog[open]")) return;
+    const buttons = [...document.querySelectorAll("#workGroups .work-act")];
+    if (!buttons.length) return;
+    event.preventDefault();
+    const current = buttons.indexOf(document.activeElement);
+    const next = event.key === "j" ? Math.min(buttons.length - 1, current + 1) : Math.max(0, current < 0 ? 0 : current - 1);
+    buttons[next].focus();
+    buttons[next].closest(".work-item")?.scrollIntoView({ block: "nearest" });
+  });
   window.loadWorkCenter = load;
   document.addEventListener("DOMContentLoaded", setup);
 })();

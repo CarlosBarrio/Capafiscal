@@ -77,26 +77,57 @@ contestación, y lo pone el primero de tu lista.
 - **IA opcional**: con `ANTHROPIC_API_KEY`, Claude lee y redacta; sin clave,
   todo funciona con reglas y plantillas.
 
-## El Director: qué hacer hoy
+## Principio de producto: «CapaFiscal trabaja por mí»
 
-La pantalla *Hoy* abre con el Director:
+Solo entra lo que ahorra horas, evita errores, anticipa problemas o quita
+decisiones repetitivas. Los datos se introducen una vez y recorren todo el
+circuito: factura → extraer → validar → categorizar → contabilizar → conciliar
+→ IVA → tesorería → detector. No se añaden agentes nuevos, chatbots, CRM,
+cuadros de mando decorativos ni automatizaciones de escaparate.
 
-- 🔴 **Requiere tu atención**: lo urgente o importante que espera a una
-  persona, con el motivo («vence en 7 días (objetivo interno: en 5 días)»,
-  «9,0 veces por encima de lo habitual») y lo que se ha bloqueado.
-- 🟠 **Pendiente**: documentos pedidos sin recibir, plazos de los próximos 15
-  días, expedientes para revisar sin prisa y escritos listos para presentar.
-- **Trabajo realizado e intervención humana**: entradas, documentos,
-  expedientes, anomalías y documentos solicitados. El % de intervención humana
-  se calcula sobre las entradas: resueltas solas, con IA, enviadas a una
-  persona o fallidas. Incluye el **tiempo ahorrado estimado**, con los
-  supuestos a la vista y pendientes de ajustar en el piloto.
-- 🟢 **Resuelto sin intervención** en los últimos 7 días: documentos que los
-  agentes revisaron sin nada que objetar, expedientes preparados de principio
-  a fin, documentos conseguidos por el Perseguidor, avisos cerrados solos y
-  entradas repetidas ignoradas.
+## Centro de trabajo (Hoy): una sola lista
 
-Debajo, «Estas son las 3 cosas que deberías revisar hoy».
+*Hoy* es una lista única en cuatro grupos, en vez de varias bandejas:
+
+- 🔴 **Requiere tu decisión**: expedientes, facturas por revisar, conflictos del
+  banco, mensajes para enviar, reglas aprendidas por aprobar, riesgo de liquidez.
+- 🟠 **Falta información**: movimientos sin justificar, extracto incompleto,
+  facturas habituales que no han llegado, propuestas por confirmar, impuestos
+  sin toda la información.
+- 🟢 **CapaFiscal lo está haciendo**: documentación pedida (con el siguiente paso
+  del Perseguidor), banco conectado, modelos con todo al día.
+- ✓ **Resuelto** en los últimos 7 días, sin intervención.
+
+Cada elemento dice **qué ha comprobado CapaFiscal** y lleva su acción. Lo raro
+*para esta empresa* encabeza la factura («suele facturarte 400 €; esta es de
+2.000 €», «cambia la cuenta de pago») y se puede preguntar **«¿qué cambia si la
+apruebo?»** antes de decidir. Arriba: el estado vivo (último ciclo), lo hecho en
+las últimas 24 h, el cierre del mes en curso y las reglas aprendidas. Se mueve
+con el teclado (j / k) y no escribe nada al leerla (`GET /api/work`).
+
+## Del dato al cierre, sin volver a teclear
+
+| | Qué hace | Dónde |
+|---|---|---|
+| **Cierre del mes** | Concilia lo seguro, pasa el Detector y comprueba diez cosas; % cerrado contable a mano | Cierre del mes · `/api/close` |
+| **Conciliación profesional** | Varias facturas en un pago, pagos a cuenta, devoluciones, comisiones, traspasos, nóminas, Seguridad Social e impuestos; solo lo SEGURO sin persona | Negocio · Banco |
+| **Libro diario** | Asientos con el PGC de facturas y banco conciliado; comprobaciones de cuadre; CSV/Excel y en el paquete trimestral | Informes · `/api/accounting/journal` |
+| **Tesorería predictiva** | Cada cliente cobra cuando suele pagar, cargos habituales sin factura, riesgo de liquidez con el porqué y qué hacer | Negocio · `/api/treasury` |
+| **¿Qué cambia si…?** | Aprobar, pagar, aplazar, descartar o un gasto nuevo: efecto en 303, caja y cierre, sin guardar nada | Hoy · `/api/simulate` |
+| **Perseguidor** | Recordatorio a las 48 h, segundo a los 5 días, aviso al gestor a los 8; al llegar todo, recalcula el expediente | Expedientes |
+| **Banco conectado (PSD2)** | Movimientos cada 6 h por un agregador con licencia, sin duplicar el extracto y conciliados al entrar | Negocio · Banco |
+| **Búsqueda universal** | Ctrl+K encuentra facturas, NIF, terceros, expedientes, importes, «303 septiembre», «cierre septiembre» | `/api/search` |
+
+**Lo que no depende solo del código**:
+- *Banco conectado*: necesita credenciales de un agregador PSD2
+  (`BANK_DATA_SECRET_ID` y `BANK_DATA_SECRET_KEY`, API de GoCardless Bank
+  Account Data), salida a internet y que el titular autorice en su banco (90 días).
+  Sin eso se importa el extracto CSV/Excel.
+- *A3, Sage u Holded*: el libro diario es genérico (importable con una plantilla
+  de columnas). Sus formatos propios necesitan su especificación de importación.
+
+Fuera del núcleo, en «Más»: Radar jurídico (BOE), Asistente y Equipo; Nóminas y
+Jornada quedan aparcadas. Ventas es factura + cobro.
 
 ## Trabajo continuo
 

@@ -9,8 +9,8 @@
     panel: ["Inicio", "Hoy", "home"],
     cierre: ["Inicio", "Cierre del mes", "lock"],
     expedientes: ["Inicio", "Expedientes", "archive"],
-    inteligencia: ["Inicio", "Inteligencia", "radar"],
-    asistente: ["Inicio", "Asistente", "sparkles"],
+    inteligencia: ["Más", "Radar jurídico", "radar"],
+    asistente: ["Más", "Asistente", "sparkles"],
     facturas: ["Operación", "Facturas recibidas", "file"],
     ventas: ["Operación", "Ventas y cobros", "invoice"],
     notificaciones: ["Operación", "Notificaciones", "landmark"],
@@ -19,9 +19,9 @@
     impuestos: ["Finanzas", "Impuestos", "receipt"],
     informes: ["Finanzas", "Informes y cierre", "chart"],
     proveedores: ["Finanzas", "Terceros", "briefcase"],
-    equipo: ["Personas", "Equipo", "users"],
-    jornada: ["Personas", "Jornada", "clock"],
-    nominas: ["Personas", "Nóminas", "wallet"],
+    equipo: ["Más", "Equipo", "users"],
+    jornada: ["Más · aparcado", "Jornada", "clock"],
+    nominas: ["Más · aparcado", "Nóminas", "wallet"],
     automatizaciones: ["Empresa", "Automatizaciones", "zap"],
     cumplimiento: ["Empresa", "Cumplimiento", "shield"],
     conectores: ["Empresa", "Conectores", "plug"],
@@ -33,16 +33,17 @@
     { label: "Qué revisar hoy", hint: "Director de cartera · Expedientes", icon: "chart", run: () => window.activateTab("expedientes") },
     { label: "Preguntar a la memoria", hint: "Expedientes · respuestas con evidencia", icon: "brain", run: () => { window.activateTab("expedientes"); window.setTimeout(() => { document.querySelector('#caseViews [data-view="memory"]')?.click(); document.querySelector("#memoryForm input")?.focus(); }, 80); } },
     { label: "Cerrar el mes", hint: "Cierre · qué bloquea y qué ha hecho CapaFiscal", icon: "lock", run: () => window.activateTab("cierre") },
-    { label: "Novedades del BOE para mis áreas", hint: "Inteligencia · radar jurídico", icon: "radar", run: () => window.activateTab("inteligencia") },
+    { label: "Conectar el banco", hint: "Negocio · los movimientos llegan solos (PSD2)", icon: "link", run: () => { window.activateTab("negocio"); window.setTimeout(() => document.getElementById("bankConnections")?.scrollIntoView({ block: "start" }), 300); } },
+    { label: "Previsión de caja y riesgo de liquidez", hint: "Negocio · tesorería", icon: "trending", run: () => { window.activateTab("negocio"); window.setTimeout(() => document.getElementById("cashflowCard")?.scrollIntoView({ block: "start" }), 300); } },
+    { label: "Libro diario para la gestoría", hint: "Informes · asientos con el PGC", icon: "download", run: () => { window.activateTab("informes"); window.setTimeout(() => document.getElementById("journalCard")?.scrollIntoView({ block: "start" }), 300); } },
+    { label: "Novedades del BOE para mis áreas", hint: "Más · radar jurídico", icon: "radar", run: () => window.activateTab("inteligencia") },
     { label: "Buscar anomalías", hint: "Detector · facturas, banco e IVA", icon: "alert", run: () => { window.activateTab("expedientes"); window.setTimeout(() => document.getElementById("scanAnomalies")?.click(), 80); } },
     { label: "Nueva factura", hint: "Ventas · emitir y registrar", icon: "invoice", run: () => window.newSalesInvoice?.() },
     { label: "Reclamar impagos", hint: "Ventas · cobros vencidos", icon: "coins", run: () => { window.activateTab("ventas"); window.setTimeout(() => document.querySelector('#salesViews [data-view="cobros"]')?.click(), 50); } },
-    { label: "Fichar entrada o salida", hint: "Jornada", icon: "clock", run: () => window.activateTab("jornada") },
     { label: "Revisar mensajes pendientes", hint: "Bandeja de salida", icon: "send", run: () => window.activateTab("salida") },
     { label: "Enviar el trimestre a la gestoría", hint: "Informes y cierre", icon: "archive", run: () => window.activateTab("informes") },
     { label: "Subir documentos", hint: "Facturas o notificaciones en PDF", icon: "upload", run: () => document.getElementById("fileInput")?.click() },
     { label: "Nueva persona", hint: "Equipo", icon: "users", run: () => { window.activateTab("equipo"); window.setTimeout(() => document.getElementById("newEmployeeButton")?.click(), 50); } },
-    { label: "Preparar nómina del mes", hint: "Nóminas", icon: "wallet", run: () => { window.activateTab("nominas"); document.getElementById("payrollCreateForm")?.scrollIntoView({ behavior: "smooth" }); } },
     { label: "Conciliación bancaria", hint: "Negocio · movimientos, posibles y sin factura", icon: "link", run: () => { window.activateTab("negocio"); window.setTimeout(() => document.getElementById("bankCard")?.scrollIntoView({ block: "start" }), 300); } },
     { label: "Importar extracto bancario", hint: "Negocio · conciliación", icon: "link", run: () => { window.activateTab("negocio"); window.setTimeout(() => document.getElementById("bankImportForm")?.scrollIntoView({ behavior: "smooth" }), 300); } },
     { label: "Registrar notificación", hint: "AEAT, Seguridad Social…", icon: "landmark", run: () => { window.activateTab("notificaciones"); const form = document.getElementById("notificationFormCard"); if (form) { form.open = true; form.scrollIntoView({ behavior: "smooth" }); } } },
@@ -51,6 +52,9 @@
   ];
 
   let employees = null;
+  let remote = [];
+  let searchToken = 0;
+  let searchTimer = null;
   let results = [];
   let selectedIndex = 0;
 
@@ -105,7 +109,11 @@
       if (matches(`${action.label} ${action.hint}`)) list.push({ type: "Acción", ...action });
     }
 
-    if (text.length >= 2) {
+    for (const item of remote) {
+      list.push({ type: item.type, label: item.title, hint: item.subtitle, icon: item.icon || "file", run: () => openResult(item.action) });
+    }
+
+    if (text.length >= 2 && !remote.length) {
       const documents = (window.documentsCache || []).filter((item) => {
         const invoice = item.invoice || {};
         return matches([
@@ -138,7 +146,34 @@
       }
     }
 
-    return list.slice(0, 14);
+    for (const person of text.length >= 2 ? (employees || []).filter((item) => matches(`${item.name} ${item.job_title} ${item.department}`)).slice(0, 3) : []) {
+      if (list.some((item) => item.type === "Persona" && item.label === person.name)) continue;
+      list.push({ type: "Persona", label: person.name, hint: [person.job_title, person.department].filter(Boolean).join(" · "), icon: "users",
+                  run: () => { window.activateTab("equipo"); window.openEmployee?.(person.id); } });
+    }
+
+    // Los objetos del negocio primero; las secciones y acciones, después.
+    const order = (item) => (item.type === "Ir a" || item.type === "Acción" ? 1 : 0);
+    return list.sort((a, b) => order(a) - order(b)).slice(0, 18);
+  }
+
+  function openResult(action) {
+    if (action.case_id) return window.openCase(Number(action.case_id));
+    if (action.document_id) return window.showDetail(Number(action.document_id));
+    if (action.period) window.setCloseFocus?.(action.period);
+    window.activateTab(action.tab || "panel");
+    if (action.anchor) window.setTimeout(() => document.getElementById(action.anchor)?.scrollIntoView({ block: "start" }), 300);
+  }
+
+  async function searchRemote(query) {
+    const token = ++searchToken;
+    if (query.trim().length < 2) { remote = []; return; }
+    try {
+      const data = await window.apiRequest(`/search?q=${encodeURIComponent(query.trim())}`);
+      if (token === searchToken) remote = data.results || [];
+    } catch {
+      remote = [];
+    }
   }
 
   function renderResults() {
@@ -180,6 +215,7 @@
     palette.classList.remove("hidden");
     const input = document.getElementById("paletteInput");
     input.value = "";
+    remote = [];
     refresh();
     input.focus();
     await loadEmployees();
@@ -217,7 +253,14 @@
     });
 
     const input = document.getElementById("paletteInput");
-    input.addEventListener("input", refresh);
+    input.addEventListener("input", () => {
+      refresh();
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(async () => {
+        await searchRemote(input.value);
+        refresh();
+      }, 160);
+    });
     input.addEventListener("keydown", (event) => {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -246,6 +289,8 @@
 
   window.addEventListener("capafiscal:tab-changed", (event) => {
     updateBreadcrumb(event.detail?.tab);
+    const more = document.querySelector(`.nav-tab[data-tab="${event.detail?.tab}"]`)?.closest("details");
+    if (more) more.open = true;
     setSidebar(false);
     window.scrollTo({ top: 0 });
   });

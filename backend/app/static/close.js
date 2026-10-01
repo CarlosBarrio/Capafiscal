@@ -155,5 +155,6 @@
     if (event.detail?.tab === "cierre") load();
   });
   window.loadCloseState = load;
+  window.setCloseFocus = (value) => { period = value; };  // la búsqueda universal abre un mes concreto
   document.addEventListener("DOMContentLoaded", setup);
 })();
