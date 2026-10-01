@@ -364,6 +364,10 @@
       if (recon?.decision && transaction.match_status !== "MATCHED") invoiceCell += `<small class="muted block">${esc(recon.decision)}</small>`;
       if (recon?.state === "DUPLICADO") invoiceCell += `<small class="muted block">${esc(recon.evidence?.[0] || "")}</small>`;
       if (recon && (recon.checks?.length || recon.candidates?.length > 1)) invoiceCell += evidenceHtml(recon);
+      if (recon?.allocations?.length) {
+        // Reparto del movimiento: varias facturas, pago a cuenta o justificación sin factura.
+        invoiceCell += `<small class="muted block">${recon.allocations.map((item) => `${esc(item.invoice_number ? `Factura ${item.invoice_number}` : item.label)} ${money(item.amount)}`).join(" · ")}</small>`;
+      }
       if (invoice) {
         invoiceCell += `
           <button type="button" class="link-button block" onclick="showDetail(${Number(invoice.document_id)})">
@@ -392,7 +396,8 @@
       } else if (transaction.match_status === "MATCHED") {
         actions = `<button type="button" class="btn-ghost" data-action="unmatch" data-id="${transaction.id}">Deshacer</button>`;
       } else if (transaction.match_status === "UNMATCHED") {
-        actions = `<button type="button" class="btn-ghost" data-action="ignore" data-id="${transaction.id}">Ignorar</button>`;
+        actions = `${recon?.proposal ? `<button type="button" class="act-btn act-primary" data-action="accept" data-id="${transaction.id}">Aceptar: ${esc(recon.proposal.label.toLowerCase())}</button>` : ""}
+          <button type="button" class="btn-ghost" data-action="ignore" data-id="${transaction.id}">Ignorar</button>`;
       } else {
         actions = `<button type="button" class="btn-ghost" data-action="reject" data-id="${transaction.id}">Restaurar</button>`;
       }
@@ -414,7 +419,10 @@
 
   async function bankAction(action, id, invoiceId = null) {
     try {
-      if (action === "confirm") {
+      if (action === "accept") {
+        const result = await window.jsonRequest(`/bank/transactions/${id}/accept-proposal`, "POST", {});
+        window.showMessage(`Aplicado: ${result.proposal.label.toLowerCase()}.`, "success");
+      } else if (action === "confirm") {
         await window.jsonRequest(`/bank/transactions/${id}/confirm`, "POST", { invoice_id: invoiceId });
         window.showMessage("Movimiento conciliado: la factura queda marcada como pagada/cobrada.", "success");
       } else {

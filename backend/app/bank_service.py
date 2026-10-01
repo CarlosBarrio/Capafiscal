@@ -555,7 +555,10 @@ def unmatch(
 ) -> BankTransaction:
     from app.invoice_service import add_audit_event
 
+    from app.allocations import clear
+
     invoice = transaction.matched_invoice
+    clear(database, transaction)  # pagos repartidos o justificaciones (varias facturas, traspaso, comisión…)
 
     if transaction.match_status == "MATCHED" and invoice is not None:
         invoice.paid_at = None

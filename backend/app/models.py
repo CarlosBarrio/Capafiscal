@@ -1953,6 +1953,28 @@ class PeriodClose(TenantMixin, Base):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class BankAllocation(TenantMixin, Base):
+    """A qué se aplica (una parte de) un movimiento del banco.
+
+    Un movimiento puede pagar varias facturas, una factura pagarse en varios movimientos, y un
+    movimiento sin factura quedar justificado (comisión, traspaso entre cuentas, nómina, impuesto,
+    seguridad social, devolución o anticipo). La suma de lo aplicado nunca supera el movimiento.
+    """
+
+    __tablename__ = "bank_allocations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("bank_transactions.id", ondelete="CASCADE"), nullable=False, index=True)
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True, index=True)
+    # FACTURA, ANTICIPO, COMISION, TRASPASO, NOMINA, IMPUESTO, SEG_SOCIAL, DEVOLUCION, OTRO
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="FACTURA")
+    amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)  # siempre positivo
+    related_transaction_id: Mapped[int | None] = mapped_column(ForeignKey("bank_transactions.id", ondelete="SET NULL"), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False, default="persona")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
 class LearningRule(TenantMixin, Base):
     """Una regla aprendida de las correcciones humanas. No actúa hasta que un administrador la aprueba.
 

@@ -573,6 +573,58 @@ def bank_unmatch(
     return serialize_transaction(database, transaction, include_candidates=True)
 
 
+class AllocationPart(BaseModel):
+    kind: str = Field(default="FACTURA", pattern="^(FACTURA|ANTICIPO|COMISION|TRASPASO|NOMINA|SEG_SOCIAL|IMPUESTO|DEVOLUCION|OTRO)$")
+    invoice_id: int | None = None
+    amount: float = Field(gt=0)
+    related_transaction_id: int | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+
+class AllocationRequest(BaseModel):
+    parts: list[AllocationPart] = Field(min_length=1, max_length=20)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+@router.post("/bank/transactions/{transaction_id}/allocate", tags=["Banco"])
+def bank_allocate(transaction_id: int, payload: AllocationRequest, database: DatabaseDependency, actor_header: ActorHeader = None) -> dict[str, Any]:
+    """Reparte un movimiento: varias facturas, pago a cuenta, o lo justifica (comisión, traspaso, nómina, impuesto…)."""
+    from app.allocations import allocations_of
+    from app.allocations import apply
+
+    transaction = get_transaction(database, transaction_id)
+    if transaction.match_status in ("MATCHED", "IGNORED"):
+        raise HTTPException(status_code=409, detail="Ese movimiento ya está conciliado o descartado: deshazlo antes.")
+    for part in payload.parts:
+        if part.related_transaction_id:
+            get_transaction(database, part.related_transaction_id)  # 404 si no es de este cliente
+    try:
+        apply(database, transaction, [part.model_dump() for part in payload.parts], actor=normalize_actor(actor_header), note=payload.note)
+    except ValueError as error:
+        database.rollback()
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    database.commit()
+    database.refresh(transaction)
+    return serialize_transaction(database, transaction) | {"allocations": allocations_of(database, [transaction.id]).get(transaction.id, [])}
+
+
+@router.post("/bank/transactions/{transaction_id}/accept-proposal", tags=["Banco"])
+def bank_accept_proposal(transaction_id: int, database: DatabaseDependency, actor_header: ActorHeader = None) -> dict[str, Any]:
+    """Acepta la propuesta de la conciliación avanzada tal como se mostró."""
+    from app.allocations import accept_proposal
+    from app.allocations import allocations_of
+
+    transaction = get_transaction(database, transaction_id)
+    try:
+        plan = accept_proposal(database, transaction, actor=normalize_actor(actor_header))
+    except ValueError as error:
+        database.rollback()
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    database.commit()
+    database.refresh(transaction)
+    return serialize_transaction(database, transaction) | {"proposal": plan, "allocations": allocations_of(database, [transaction.id]).get(transaction.id, [])}
+
+
 @router.post("/bank/confirm-suggestions", tags=["Banco"])
 def bank_confirm_suggestions(
     payload: BulkConfirmRequest,

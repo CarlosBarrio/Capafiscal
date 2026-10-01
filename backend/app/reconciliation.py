@@ -224,6 +224,16 @@ def reconcile(database: Session, *, today: date | None = None, auto: bool = True
     transactions = database.scalars(select(BankTransaction).order_by(BankTransaction.booking_date, BankTransaction.id)).all()
     matched_invoice_ids = {item.matched_invoice_id for item in transactions if item.match_status == "MATCHED" and item.matched_invoice_id}
     iban_index = IbanIndex(database)
+    from app.allocations import Context
+    from app.allocations import allocations_of
+    from app.allocations import apply as apply_allocation
+    from app.allocations import propose
+
+    ctx = Context(database, transactions, invoices)
+    # Las facturas con pagos a cuenta ya no casan 1:1 por su total: las sigue la conciliación avanzada.
+    totals = {item.id: abs(Decimal(str(item.total))) for item in ctx.invoices}
+    matched_invoice_ids |= {invoice_id for invoice_id, pending in ctx.outstanding.items() if pending < totals[invoice_id]}
+    applied = allocations_of(database, [item.id for item in transactions])
 
     rows: list[dict[str, Any]] = []
     seen_payments: dict[tuple[str, Decimal], list[BankTransaction]] = {}
@@ -236,6 +246,8 @@ def reconcile(database: Session, *, today: date | None = None, auto: bool = True
         earlier = [item for item in seen_payments.get(key, []) if 0 <= (transaction.booking_date - item.booking_date).days <= DUPLICATE_DAYS]
         seen_payments.setdefault(key, []).append(transaction)
 
+        if applied.get(transaction.id):
+            row["allocations"] = applied[transaction.id]
         if transaction.match_status == "IGNORED":
             row.update(state="IGNORADO", level=None, confidence=None, decision="Descartado por una persona.")
         elif transaction.match_status == "MATCHED":
@@ -252,7 +264,8 @@ def reconcile(database: Session, *, today: date | None = None, auto: bool = True
                        evidence=[f"Mismo concepto e importe que el movimiento del {earlier[0].booking_date:%d/%m/%Y}"],
                        decision="No se concilia: parece el mismo pago dos veces.")
         else:
-            options = [item for item in candidates(database, transaction, invoices, iban_index) if item["invoice"].id not in matched_invoice_ids]
+            partial = ctx.allocated.get(transaction.id)  # ya aplicado en parte: lo que queda no casa 1:1 por el total
+            options = [] if partial else [item for item in candidates(database, transaction, invoices, iban_index) if item["invoice"].id not in matched_invoice_ids]
             verdict = classify(options)
             best = verdict["best"]
             row.update(state=verdict["state"], level=verdict["level"], confidence=verdict["confidence"], decision=verdict["decision"],
@@ -280,6 +293,30 @@ def reconcile(database: Session, *, today: date | None = None, auto: bool = True
             elif persist and verdict["level"] == "CONFLICTO" and transaction.match_status == "SUGGESTED":
                 # Una propuesta anterior ya no se sostiene: hay otra factura igual de plausible.
                 transaction.matched_invoice_id, transaction.match_status, transaction.match_score = None, "UNMATCHED", None
+            if verdict["level"] == "SIN_MATCH" or verdict["state"] == "IMPORTE_DISTINTO":
+                # No casa con una sola factura: varias facturas, pago a cuenta, comisión, traspaso, nómina, impuesto…
+                plan = propose(ctx, transaction)
+                if plan is not None and verdict["state"] == "IMPORTE_DISTINTO" and plan["kind"] in ("PARCIAL", "ANTICIPO"):
+                    # Sigue siendo un conflicto (el importe no cuadra), pero se ofrece la explicación más probable.
+                    row["proposal"] = plan
+                    row["decision"] += f" ¿{plan['label']}? {plan['explanation']}"
+                elif plan is not None:
+                    row.update(proposal=plan, state="POSIBLE", level=plan["level"], decision=plan["explanation"], checks=plan["checks"],
+                               confidence=None, candidates=[])
+                    if partial:
+                        row["decision"] = f"Aplicado en parte ({eur(partial)}). " + row["decision"]
+                    if plan["level"] == "SEGURO" and auto:
+                        apply_allocation(database, transaction, plan["parts"], actor=actor, note=f"Automático: {plan['label'].lower()}")
+                        ctx.allocated[transaction.id] = ctx.allocated.get(transaction.id, Decimal("0")) + sum(Decimal(str(part["amount"])) for part in plan["parts"])
+                        for part in plan["parts"]:
+                            if part.get("invoice_id"):
+                                ctx.outstanding[part["invoice_id"]] = max(Decimal("0"), ctx.outstanding[part["invoice_id"]] - Decimal(str(part["amount"])))
+                        auto_matched += 1
+                        row.update(state="CONCILIADO" if transaction.match_status == "MATCHED" else "POSIBLE", automatic=True,
+                                   decision=f"Conciliado automáticamente: {plan['label'].lower()}. {plan['explanation']}",
+                                   allocations=allocations_of(database, [transaction.id])[transaction.id])
+                elif partial:
+                    row["decision"] = f"Aplicado en parte ({eur(partial)}); el resto no se explica con ninguna factura."
         rows.append(row)
 
     # Facturas aprobadas, vencidas y sin movimiento (solo si el banco llega hasta después del vencimiento).
@@ -293,7 +330,7 @@ def reconcile(database: Session, *, today: date | None = None, auto: bool = True
         if last_bank_date is None or last_bank_date < due + timedelta(days=UNPAID_GRACE_DAYS) or today < due + timedelta(days=UNPAID_GRACE_DAYS):
             continue
         unpaid.append({"invoice_id": invoice.id, "invoice_label": label(invoice),
-                       "amount": float(invoice.total), "due": due.isoformat(), "direction": "cobro" if is_issued(invoice) else "pago", "state": "FACTURA_SIN_PAGO"})
+                       "amount": float(ctx.outstanding.get(invoice.id, invoice.total)), "due": due.isoformat(), "direction": "cobro" if is_issued(invoice) else "pago", "state": "FACTURA_SIN_PAGO"})
     if persist:
         database.flush()
     counts = Counter(row["state"] for row in rows)

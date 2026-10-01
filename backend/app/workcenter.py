@@ -159,8 +159,10 @@ def bank_items(database: Session, today: date) -> list[dict[str, Any]]:
                              f"{'Pago' if row['amount'] < 0 else 'Cobro'} de {eur(abs(row['amount']))} sin factura que lo justifique: falta el documento o decir qué es.",
                              action={"label": "Investigar", "tab": "negocio", "anchor": "bankCard"}, checked=checked, amount=row["amount"], score=40, when=row["date"]))
         elif row.get("level") == "PROBABLE" and row["state"] == "POSIBLE":
-            rows.append(item("falta", "bank_probable", row["transaction_id"], label,
-                             f"Probablemente es {row.get('invoice_label') or 'una factura'}, pero la evidencia no basta para conciliarlo solo.",
+            plan = row.get("proposal")
+            why = (f"{plan['label']}: {plan['explanation']} Falta tu confirmación." if plan else
+                   f"Probablemente es {row.get('invoice_label') or 'una factura'}, pero la evidencia no basta para conciliarlo solo.")
+            rows.append(item("falta", "bank_probable", row["transaction_id"], label, why,
                              action={"label": "Confirmar", "tab": "negocio", "anchor": "bankCard"}, checked=checked, amount=row["amount"], score=25, when=row["date"]))
     for row in report["unpaid_invoices"]:
         rows.append(item("accion", "unpaid", row["invoice_id"], row["invoice_label"],

@@ -351,12 +351,13 @@ def test_bank_import_reconciliation(client, sample_pdfs):
     assert again["duplicated"] == 3
 
     # Importe exacto y nombre o número de factura en el concepto: se concilian solos al importar.
-    assert result["auto_matched"] == 2
+    # La comisión de 6 € queda justificada sola como gasto bancario (sin factura de proveedor).
+    assert result["auto_matched"] == 3
     confirmed = client.post("/api/bank/confirm-suggestions", json={"min_score": 85}).json()
     assert confirmed["confirmed"] == 0
 
     matched = client.get("/api/bank/transactions", params={"status": "MATCHED"}).json()
-    assert len(matched) == 2
+    assert len(matched) == 3 and sum(1 for item in matched if item["invoice"]) == 2
 
     fuel_document = next(
         item for item in client.get("/api/documents").json()
@@ -365,7 +366,7 @@ def test_bank_import_reconciliation(client, sample_pdfs):
     assert fuel_document["invoice"]["paid_at"] == "2026-07-15"
     assert fuel_document["invoice"]["payment_method"] == "DOMICILIACION"
 
-    transaction = next(t for t in matched if t["amount"] < 0)
+    transaction = next(t for t in matched if t["amount"] < 0 and t["invoice"])
     undone = client.post(
         f"/api/bank/transactions/{transaction['id']}/unmatch",
         json={"ignore": False},
