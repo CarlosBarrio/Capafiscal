@@ -256,6 +256,12 @@ class ClasificadorExpedientes(Agent):
         elif not own and third and third["owner_hint"]:
             # Notificación dirigida a otra persona de la que es responsable la empresa.
             subject = {"type": third["match"]["type"], "name": third["match"]["name"], "tax_id": third["tax_id"], "ref_id": third["match"]["ref_id"]}
+        elif not own and not third and unknown_third and company_tax_ids(database):
+            # No aparece nuestro NIF y sí uno que no conocemos: no se inventa el titular.
+            subject = {"type": "unknown", "name": f"NIF {unknown_third['tax_id']}", "tax_id": unknown_third["tax_id"], "ref_id": None}
+            ctx.facts.setdefault("intake_warnings", []).append(
+                f"Va dirigida al NIF {unknown_third['tax_id']}, que no es el de tu empresa ni el de nadie conocido: comprueba a quién corresponde antes de actuar."
+            )
 
         rules = PROCEDURES.get(procedure, PROCEDURES["OTRO"])
         label = SUBTYPE_LABELS.get(subtype or "", rules["label"])

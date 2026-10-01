@@ -23,6 +23,7 @@ from sqlalchemy.orm import selectinload
 from app.calendar_es import add_business_days
 from app.calendar_es import add_months
 from app.calendar_es import days_until
+from app.calendar_es import last_day_of_month
 from app.calendar_es import next_business_day
 from app.extractor import DATE_PATTERN
 from app.extractor import normalize_amount
@@ -73,7 +74,7 @@ TYPE_KEYWORDS = (
     ("APREMIO", ("providencia de apremio", "apremio")),
     ("SANCION", ("procedimiento sancionador", "imposicion de sancion", "expediente sancionador", "sancion")),
     ("PROPUESTA_LIQUIDACION", ("propuesta de liquidacion", "tramite de audiencia", "tramite de alegaciones", "alegaciones")),
-    ("LIQUIDACION", ("liquidacion provisional", "resolucion con liquidacion", "liquidacion")),
+    ("LIQUIDACION", ("liquidacion provisional", "resolucion con liquidacion", "reclamacion de deuda", "reclamacion de cuotas", "liquidacion")),
     ("REQUERIMIENTO", ("requerimiento",)),
     ("COMUNICACION", ("comunicacion", "notificacion", "carta informativa")),
 )
@@ -86,7 +87,7 @@ REFERENCE_PATTERN = re.compile(
 
 AMOUNT_PATTERN = re.compile(
     r"(?:importe|deuda|total a ingresar|a ingresar|principal|cuota)[^\n\d]{0,40}"
-    r"(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}|\d+\.\d{2})\s*(?:€|eur)?",
+    r"(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}|\d+\.\d{2})(?!\d)\s*(?:€|eur)?",
     re.IGNORECASE,
 )
 
@@ -121,11 +122,129 @@ def _type_in(normalized: str) -> str | None:
     return None
 
 
+def document_title(text: str) -> str | None:
+    """El título del acto: la primera línea en mayúsculas de las primeras 30 que nombra un tipo de acto."""
+    for line in [line.strip() for line in text.splitlines() if line.strip()][:30]:
+        letters = [character for character in line if character.isalpha()]
+        if len(letters) >= 8 and sum(character.isupper() for character in letters) / len(letters) > 0.8:
+            normalized = normalize_search_text(line)
+            if _type_in(normalized) not in (None, "COMUNICACION") or re.search(r"comunicacion|certificado|justificante", normalized):
+                return normalized
+    return None
+
+
+def classify_type(text: str, filename: str = "") -> tuple[str, float, str]:
+    """(tipo, confianza, de dónde sale). El título manda; el nombre del archivo es el último recurso."""
+    title = document_title(text)
+    if title and _type_in(title):
+        return _type_in(title), 0.95, "título"
+    normalized = normalize_search_text(text)
+    head = "\n".join([line for line in normalized.splitlines() if line.strip()][:8])
+    if _type_in(head):
+        return _type_in(head), 0.85, "cabecera"
+    if _type_in(normalized):
+        return _type_in(normalized), 0.6, "cuerpo"
+    by_name = _type_in(re.sub(r"[_\-.]+", " ", normalize_search_text(filename)))
+    if by_name:
+        return by_name, 0.4, "nombre del archivo"
+    return "OTRO", 0.2, "sin indicios"
+
+
 def detect_type(normalized: str) -> str:
     """El título del acto (primeras líneas) manda sobre el resto del texto."""
-    head_lines = [line for line in normalized.splitlines() if line.strip()][:8]
-    head = "\n".join(head_lines)
-    return _type_in(head) or _type_in(normalized) or "OTRO"
+    return classify_type(normalized)[0]
+
+
+DATE_VALUE = r"(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})"
+# Fecha de notificación: la que abre el plazo (acceso en sede/DEHú o recepción en papel).
+NOTIFIED_PATTERNS = (
+    r"fecha de notificaci[oó]n[^\d]{0,45}" + DATE_VALUE,
+    r"notificad[oa] (?:el(?: d[ií]a)?|en fecha)[^\d]{0,15}" + DATE_VALUE,
+    r"fecha de acceso[^\d]{0,40}" + DATE_VALUE,
+    r"fecha de (?:recepci[oó]n|entrega)[^\d]{0,30}" + DATE_VALUE,
+)
+AVAILABLE_PATTERNS = (r"puesta a disposici[oó]n[^\d]{0,30}" + DATE_VALUE,)
+DOCUMENT_DATE_PATTERNS = (
+    r"(?:^|\n)\s*fecha(?: de emisi[oó]n| del documento| de la diligencia)?\s*:?\s*\n?\s*" + DATE_VALUE,
+)
+NUMBER_WORDS = {"cinco": 5, "diez": 10, "quince": 15, "veinte": 20, "tres": 3}
+TERM_PATTERN = re.compile(r"plazo(?: m[aá]ximo)?:? (?:de )?(\d{1,2}|cinco|diez|quince|veinte|tres) d[ií]as h[aá]biles", re.IGNORECASE)
+END_NEXT_MONTH = re.compile(r"[uú]ltimo d[ií]a (?:h[aá]bil )?del mes siguiente", re.IGNORECASE)
+# Tipos con plazo propio por ley: el texto no lo cambia (los «días» que citen suelen ser de otra cosa).
+LEGAL_TERM_TYPES = {"LIQUIDACION", "APREMIO", "COMUNICACION"}
+
+
+def first_date(patterns: tuple[str, ...], text: str) -> date | None:
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            parsed = parse_date_value(match.group(1))
+            if parsed:
+                return parsed
+    return None
+
+
+def deadline_term(text: str, notification_type: str) -> dict[str, Any] | None:
+    """El plazo que dice el propio documento, si lo dice."""
+    if notification_type == "COMUNICACION":
+        return None
+    if END_NEXT_MONTH.search(text):
+        return {"rule": "end_next_month", "label": "hasta el último día del mes siguiente al de la notificación"}
+    if notification_type in LEGAL_TERM_TYPES:
+        return None
+    match = TERM_PATTERN.search(text)
+    if match:
+        raw = match.group(1).lower()
+        days = int(raw) if raw.isdigit() else NUMBER_WORDS[raw]
+        return {"days": days, "unit": "business", "label": f"{days} días hábiles"}
+    return None
+
+
+# Qué hay que hacer con un documento de un organismo, además de qué es.
+ACTION_REQUIRED = "ACTION_REQUIRED"  # acto con plazo o consecuencias: a una persona
+INFORMATIONAL = "INFORMATIONAL"  # se lee y se archiva; no pide nada
+NO_ACTION = "NO_ACTION"  # justificante, certificado, acuse: se archiva (y se aprovecha el dato)
+UNKNOWN = "UNKNOWN"  # no se sabe: a una persona
+ACTION_LABELS = {
+    ACTION_REQUIRED: "Requiere actuación",
+    INFORMATIONAL: "Informativo: no requiere actuación",
+    NO_ACTION: "Sin acción: se archiva",
+    UNKNOWN: "Sin clasificar: revísalo",
+}
+NO_ACTION_KINDS = (
+    ("JUSTIFICANTE_PRESENTACION", r"justificante de presentacion|la presentacion se ha realizado correctamente"),
+    ("CERTIFICADO", r"certificado de (?:estar|encontrarse) al corriente|certifica que[^.]{0,200}al corriente|certificado de (?:residencia|situacion censal|retenciones)"),
+    ("ACUSE", r"acuse de recibo|recibo de presentacion"),
+)
+INFORMATIONAL_PATTERN = r"meramente informativ|no requiere ninguna actuacion|a titulo informativo|a efectos (?:meramente )?informativos"
+
+
+def action_class(text: str, notification_type: str) -> tuple[str, str | None]:
+    """(clase de acción, subtipo del documento si es un justificante o certificado)."""
+    normalized = normalize_search_text(text)
+    if notification_type in STRONG_TYPES:
+        return ACTION_REQUIRED, None
+    for kind, pattern in NO_ACTION_KINDS:
+        if re.search(pattern, normalized):
+            return NO_ACTION, kind
+    if re.search(INFORMATIONAL_PATTERN, normalized):
+        return INFORMATIONAL, None
+    return UNKNOWN, None
+
+
+def filing_receipt(text: str) -> dict[str, Any] | None:
+    """Datos de un justificante de presentación: modelo, ejercicio, periodo, fecha e importe."""
+    normalized = normalize_search_text(text)
+    model = re.search(r"modelo\s*:?\s*(\d{3})", normalized)
+    year = re.search(r"ejercicio\s*:?\s*(20\d{2})", normalized)
+    period = re.search(r"periodo\s*:?\s*([1-4])\s*t\b", normalized)
+    filed = re.search(r"fecha (?:y hora )?de presentacion\s*:?\s*" + DATE_VALUE, normalized)
+    amount = re.search(r"resultado(?: de la autoliquidacion)?\s*:?\s*(-?[\d.]+,\d{2})", normalized)
+    if not (model and year and filed):
+        return None
+    return {
+        "model": model.group(1), "year": int(year.group(1)), "period": int(period.group(1)) if period else 0,
+        "filed_at": parse_date_value(filed.group(1)), "amount": normalize_amount(amount.group(1)) if amount else None,
+    }
 
 
 def detect_notification(
@@ -136,9 +255,9 @@ def detect_notification(
     Devuelve los datos de la notificación o None si el texto no parece
     una notificación administrativa.
     """
-    normalized = normalize_search_text(f"{filename}\n{text}")
+    normalized = normalize_search_text(f"{text}\n{filename}")
     issuer = detect_issuer(normalized)
-    notification_type = detect_type(normalized)
+    notification_type, type_confidence, type_source = classify_type(text, filename)
 
     if issuer is None and notification_type in {"OTRO", "COMUNICACION"}:
         return None
@@ -147,33 +266,32 @@ def detect_notification(
         # Un acto típico sin organismo reconocible: probablemente sí lo es.
         issuer = "OTRO"
 
+    action, document_kind = action_class(text, notification_type)
+
     reference_match = REFERENCE_PATTERN.search(text)
     reference = reference_match.group(1).strip(" .") if reference_match else None
 
-    amount = None
-    amount_match = AMOUNT_PATTERN.search(text)
+    # La cifra que cuenta es el total pendiente, no el primer importe (el principal).
+    from app.debt import parse_debt
+
+    debt = parse_debt(text)
+    amount = debt.total_outstanding if debt else None
+    amount_match = AMOUNT_PATTERN.search(text) if amount is None else None
 
     if amount_match:
         amount = normalize_amount(amount_match.group(1))
 
-    available_at = None
-    availability_match = re.search(
-        r"puesta a disposici[oó]n[^\d]{0,30}(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})",
-        text,
-        re.IGNORECASE,
-    )
+    available_at = first_date(AVAILABLE_PATTERNS, text)
+    notified_at = first_date(NOTIFIED_PATTERNS, text)
+    document_date = first_date(DOCUMENT_DATE_PATTERNS, text)
 
-    if availability_match:
-        available_at = parse_date_value(availability_match.group(1))
+    if document_date is None:
+        for match in DATE_PATTERN.finditer(text):
+            parsed = parse_date_value(match.group(1))
 
-    document_date = None
-
-    for match in DATE_PATTERN.finditer(text):
-        parsed = parse_date_value(match.group(1))
-
-        if parsed:
-            document_date = parsed
-            break
+            if parsed and parsed not in {available_at, notified_at}:
+                document_date = parsed
+                break
 
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     key_lines = [
@@ -194,7 +312,12 @@ def detect_notification(
         "reference": reference,
         "amount": amount,
         "available_at": available_at,
+        "notified_at": notified_at,
         "document_date": document_date,
+        "deadline_term": deadline_term(text, notification_type),
+        "debt": debt.as_dict() if debt else None,
+        "classification": {"organism": issuer, "type": notification_type, "confidence": type_confidence, "source": type_source,
+                           "action": action, "document_kind": document_kind},
         "summary": " ".join(key_lines)[:1000] or None,
     }
 
@@ -207,6 +330,15 @@ STRONG_TYPES = {
     "EMBARGO",
     "SANCION",
 }
+
+
+def administrative_record(text: str) -> str | None:
+    """Clase de acción si es un documento de un organismo que NO pide nada (y no es una factura)."""
+    normalized = normalize_search_text(text)
+    if detect_issuer(normalized) is None or ("base imponible" in normalized and "total factura" in normalized):
+        return None
+    action, _kind = action_class(text, classify_type(text)[0])
+    return action if action in {INFORMATIONAL, NO_ACTION} else None
 
 
 def looks_like_administrative_act(text: str) -> bool:
@@ -259,15 +391,22 @@ def payment_deadline_62_5(notified: date) -> date:
     return next_business_day(target)
 
 
+ESTIMATED = "ESTIMADO, falta la fecha de notificación"
+
+
 def compute_deadline(
     notification_type: str,
     *,
     notified_at: date | None,
     available_at: date | None,
     document_date: date | None = None,
+    term: dict[str, Any] | None = None,
 ) -> tuple[date | None, str]:
     """
     Devuelve (fecha límite, explicación de la regla aplicada).
+
+    Sin fecha de notificación el plazo es una estimación y la explicación
+    empieza por «ESTIMADO»: no se presenta como cierto.
     """
     base = notified_at
     base_text = "desde la fecha de notificación"
@@ -275,19 +414,36 @@ def compute_deadline(
     if base is None and available_at is not None:
         base = available_at + timedelta(days=DEEMED_REJECTED_DAYS)
         base_text = (
-            "suponiendo que se entiende notificada 10 días naturales "
-            "después de la puesta a disposición (art. 43.2 Ley 39/2015)"
+            f"({ESTIMATED}): suponiendo que se entiende notificada 10 días naturales "
+            "después de la puesta a disposición (art. 43.2 Ley 39/2015); confirma la fecha real"
         )
 
     if base is None and document_date is not None:
         base = document_date
         base_text = (
-            "desde la fecha del documento (la más prudente); indica la "
+            f"({ESTIMATED}): desde la fecha del documento (la más prudente); indica la "
             "fecha real de notificación para afinarlo"
         )
 
     if base is None:
         return None, "Indica la fecha de notificación para calcular el plazo."
+
+    if term and term.get("rule") == "end_next_month":
+        following = add_months(base.replace(day=1), 1)
+        return (
+            last_day_of_month(following.year, following.month),
+            f"Según el documento, {term['label']} {base_text}.",
+        )
+
+    if term and term.get("days") and notification_type not in LEGAL_TERM_TYPES:
+        deadline = add_business_days(base, int(term["days"]))
+        if notification_type == "EMBARGO":
+            return (
+                deadline,
+                f"Diligencia de embargo: retén desde ya; {term['label']} para contestar {base_text}. "
+                f"Para recurrir dispones de 1 mes ({add_months(base, 1).strftime('%d/%m/%Y')}).",
+            )
+        return deadline, f"{term['label']} según el documento, {base_text}."
 
     if notification_type == "REQUERIMIENTO":
         return (
@@ -349,7 +505,8 @@ def recompute_deadline(
         notification.notification_type,
         notified_at=notification.notified_at,
         available_at=notification.available_at,
-        document_date=document_date,
+        document_date=notification.document_date or document_date,
+        term=notification.deadline_term,
     )
     notification.deadline = deadline
     notification.deadline_rule = rule
@@ -483,9 +640,19 @@ def create_notification(
         amount=data.get("amount"),
         available_at=data.get("available_at"),
         notified_at=data.get("notified_at"),
+        document_date=data.get("document_date"),
+        deadline_term=data.get("deadline_term"),
+        debt=data.get("debt"),
+        classification=data.get("classification"),
         status="PENDING",
         notes=data.get("notes"),
     )
+
+    action = (data.get("classification") or {}).get("action")
+    if action in {INFORMATIONAL, NO_ACTION}:
+        notification.status = "CLOSED"
+        notification.closed_at = utc_now()
+        notification.notes = ACTION_LABELS[action] + "."
 
     if data.get("deadline"):
         notification.deadline = data["deadline"]
@@ -498,7 +665,7 @@ def create_notification(
 
     if document is not None:
         document.kind = "NOTIFICATION"
-        document.status = "NEEDS_REVIEW"
+        document.status = "APPROVED" if action in {INFORMATIONAL, NO_ACTION} else "NEEDS_REVIEW"
 
     database.flush()
 
@@ -543,12 +710,28 @@ def detect_and_register(
     if data is None:
         return None
 
-    return create_notification(
+    notification = create_notification(
         database,
         document=document,
         data=data,
         actor="extractor",
     )
+
+    # Un justificante de presentación responde a «¿está presentado?»: se registra.
+    if (data.get("classification") or {}).get("document_kind") == "JUSTIFICANTE_PRESENTACION":
+        receipt = filing_receipt(text)
+        if receipt:
+            from app.tax_service import record_filing
+
+            try:
+                record_filing(
+                    database, model=receipt["model"], year=receipt["year"], period=receipt["period"], filed_at=receipt["filed_at"],
+                    amount=receipt["amount"], reference=notification.reference, notes=f"Registrado desde el justificante «{document.original_filename}».",
+                )
+            except ValueError:
+                pass  # modelo que CapaFiscal no lleva: el documento queda archivado igualmente
+
+    return notification
 
 
 def update_notification(
@@ -676,8 +859,13 @@ def serialize_notification(notification: FiscalNotification) -> dict[str, Any]:
         "reference": notification.reference,
         "summary": notification.summary,
         "amount": float(notification.amount) if notification.amount is not None else None,
+        "document_date": notification.document_date.isoformat() if notification.document_date else None,
         "available_at": notification.available_at.isoformat() if notification.available_at else None,
         "notified_at": notification.notified_at.isoformat() if notification.notified_at else None,
+        "deadline_term": notification.deadline_term,
+        "debt": notification.debt,
+        "classification": notification.classification,
+        "deadline_estimated": bool(notification.deadline and not notification.deadline_manual and not notification.notified_at),
         "deadline": notification.deadline.isoformat() if notification.deadline else None,
         "deadline_rule": notification.deadline_rule,
         "deadline_manual": notification.deadline_manual,

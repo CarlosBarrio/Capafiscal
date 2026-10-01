@@ -299,6 +299,22 @@ def solve_amounts(text: str) -> dict[str, Any] | None:
     return {"subtotal": base, "tax_total": tax, "withholding_total": withholding or None, "total": total, "tax_rate": rate, "score": round(score, 2)}
 
 
+def negative_total(text: str) -> bool:
+    """¿El total del documento es negativo? (rectificativa o abono: «TOTAL FACTURA -242,00 €»)."""
+    from app.extractor import money_values
+
+    lines = text.splitlines()
+    label = re.compile(r"(?<!sub)total(?: factura| a pagar| a abonar| importe)?|importe a (?:pagar|abonar)", re.IGNORECASE)
+    for index, line in enumerate(lines):
+        for match in label.finditer(normalize(line)):
+            tail = [line[match.end():], *lines[index + 1:index + 3]]
+            for candidate in tail:
+                values = money_values(candidate)
+                if values:
+                    return values[0][0] < 0
+    return False
+
+
 def plausible_amounts(subtotal: Any, tax: Any, total: Any, withholding: Any = None, surcharge: Any = None) -> bool:
     try:
         subtotal, tax, total = (Decimal(str(value)) if value not in (None, "") else None for value in (subtotal, tax, total))

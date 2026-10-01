@@ -231,6 +231,12 @@ class Vigilante(Agent):
                 warnings.append(f"Plazo estimado ({notification.deadline_rule}): confírmalo con la fecha real de notificación.")
             else:
                 warnings.append("No consta el plazo: trátalo como urgente hasta confirmarlo.")
+        elif notification.deadline and not notification.deadline_manual and not notification.notified_at:
+            ctx.facts["deadline_estimated"] = True
+            warnings.append(
+                f"⚠️ Fecha de notificación no disponible. Plazo estimado: {notification.deadline:%d/%m/%Y}. "
+                "Confirma la fecha de notificación antes de actuar."
+            )
         if notification.available_at and not notification.notified_at:
             limit = notification.available_at + timedelta(days=DEEMED_REJECTED_DAYS)
             if ctx.today >= limit:

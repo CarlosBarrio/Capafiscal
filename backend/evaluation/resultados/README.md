@@ -8,6 +8,75 @@ trabajo diario siguen en `evaluation/informes/` (fuera de git).
 |---|---|
 | `B_reglas_1_linea_base.md` | Primera ejecución sobre B, solo reglas, sin ver antes ningún resultado. La verdad (`caso.json`) se versionó antes (commit `85ef9b6`). |
 | `B_reglas_2_tras_corregir_barrido.md` | La misma ejecución tras corregir un **fallo** (no una regla) que B destapó: el barrido de anomalías daba error 500 al guardar un pago sin factura. |
+| `B_reglas_3_v2.md` | **B v2**: tras la ronda de mejora guiada por B v1 (mismos `caso.json`, sin tocar ni una etiqueta). |
+
+## B v1 → B v2
+
+| Métrica | B v1 | B v2 |
+|---|---:|---:|
+| Expedientes perfectos | 10/35 (29 %) | **32/35 (91 %)** |
+| Comprobaciones correctas | 174/221 (79 %) | **218/221 (99 %)** |
+| Errores silenciosos | 2 | **0** |
+| Errores del sistema | 1 | **0** |
+| Entradas que van a una persona | 22/46 | 21/47 |
+| Falsos positivos (documento sin acción que abre trabajo o se lee como factura) | 3 (B11, B12, B13) | **0** |
+| Plazos | 6/16 | 16/16 |
+| Importe de la deuda | 0/7 | 7/7 |
+| Documentos pedidos | 3/7 | 7/7 |
+| Trámite | 12/15 | 15/15 |
+
+Orden de la ronda (el que se acordó): errores silenciosos → plazos → importe
+de la deuda → cálculo del embargo → documentos pedidos → taxonomía →
+documentos sin acción. Qué cambió:
+
+1. **Errores silenciosos**: las rectificativas conservan el signo (la
+   coherencia fiscal se comprueba con valores absolutos); «N° fact.» se
+   reconoce como etiqueta y un importe («550,55 €») nunca es un número de
+   factura; «facturados» no es la etiqueta «factura»; una notificación sin el
+   NIF de la empresa y con uno desconocido queda con titular desconocido y aviso.
+2. **Plazos**: cuatro fechas distintas (documento, puesta a disposición,
+   notificación por acceso o recepción, límite). Se usa el plazo que dice el
+   propio documento (`deadline_term`). Sin fecha de notificación el plazo es
+   «ESTIMADO» y el Vigilante avisa: «⚠️ Fecha de notificación no disponible.
+   Plazo estimado: … Confirma la fecha antes de actuar».
+3. **Deuda** (`app/debt.py`): desglose principal / recargo / intereses /
+   costas / **total pendiente**, que es la cifra que cuenta.
+4. **Embargo**: `amount_to_retain(deuda, crédito, pagos sucesivos)`, función
+   determinista con tests: 2.850 / 4.100 → 2.850; 6.200 con pagos de 1.250 →
+   pagos sucesivos hasta cubrirla; crédito 0 → 0. La IA no decide cantidades.
+5. **Documentos pedidos**: catálogo con sinónimos (facturas recibidas / de
+   compra / soportadas…), gana la expresión más específica, se separan los
+   apartados que llegan pegados y las facturas citadas por número se
+   comprueban una a una (las que faltan se piden al proveedor).
+6. **Taxonomía**: el título del acto manda (confianza 0,95), luego la
+   cabecera, el cuerpo y, como último recurso, el nombre del archivo
+   (0,4). La clasificación guarda organismo, tipo, confianza y origen.
+7. **Sin acción**: `ACTION_REQUIRED / INFORMATIONAL / NO_ACTION / UNKNOWN`.
+   Certificados, justificantes y comunicaciones informativas se archivan sin
+   expediente; el justificante de presentación registra el periodo como
+   presentado. El 130 de una sociedad se descarta solo.
+
+También: el Fiscal señala «periodo presentado» cuando el requerimiento cita
+un periodo ya presentado, y la etiqueta genérica «Razón social» ya no hace
+emisora a la empresa cuando está dentro del bloque «Cliente».
+
+### Lo que queda en B v2
+
+- B-ADV04 y B-ADV06: el NIF del proveedor está girado o es ilegible. El
+  sistema **no lo inventa**: lo deja vacío y la factura va a revisión. Es el
+  comportamiento correcto mientras no haya otra fuente fiable.
+- B-BANCO01, «factura sin pago»: la factura es del 10/08 y no tiene
+  vencimiento, así que se supone a 60 días (vence el 09/10) y todavía no está
+  impagada. **La etiqueta de B se adelantó.** No se cambia (la verdad está
+  congelada), pero no es un fallo del sistema.
+
+### Lo que esto NO demuestra
+
+B v2 se ha mejorado mirando B v1: ya no es una medida independiente. Una
+parte de esa mejora puede ser sobreajuste a cómo escribo yo los documentos.
+Por eso los casos corregidos pasan a ser regresiones (`tests/golden/`) y la
+medida que vale es C, ciego, generado con una semilla que no conozco (y, mejor,
+con documentos preparados por otra persona).
 
 ## Línea base de reglas en B (35 expedientes, 50 documentos)
 

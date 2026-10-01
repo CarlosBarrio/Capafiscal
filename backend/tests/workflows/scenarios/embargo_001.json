@@ -8,7 +8,7 @@
   },
   "ruta_esperada": "embargo",
   "agentes_esperados": ["vigilante", "expedientes", "memoria", "gestor", "director"],
-  "resultado_esperado": {"expediente": true, "kind": "NOTIFICATION", "procedure": "EMBARGO_CREDITOS", "level_in": ["critical", "high"], "insight": "NO se las pagues"},
+  "resultado_esperado": {"expediente": true, "kind": "NOTIFICATION", "procedure": "EMBARGO_CREDITOS", "level_in": ["critical", "high"], "insight": "NO se lo pagues"},
   "evidencias_esperadas": ["B23456783"],
   "accion_esperada": "Retener los pagos o importes afectados desde hoy"
 }

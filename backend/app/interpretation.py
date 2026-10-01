@@ -81,8 +81,12 @@ def in_text(value: Any, text: str, *, kind: str = "text") -> bool:
 def reconciles(values: dict[str, Any]) -> bool:
     subtotal, tax, total = (to_decimal(values.get(key)) for key in ("subtotal", "tax_total", "total"))
     withholding = to_decimal(values.get("withholding_total")) or Decimal("0")
-    if subtotal is None or tax is None or total is None or total <= 0:
+    if subtotal is None or tax is None or total is None or total == 0:
         return False
+    if total < 0:  # rectificativa o abono: todo en negativo
+        if subtotal > 0 or tax > 0:
+            return False
+        subtotal, tax, total = -subtotal, -tax, -total
     return abs(subtotal + tax - abs(withholding) - total) <= TOLERANCE and tax < total
 
 

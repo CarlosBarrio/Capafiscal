@@ -87,7 +87,7 @@ INVOICE_NUMBER_PATTERNS = (
     ),
     re.compile(
         r"(?:n[úu]mero|n[º°o.]|num\.?)\s*"
-        r"(?:de\s+)?(?:factura|fra\.?)?"
+        r"(?:de\s+)?(?:factura|fra\.?|fact?\.)?"
         r"\s*[:#\-]?\s*"
         r"([A-Z0-9][A-Z0-9 ./_-]{1,30})",
         re.IGNORECASE,
@@ -774,12 +774,20 @@ def tax_id_label_role(
     de su propia línea y las líneas anteriores. Las líneas posteriores
     no se usan: suelen pertenecer al bloque de la otra parte.
     """
+    # «Razón social» es una etiqueta genérica: vale para las dos partes. Si
+    # más arriba, dentro del mismo bloque, hay una cabecera («Cliente»,
+    # «Emisor»…), manda la cabecera.
+    def generic(text: str) -> bool:
+        return normalize_search_text(text).strip(" :|-").startswith("razon social")
+
+    weak: str | None = None
     same_line_role = label_role_in_text(text_before_match)
 
-    if same_line_role:
+    if same_line_role and not generic(text_before_match):
         return same_line_role
+    weak = same_line_role
 
-    for offset in range(1, 4):
+    for offset in range(1, 5):
         previous_index = line_index - offset
 
         if previous_index < 0:
@@ -794,10 +802,11 @@ def tax_id_label_role(
 
         role = label_role_in_text(previous_line)
 
-        if role:
+        if role and not generic(previous_line):
             return role
+        weak = weak or role
 
-    return None
+    return weak
 
 
 def find_tax_id_candidates(
@@ -1338,16 +1347,20 @@ def find_invoice_number(
         normalized_line = normalize_search_text(line)
 
         has_invoice_label = (
-            "factura" in normalized_line
+            bool(re.search(r"\bfacturas?\b", normalized_line))  # «facturados» no es una etiqueta
             or bool(
                 re.search(
-                    r"\bfra\.?\b",
+                    r"\bfra\.?\b|\bn\s*[º°o.]\s*fact?\b\.?",
                     normalized_line,
                 )
             )
         )
 
         if not has_invoice_label:
+            continue
+
+        # «TOTAL FACTURA», «Importe factura», «Base factura»: lo que sigue es un importe, no el número.
+        if re.search(r"total|importe|base|cuota|iva", normalized_line) and not re.search(r"\bn\s*[º°o.]|numero|num\.", normalized_line):
             continue
 
         # Etiqueta y número en la misma línea.
@@ -1388,6 +1401,10 @@ def find_invoice_number(
                 "fecha de factura",
                 "fecha exped.",
             }:
+                continue
+
+            # Un importe («550,55 €») no es un número de factura.
+            if re.fullmatch(r"[-+(]?\s*[\d.\s]+,\d{2}\s*(?:€|eur(?:os)?)?\)?", normalized_candidate):
                 continue
 
             compact_candidate = re.sub(
@@ -2699,8 +2716,14 @@ def extract_invoice(
         primary_text,
     )
 
+    # Rectificativas y abonos: el signo va aparte; la coherencia fiscal se comprueba con los valores absolutos.
+    negative = extraction_rules.negative_total(primary_text)
+
+    def magnitude(field: ExtractedField) -> str | None:
+        return decimal_to_string(abs(Decimal(field.value))) if field.value not in (None, "") else None
+
     # Importes que no cuadran fiscalmente: el solver busca base × IVA = cuota y base + cuota − retención = total.
-    if not extraction_rules.plausible_amounts(subtotal.value, tax_total.value, total.value, withholding_total.value, surcharge_total.value):
+    if not extraction_rules.plausible_amounts(magnitude(subtotal), magnitude(tax_total), magnitude(total), withholding_total.value, surcharge_total.value):
         solved = extraction_rules.solve_amounts(primary_text)
         if solved:
             subtotal = ExtractedField(value=decimal_to_string(solved["subtotal"]), confidence=85, source="vat_solver", evidence=f"IVA {solved['tax_rate']} %")
@@ -2708,6 +2731,12 @@ def extract_invoice(
             total = ExtractedField(value=decimal_to_string(solved["total"]), confidence=85, source="vat_solver", evidence="base + cuota − retención")
             withholding_total = ExtractedField(value=decimal_to_string(solved["withholding_total"]) if solved["withholding_total"] else None, confidence=80 if solved["withholding_total"] else 0, source="vat_solver")
             real_world_signals.append("amounts_from_vat_solver")
+
+    if negative:
+        for field in (subtotal, tax_total, total):
+            if field.value not in (None, "") and Decimal(field.value) > 0:
+                field.value = decimal_to_string(-Decimal(field.value))
+        real_world_signals.append("credit_note")
 
     concept = extract_concept(primary_text)
     if direction == "ISSUED":

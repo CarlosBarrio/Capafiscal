@@ -535,9 +535,11 @@ def persist_extraction_result(
         )
         return None
 
+    from app.notification_service import administrative_record
     from app.notification_service import looks_like_administrative_act
 
-    if looks_like_administrative_act(result.get("raw_text") or ""):
+    raw_text = result.get("raw_text") or ""
+    if administrative_record(raw_text) or looks_like_administrative_act(raw_text):
         # Un apremio o una liquidación tienen importe y fecha y pueden
         # parecer facturas: si viene de un organismo, es notificación.
         from app.notification_service import detect_and_register

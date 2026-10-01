@@ -195,3 +195,10 @@ con otras empresas, cifras, fechas y ruido elegidos por la semilla. Se
 guarda fuera de git con un sello (hash) en su `indice.json`.
 
 Resultados versionados y análisis de fallos: [`resultados/`](resultados/README.md).
+
+### Golden set
+
+Cada fallo que destapa B se convierte en una regresión permanente en
+`tests/golden/test_golden.py` (caso → qué fallaba). Si un cambio rompe uno
+de esos expedientes, la batería de tests falla. B v1 y B v2 se conservan en
+`resultados/` para ver la evolución, no solo el resultado final.

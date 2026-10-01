@@ -870,10 +870,18 @@ class FiscalNotification(Base):
         Numeric(15, 2),
         nullable=True,
     )
+    # Desglose: principal, recargo, intereses, costas y total pendiente (= amount).
+    debt: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # Cómo se clasificó: organismo, tipo, confianza y de dónde sale (título, cabecera, cuerpo…).
+    classification: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
-    # Puesta a disposición (DEHú / sede) y fecha de acceso (notificada).
+    # Cuatro fechas distintas: la del documento, la puesta a disposición
+    # (DEHú / sede), la de notificación (acceso o recepción) y la límite.
+    document_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     available_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     notified_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Plazo que dice el propio documento: {"days": 5, "unit": "business"} o {"rule": "end_next_month"}.
+    deadline_term: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     deadline: Mapped[date | None] = mapped_column(
         Date,

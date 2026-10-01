@@ -216,7 +216,7 @@ def test_embargo_identifies_supplier_and_pending_payments(client):
     assert case["procedure"] == "EMBARGO_CREDITOS"
     assert case["facts"]["affected"]["name"] == "SUMINISTROS LOPEZ S.L."
     assert case["facts"]["embargo_pending"][0]["total"] == 1234.56
-    assert any("NO se las pagues" in text for text in case["facts"]["insights"])
+    assert any("NO se lo pagues" in text and "no se ha podido leer" in text for text in case["facts"]["insights"])  # sin importe de deuda: se retiene todo
     assert "1.234,56 €" in case["draft_response"]
     assert case["level"] in {"critical", "high"}
 
@@ -370,3 +370,37 @@ def test_ai_refusal_falls_back_to_rules(client, monkeypatch):
     case = open_case(client)
     assert {step["engine"] for step in case["run"]["steps"] if step["agent"] in {"fiscal", "gestor"}} == {"reglas"}
     assert "EXPONE" in case["draft_response"]
+
+
+EMBARGO_WITH_DEBT = EMBARGO + """Principal 1.000,00 €
+Recargo de apremio 200,00 €
+Importe pendiente 1.200,00 €
+Deberá comunicar en el plazo de 5 días hábiles la existencia de créditos.
+"""
+
+
+def test_embargo_retains_only_the_debt_when_we_owe_more(client):
+    """Debemos 1.234,56 € al embargado y su deuda es 1.200,00 €: se retienen 1.200,00 €."""
+    from app.database import SessionLocal
+    from app.models import Document
+    from app.models import Invoice
+
+    setup_company(client)
+    with SessionLocal() as database:
+        document = Document(original_filename="factura_lopez.pdf", stored_filename="x.pdf", sha256="b" * 64, extension=".pdf", size_bytes=1, status="APPROVED", extraction_status="COMPLETED", kind="INVOICE")
+        database.add(document)
+        database.flush()
+        database.add(Invoice(
+            document_id=document.id, supplier_name="SUMINISTROS LOPEZ S.L.", supplier_tax_id="B23456783", direction="RECEIVED",
+            invoice_number="SL-78", invoice_date=TODAY - timedelta(days=10), total=Decimal("1234.56"), subtotal=Decimal("1020.30"),
+            tax_total=Decimal("214.26"), currency="EUR", confidence=95, field_confidences={}, validation_status="VALID",
+            validation_messages=[], review_status="APPROVED", duplicate_status="NONE",
+        ))
+        database.commit()
+
+    upload_text(client, "embargo.txt", EMBARGO_WITH_DEBT)
+    case = open_case(client)
+    insights = " ".join(case["facts"]["insights"])
+    assert case["amount"] == 1200.0
+    assert "Retén 1.200,00 €" in insights and "34,56 €" in insights  # el resto se le puede pagar
+    assert "Total pendiente: 1.200,00 €" in insights

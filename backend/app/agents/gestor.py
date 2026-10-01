@@ -49,7 +49,10 @@ def subtract_business_days(value: date, days: int) -> date:
 
 def requested_items(text: str) -> list[dict[str, Any]]:
     """Qué documentos pide el texto: primero las enumeraciones, si no el texto entero."""
-    lines = [line for line in text.splitlines() if line.strip()]
+    lines = []
+    for line in text.splitlines():
+        # Dos apartados pegados en una línea («… euros. c) Justificantes …»): se separan.
+        lines += [part for part in re.split(r"\s+(?=(?:[a-h]\)|\d{1,2}[.)])\s+[A-ZÁÉÍÓÚ])", line) if part.strip()]
     normalized_lines = [normalize_search_text(line) for line in lines]
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -92,10 +95,37 @@ def period_label(period: dict[str, Any] | None) -> str | None:
     return f"{period['quarter']}T {period['year']}" if period.get("quarter") else f"ejercicio {period['year']}"
 
 
-def resolve(database, code: str, period: dict[str, Any] | None, facts: dict[str, Any]) -> dict[str, Any]:
+INVOICE_REFERENCE = re.compile(r"\b[A-Z0-9]{1,8}(?:[-/][A-Z0-9]{1,10}){1,3}\b")
+
+
+def cited_invoice_numbers(detail: str | None) -> list[str]:
+    """Números de factura concretos que cita la petición («SFD-2026-001, SFD-2026-002 y …»)."""
+    numbers = []
+    for value in INVOICE_REFERENCE.findall((detail or "").upper()):
+        if not re.search(r"\d", value) or re.fullmatch(r"\d{1,2}/\d{1,2}/\d{2,4}|\d{1,4}/\d{4}", value):
+            continue  # fechas y referencias normativas («RD 1619/2012»)
+        if value not in numbers:
+            numbers.append(value)
+    return numbers
+
+
+def resolve(database, code: str, period: dict[str, Any] | None, facts: dict[str, Any], detail: str | None = None) -> dict[str, Any]:
     """¿Puede el sistema preparar este documento? Estado y cómo."""
     catalog = DOCUMENTS.get(code, {"label": "Documentación solicitada", "source": "internal"})
     result: dict[str, Any] = {"status": "missing", "artifact": None, "note": None}
+
+    numbers = cited_invoice_numbers(detail) if code == "FACTURAS" else []
+    if numbers:
+        found = set(database.scalars(select(Invoice.invoice_number).where(Invoice.invoice_number.in_(numbers), Invoice.review_status != "REJECTED")).all())
+        missing = [number for number in numbers if number not in found]
+        result["missing_numbers"] = missing
+        if not missing:
+            result.update(status="ready", artifact={"type": "invoices", "numbers": numbers}, note=f"Las {len(numbers)} factura(s) citadas están en CapaFiscal")
+        else:
+            # Las que faltan las tiene el proveedor: se le piden.
+            result.update(status="partial" if found else "missing", artifact={"type": "invoices", "numbers": sorted(found)} if found else None,
+                          note=f"Falta(n): {', '.join(missing)}", source="third")
+        return result
 
     if catalog["source"] != "system":
         result["note"] = SOURCE_LABELS[catalog["source"]]
@@ -225,6 +255,18 @@ class GestorIncidencias(Agent):
     def run_deadline(self, ctx: AgentContext) -> StepResult:
         case = ctx.case
         period = ctx.facts["period"]
+        if ctx.facts.get("not_applicable"):
+            # El Fiscal ha visto que este modelo no corresponde: se descarta solo, con el motivo.
+            from datetime import datetime
+            from datetime import timezone
+
+            note = (ctx.facts.get("fiscal_notes") or ["Este modelo no aplica a tu empresa."])[0]
+            case.status, case.resolution, case.resolved_at = "DISMISSED", note, datetime.now(timezone.utc)
+            case.summary = note
+            case.proposed_actions = []
+            ctx.facts["insights"] = [note]
+            ctx.facts["recommendation"] = "Nada que hacer: descartado automáticamente."
+            return StepResult(summary=f"Descartado: {note}", output={"dismissed": True})
         reference = (ctx.facts.get("tax_references") or [{}])[0]
         anomalies = ctx.facts.get("anomalies") or []
         actions: list[dict[str, Any]] = []
@@ -299,7 +341,7 @@ class GestorIncidencias(Agent):
         documents = []
         for item in items:
             catalog = DOCUMENTS.get(item["code"], {"label": item.get("detail") or "Documentación solicitada", "source": "internal"})
-            resolution = resolve(database, item["code"], period, facts)
+            resolution = resolve(database, item["code"], period, facts, item.get("detail"))
             key = item["code"] + (item.get("detail") or "")
             earlier = previous.get(key, {})
             status = earlier.get("status") if earlier.get("status") in {"received", "provided", "not_applicable", "requested"} else resolution["status"]
@@ -308,27 +350,25 @@ class GestorIncidencias(Agent):
                     "code": item["code"],
                     "label": catalog["label"] if item["code"] != "OTRO" else (item.get("detail") or "Documentación solicitada")[:120],
                     "detail": item.get("detail"),
-                    "source": catalog["source"],
-                    "source_label": SOURCE_LABELS[catalog["source"]],
+                    "source": resolution.get("source") or catalog["source"],
+                    "source_label": SOURCE_LABELS[resolution.get("source") or catalog["source"]],
                     "status": status,
                     "artifact": resolution["artifact"],
                     "note": resolution["note"],
                     "period_label": period_label(period) if catalog["source"] == "system" else None,
                     "attachment_ids": earlier.get("attachment_ids", []),
+                    "missing_numbers": resolution.get("missing_numbers") or [],
                 }
             )
 
         # 2) Qué hacer
         actions = [{"label": label, "done": False} for label in rules["actions"]]
         insights: list[str] = []
-        if facts.get("embargo_pending"):
-            total = sum(item["total"] for item in facts["embargo_pending"])
-            insights.append(
-                f"Tienes {len(facts['embargo_pending'])} factura(s) pendientes de pagar a {affected.get('name') or affected['tax_id']} por {eur(total)}: "
-                "NO se las pagues; quedan retenidas para la Administración."
-            )
-        elif procedure == "EMBARGO" and affected:
-            insights.append(f"No hay pagos pendientes a {affected.get('name') or affected.get('tax_id')}: contesta indicando que no existen créditos.")
+        missing_invoices = [number for item in documents for number in item.get("missing_numbers") or []]
+        if missing_invoices:
+            insights.append(f"Piden facturas que no están en CapaFiscal: {', '.join(missing_invoices)}. Hay que pedírselas al proveedor antes de contestar.")
+        if procedure == "EMBARGO" and affected and facts.get("subtype") != "EMBARGO_SALARIOS":
+            insights += embargo_insights(ctx, affected)
         if facts.get("subtype") == "EMBARGO_SALARIOS" and affected:
             insights.append(f"Retén cada mes en la nómina de {affected.get('name')} la parte embargable según el art. 607 LEC y avisa a quien prepare las nóminas.")
         for reference in facts.get("tax_references", []):
@@ -422,3 +462,49 @@ class GestorIncidencias(Agent):
             engine=engine,
             signals={"missing_documents": sum(1 for item in missing if item["source"] in {"internal", "third"})},
         )
+
+
+def embargo_insights(ctx: AgentContext, affected: dict) -> list[str]:
+    """Cuánto retener: lo calcula app.debt (determinista), aquí solo se explica."""
+    from decimal import Decimal
+    from statistics import median
+
+    from app.debt import amount_to_retain
+    from app.debt import is_successive
+
+    facts = ctx.facts
+    who = affected.get("name") or affected.get("tax_id")
+    pending = facts.get("embargo_pending") or []
+    credit = sum((Decimal(str(item["total"])) for item in pending), Decimal("0"))
+    notification = facts.get("notification")
+    debt = Decimal(str(notification.amount)) if notification is not None and notification.amount is not None else None
+    successive = is_successive(ctx.text)
+    periodic = None
+    if successive and affected.get("tax_id"):
+        totals = ctx.database.scalars(
+            select(Invoice.total).where(Invoice.supplier_tax_id == affected["tax_id"], Invoice.total.is_not(None)).order_by(Invoice.invoice_date.desc()).limit(6)
+        ).all()
+        periodic = Decimal(str(median(totals))) if totals else None
+    retention = amount_to_retain(debt, credit, successive=successive, periodic_payment=periodic)
+    facts["embargo"] = {**retention.as_dict(), "debt": float(debt) if debt is not None else None, "credit": float(credit)}
+
+    lines: list[str] = []
+    breakdown = (notification.debt or {}) if notification is not None else {}
+    if breakdown:
+        from app.debt import Debt
+
+        values = {key: (Decimal(str(value)) if isinstance(value, (int, float)) and not isinstance(value, bool) else value) for key, value in breakdown.items()}
+        lines.append("Deuda embargada: " + Debt(**values).explanation() + ".")
+    if credit > 0 and debt is None:
+        lines.append(f"Le debes {eur(credit)} a {who} ({len(pending)} factura(s)): NO se lo pagues; retenlo hasta confirmar el importe de la deuda, que no se ha podido leer.")
+    elif credit > 0:
+        text = f"Retén {eur(retention.retain_now)} de lo que le debes a {who} (le debes {eur(credit)}; la deuda embargada es {eur(debt)})"
+        text += f" e ingrésalo en el Tesoro. El resto, {eur(retention.release)}, puedes pagárselo." if retention.release > 0 else " e ingrésalo en el Tesoro."
+        lines.append(text)
+    else:
+        lines.append(f"No hay pagos pendientes a {who}: contesta indicando que no existen créditos a su favor.")
+    if successive and retention.pending_after > 0:
+        text = f"Embargo de pagos sucesivos: retén también cada pago futuro a {who} hasta completar {eur(debt)}; faltan {eur(retention.pending_after)}"
+        text += f" (unos {retention.payments_needed} pago(s) de {eur(periodic)})." if retention.payments_needed else "."
+        lines.append(text)
+    return lines

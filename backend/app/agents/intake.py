@@ -96,6 +96,9 @@ def dispatch(database: Session, event: IngestedEvent, holder: dict[str, Any], *,
         document_id = int(payload["document_id"])
         notification = database.scalar(select(FiscalNotification).where(FiscalNotification.document_id == document_id))
         if notification is not None:
+            action = (notification.classification or {}).get("action")
+            if action in {"INFORMATIONAL", "NO_ACTION"} and notification.status == "CLOSED":
+                return None  # se ha leído y no pide nada: queda archivado, sin expediente
             return process_notification(database, notification.id, trigger=trigger, today=today, holder=holder)
         invoice = database.scalar(select(Invoice).where(Invoice.document_id == document_id))
         if invoice is not None and invoice.direction != "ISSUED":

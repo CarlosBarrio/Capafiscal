@@ -222,6 +222,15 @@ class AgenteFiscal(Agent):
 
     def run_deadline(self, ctx: AgentContext) -> StepResult:
         period = ctx.facts["period"]
+        from app.company_service import legal_form
+
+        if period["model"] == "130" and legal_form(ctx.database) == "SOCIEDAD":
+            # El 130 es de autónomos en estimación directa: una sociedad no lo presenta.
+            note = "El modelo 130 no aplica: tu empresa es una sociedad (tributa por el Impuesto sobre Sociedades, modelo 202)."
+            ctx.facts["tax_references"] = []
+            ctx.facts["fiscal_notes"] = [note]
+            ctx.facts["not_applicable"] = True
+            return StepResult(summary=note, output={"not_applicable": True})
         analyses, notes = analyse_references(ctx.database, [{"model": period["model"], "year": period["year"], "quarter": period["quarter"]}])
         item = analyses[0]
         ctx.facts["tax_references"] = analyses
@@ -296,6 +305,19 @@ def discrepancy_findings(analyses: list[dict[str, Any]], document_id: int | None
     findings = []
     for item in analyses:
         label = f"{item['model']} {item.get('quarter') or ''}T {item.get('year') or ''}".replace(" T ", " ").strip()
+        filed = item.get("filed")
+        if filed:
+            when = filed["date"].strftime("%d/%m/%Y") if hasattr(filed.get("date"), "strftime") else filed.get("date")
+            findings.append(
+                Finding(
+                    agente="fiscal", tipo="PERIODO_PRESENTADO",
+                    resultado=f"El {label} consta presentado",
+                    por_que=f"Presentado el {when}" + (f" por {eur(filed['amount'])}" if filed.get("amount") is not None else "") + ": el justificante puede aportarse tal cual.",
+                    riesgo="low", confianza=0.95,
+                    datos={key: item.get(key) for key in ("model", "year", "quarter")},
+                    documento_origen=document_id, siguiente="Adjunta el justificante de presentación a la respuesta.",
+                )
+            )
         if abs(item.get("difference_vs_filed") or 0) >= 1:
             findings.append(
                 Finding(

@@ -14,17 +14,20 @@ KNOWLEDGE_VERSION = "2026.09"
 DOCUMENTS: dict[str, dict[str, Any]] = {
     "LIBRO_EMITIDAS": {
         "label": "Libro registro de facturas expedidas",
-        "keywords": ("libro registro de facturas expedidas", "libro de facturas expedidas", "facturas expedidas", "facturas emitidas", "libro registro de facturas emitidas", "libros registro"),
+        "keywords": ("libro registro de facturas expedidas", "libro de facturas expedidas", "libro registro de facturas emitidas", "registro de facturas emitidas", "registro de facturas expedidas", "libros registro"),
         "source": "system",
     },
     "LIBRO_RECIBIDAS": {
         "label": "Libro registro de facturas recibidas",
-        "keywords": ("libro registro de facturas recibidas", "facturas recibidas", "libros registro"),
+        "keywords": ("libro registro de facturas recibidas", "libro de facturas recibidas", "registro de facturas recibidas", "libro registro de facturas soportadas", "libros registro"),
         "source": "system",
     },
     "FACTURAS": {
         "label": "Copia de las facturas del periodo",
-        "keywords": ("copia de las facturas", "copias de facturas", "justificantes de los gastos", "facturas justificativas", "originales de las facturas", "facturas que justifiquen"),
+        # Sinónimos: «facturas recibidas / de compra / soportadas», «emitidas / expedidas / de venta», «cada factura».
+        "keywords": ("copia de las facturas", "copias de facturas", "copia de cada factura", "justificantes de los gastos", "facturas justificativas", "originales de las facturas",
+                     "facturas que justifiquen", "facturas recibidas", "factura recibida", "facturas de compra", "facturas soportadas", "facturas de proveedores",
+                     "facturas emitidas", "facturas expedidas", "facturas de venta", "cada factura"),
         "source": "system",
     },
     "EXTRACTOS": {
@@ -34,7 +37,7 @@ DOCUMENTS: dict[str, dict[str, Any]] = {
     },
     "MODELOS": {
         "label": "Autoliquidaciones del periodo",
-        "keywords": ("autoliquidacion", "declaracion presentada", "copia del modelo"),
+        "keywords": ("autoliquidacion", "declaracion presentada", "declaraciones presentadas", "copia del modelo", "justificante de presentacion", "justificantes de presentacion", "modelo presentado"),
         "source": "system",
     },
     "NOMINAS": {
@@ -59,7 +62,7 @@ DOCUMENTS: dict[str, dict[str, Any]] = {
     },
     "JUSTIFICANTE_PAGO": {
         "label": "Justificante de pago",
-        "keywords": ("justificante de pago", "justificante del ingreso", "justificantes de pago", "carta de pago", "acreditacion del pago"),
+        "keywords": ("justificante de pago", "justificante del ingreso", "justificantes de pago", "carta de pago", "acreditacion del pago", "justificante de la transferencia", "justificantes de las transferencias", "pago de dichas facturas"),
         "source": "internal",
     },
     "CONTABILIDAD": {
@@ -207,11 +210,19 @@ ORGANISM_HEADERS = {
 
 
 def match_documents(normalized_text: str) -> list[str]:
-    """Documentos del catálogo que el texto (ya normalizado) menciona."""
-    found: list[str] = []
-    for code, item in DOCUMENTS.items():
-        if any(keyword in normalized_text for keyword in item["keywords"]):
-            found.append(code)
-    # "libros registro" a secas: los dos libros; si se piden facturas
-    # expedidas explícitamente, no añadir por error el de recibidas.
+    """Documentos del catálogo que el texto (ya normalizado) menciona, del más específico al menos.
+
+    Gana la expresión más larga: «libro registro de facturas recibidas» es el
+    libro, aunque contenga «facturas recibidas»; «justificantes de pago de
+    dichas facturas» es un justificante, aunque diga «facturas».
+    """
+    scored: list[tuple[int, int, str]] = []
+    for order, (code, item) in enumerate(DOCUMENTS.items()):
+        lengths = [len(keyword) for keyword in item["keywords"] if keyword in normalized_text]
+        if lengths:
+            scored.append((-max(lengths), order, code))
+    found = [code for _length, _order, code in sorted(scored)]
+    # «libro registro de facturas recibidas» también contiene «facturas recibidas»: no es una petición de facturas.
+    if "FACTURAS" in found and found[0] in {"LIBRO_RECIBIDAS", "LIBRO_EMITIDAS"}:
+        found.remove("FACTURAS")
     return found
