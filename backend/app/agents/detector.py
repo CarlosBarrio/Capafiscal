@@ -75,6 +75,9 @@ ANOMALY_TYPES: dict[str, dict[str, str]] = {
     "IMPORTE_DIFERENTE": {"label": "Pago con importe distinto", "next": "Compara el pago con la factura: puede faltar un abono, un recargo o haber un error."},
     "PAGO_DUPLICADO": {"label": "Pago duplicado", "next": "Comprueba si se ha pagado dos veces y pide la devolución al proveedor."},
     "OBLIGACION_INCOMPLETA": {"label": "Obligación incompleta", "next": "Completa lo que falta antes del plazo para que el borrador sea fiable."},
+    "GASTO_ANORMAL": {"label": "Gasto anormal", "next": "Revisa qué proveedores explican la subida y si es puntual o un cambio de tendencia."},
+    "CAIDA_FACTURACION": {"label": "Caída de facturación", "next": "Comprueba si faltan facturas por emitir o si ha caído la actividad, y prevé la tesorería."},
+    "CLIENTE_DEJA_DE_PAGAR": {"label": "Cliente que deja de pagar", "next": "Reclama las facturas vencidas y valora pedir pago anticipado antes de seguir sirviéndole."},
 }
 
 
@@ -526,8 +529,117 @@ def obligation_findings(database: Session, today: date) -> list[dict[str, Any]]:
     return findings
 
 
+def monthly_totals(invoices: list[Invoice]) -> dict[tuple[int, int], float]:
+    totals: dict[tuple[int, int], float] = defaultdict(float)
+    for invoice in invoices:
+        totals[(invoice.invoice_date.year, invoice.invoice_date.month)] += abs(float(invoice.total or 0))
+    return totals
+
+
+def trend_findings(database: Session, today: date) -> list[dict[str, Any]]:
+    """Cambios globales: gasto del último mes anormalmente alto o facturación anormalmente baja."""
+    last = add_months(today.replace(day=1), -1)
+    previous = [add_months(last, -offset) for offset in range(1, 7)]
+    findings = []
+    invoices = database.scalars(select(Invoice).where(Invoice.invoice_date >= previous[-1], Invoice.invoice_date < today.replace(day=1),
+                                                      Invoice.review_status != "REJECTED", Invoice.total.is_not(None))).all()
+    for direction in ("RECEIVED", "ISSUED"):
+        selected = [item for item in invoices if (item.direction == "ISSUED") == (direction == "ISSUED")]
+        totals = monthly_totals(selected)
+        history = [totals.get((month.year, month.month), 0.0) for month in previous]
+        if sum(1 for value in history if value > 0) < 4:
+            continue
+        usual = statistics.median(history)
+        current = totals.get((last.year, last.month), 0.0)
+        label = f"{MONTHS[last.month - 1]} {last.year}"
+        if direction == "RECEIVED" and usual > 0 and current > usual * 1.5 and current - usual >= 500:
+            by_supplier: dict[str, float] = defaultdict(float)
+            usual_by_supplier: dict[str, list[float]] = defaultdict(list)
+            for item in selected:
+                key = item.supplier_name or supplier_key(item) or "¿?"
+                if (item.invoice_date.year, item.invoice_date.month) == (last.year, last.month):
+                    by_supplier[key] += abs(float(item.total))
+            for month in previous:
+                month_items = [item for item in selected if (item.invoice_date.year, item.invoice_date.month) == (month.year, month.month)]
+                for key in by_supplier:
+                    usual_by_supplier[key].append(sum(abs(float(item.total)) for item in month_items if (item.supplier_name or supplier_key(item) or "¿?") == key))
+            drivers = sorted(((key, value - statistics.median(usual_by_supplier[key])) for key, value in by_supplier.items()), key=lambda pair: -pair[1])[:3]
+            explanation = "; ".join(f"{key} (+{eur(delta)})" for key, delta in drivers if delta > 0)
+            findings.append(anomaly(
+                f"gasto:{last.year}-{last.month:02d}", "GASTO_ANORMAL",
+                f"El gasto de {label} es {round(current / usual, 1)} veces el habitual",
+                f"Gastos recibidos en {label}: {eur(current)}; lo normal en los 6 meses anteriores es {eur(usual)}. Lo explican sobre todo: {explanation or 'varios proveedores'}.",
+                "high" if current > usual * 2.5 else "medium", amount=current - usual,
+                facts={"month": f"{last.year}-{last.month:02d}", "current": round(current, 2), "median": round(usual, 2), "drivers": drivers, "ratio": round(current / usual, 2)},
+                confidence=0.75,
+            ))
+        if direction == "ISSUED" and usual >= 500 and current < usual * 0.6:
+            findings.append(anomaly(
+                f"facturacion:{last.year}-{last.month:02d}", "CAIDA_FACTURACION",
+                f"La facturación de {label} ha caído un {round((1 - current / usual) * 100)} %",
+                f"Facturado en {label}: {eur(current)}; lo normal en los 6 meses anteriores es {eur(usual)}.",
+                "high" if current < usual * 0.4 else "medium", amount=usual - current,
+                facts={"month": f"{last.year}-{last.month:02d}", "current": round(current, 2), "median": round(usual, 2), "party": "customer"},
+                confidence=0.7,
+            ))
+    return findings
+
+
+def customer_payment_findings(database: Session, today: date) -> list[dict[str, Any]]:
+    """Clientes que pagaban y ahora acumulan facturas vencidas sin cobrar."""
+    issued = database.scalars(select(Invoice).where(Invoice.direction == "ISSUED", Invoice.invoice_date.is_not(None), Invoice.total.is_not(None),
+                                                    Invoice.review_status != "REJECTED")).all()
+    by_customer: dict[str, list[Invoice]] = defaultdict(list)
+    for invoice in issued:
+        key = invoice.customer_tax_id or (invoice.customer_name or "").strip().upper()
+        if key:
+            by_customer[key].append(invoice)
+    findings = []
+    for key, items in by_customer.items():
+        paid = [item for item in items if item.paid_at]
+        overdue = [item for item in items if not item.paid_at and (item.due_date or item.invoice_date + timedelta(days=30)) < today - timedelta(days=15)]
+        if len(paid) < 2 or not overdue:
+            continue
+        usual_days = statistics.median((item.paid_at - item.invoice_date).days for item in paid)
+        oldest = min(overdue, key=lambda item: item.invoice_date)
+        waiting = (today - oldest.invoice_date).days
+        amount = sum(float(item.total) for item in overdue)
+        if not (len(overdue) >= 2 or waiting > usual_days + 30) or amount < 300:
+            continue
+        name = items[-1].customer_name or key
+        findings.append(anomaly(
+            f"cliente_pago:{key}:{oldest.id}", "CLIENTE_DEJA_DE_PAGAR",
+            f"{name} ha dejado de pagar a tiempo",
+            f"Solía pagar en unos {round(usual_days)} días y ahora tiene {len(overdue)} factura(s) vencida(s) sin cobrar por {eur(amount)}; la más antigua lleva {waiting} días.",
+            "high" if amount >= 3000 or waiting > usual_days + 60 else "medium", amount=amount,
+            facts={"party": "customer", "name": name, "supplier_key": key, "usual_days_to_pay": round(usual_days), "overdue": len(overdue), "oldest_days": waiting},
+            evidence_items=[evidence("invoice", f"{item.invoice_number or 's/n'} · {item.invoice_date:%d/%m/%Y} · {eur(item.total)}", document_id=item.document_id) for item in overdue[:4]],
+            confidence=0.75,
+        ))
+    return findings
+
+
+def attach_profiles(database: Session, findings: list[dict[str, Any]]) -> None:
+    """Cada hallazgo se explica contra el comportamiento habitual del proveedor o cliente."""
+    from app.financial_memory import get_profile
+
+    for item in findings:
+        key = item["facts"].get("supplier_key")
+        party = "customer" if item["facts"].get("party") == "customer" else "supplier"
+        profile = get_profile(database, key, party)
+        if not profile or profile.get("invoices", 0) < 3:
+            continue
+        item["facts"]["profile"] = {name: profile.get(name) for name in ("summary", "amount", "frequency", "vat", "payment", "last_decision")}
+        item["detail"] += f" Lo habitual: {profile['summary'][0].lower() + profile['summary'][1:]}"
+        item["finding"]["por_que"] = item["detail"]
+        item["finding"]["datos"]["profile"] = item["facts"]["profile"]
+
+
 def scan(database: Session, today: date) -> list[dict[str, Any]]:
     """Barrido completo de la empresa con todas las comprobaciones."""
+    from app.financial_memory import refresh_profiles
+
+    refresh_profiles(database, today=today)
     findings: list[dict[str, Any]] = []
     invoices = received_invoices(database)
     recent_from = today - timedelta(days=RECENT_DAYS)
@@ -571,6 +683,9 @@ def scan(database: Session, today: date) -> list[dict[str, Any]]:
     findings += bank_findings(database, today)
     findings += obligation_findings(database, today)
     findings += vat_trend(database, today)
+    findings += trend_findings(database, today)
+    findings += customer_payment_findings(database, today)
+    attach_profiles(database, findings)
     return apply_feedback(database, findings)
 
 

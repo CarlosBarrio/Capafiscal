@@ -473,6 +473,38 @@ def email_connector_poll(database: DatabaseDependency) -> dict[str, Any]:
     return result
 
 
+@router.get("/memory/profiles", tags=["Agentes"])
+def memory_profiles(database: DatabaseDependency, party: str | None = Query(default=None, pattern="^(supplier|customer)$"), refresh: bool = False) -> list[dict[str, Any]]:
+    """Memoria financiera: cómo se comporta normalmente cada proveedor y cliente."""
+    from sqlalchemy import select
+
+    from app.financial_memory import refresh_profiles
+    from app.financial_memory import serialize
+    from app.models import CounterpartyProfile
+
+    if refresh or database.scalar(select(CounterpartyProfile.id).limit(1)) is None:
+        refresh_profiles(database)
+        database.commit()
+    statement = select(CounterpartyProfile)
+    if party:
+        statement = statement.where(CounterpartyProfile.party == party)
+    records = database.scalars(statement).all()
+    return sorted((serialize(item) for item in records), key=lambda item: -(item.get("amount") or {}).get("total_12m", 0))
+
+
+@router.get("/memory/profiles/{party}/{key}", tags=["Agentes"])
+def memory_profile(party: str, key: str, database: DatabaseDependency) -> dict[str, Any]:
+    from sqlalchemy import select
+
+    from app.financial_memory import serialize
+    from app.models import CounterpartyProfile
+
+    record = database.scalar(select(CounterpartyProfile).where(CounterpartyProfile.party == party, CounterpartyProfile.key == key))
+    if record is None:
+        raise HTTPException(status_code=404, detail="Sin perfil para esa contraparte.")
+    return serialize(record)
+
+
 @router.get("/memory/search", tags=["Agentes"])
 def memory_search(database: DatabaseDependency, q: str = Query(..., min_length=2, max_length=300)) -> list[dict[str, Any]]:
     from app.agents.memory import search

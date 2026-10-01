@@ -1780,3 +1780,18 @@ class IngestedEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CounterpartyProfile(Base):
+    """Memoria financiera: cómo se comporta normalmente cada proveedor y cliente."""
+
+    __tablename__ = "counterparty_profiles"
+    __table_args__ = (UniqueConstraint("party", "key", name="uq_counterparty_profile"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    party: Mapped[str] = mapped_column(String(20), nullable=False)  # supplier, customer
+    key: Mapped[str] = mapped_column(String(150), nullable=False, index=True)  # NIF o nombre normalizado
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    profile: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
