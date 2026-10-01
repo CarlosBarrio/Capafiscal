@@ -148,6 +148,7 @@ def bank_items(database: Session, today: date) -> list[dict[str, Any]]:
     from app.models import BankTransaction
     from app.reconciliation import reconcile
 
+    from app.bank_sync import expiring
     from app.models import BankConnection
 
     last = database.scalar(select(BankTransaction.booking_date).order_by(BankTransaction.booking_date.desc()).limit(1))
@@ -164,7 +165,12 @@ def bank_items(database: Session, today: date) -> list[dict[str, Any]]:
             rows.append(item("falta", "bank_authorize", connection.id, f"Falta autorizar {name}",
                              "El titular de la cuenta tiene que dar permiso en la web del banco.",
                              action={"label": "Autorizar", "tab": "negocio", "anchor": "bankConnections"}, score=30))
-        elif connection.status == "LINKED" and connection.last_error:
+        elif connection.status == "LINKED" and expiring(connection, today) is not None:
+            left = expiring(connection, today)
+            rows.append(item("accion", "bank_consent_soon", connection.id, f"El acceso a {name} caduca en {max(left, 0)} días",
+                             "Renuévalo antes y los movimientos seguirán llegando solos (el banco pide confirmarlo cada 90 días).",
+                             action={"label": "Renovar", "tab": "negocio", "anchor": "bankConnections"}, score=40))
+        if connection.status == "LINKED" and connection.last_error:
             rows.append(item("falta", "bank_sync_error", connection.id, f"No se pudo leer {name}", connection.last_error[:200],
                              action={"label": "Ver banco", "tab": "negocio", "anchor": "bankConnections"}, score=30))
     if linked:

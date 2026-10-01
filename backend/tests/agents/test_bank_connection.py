@@ -49,7 +49,7 @@ def test_connect_authorize_and_bring_movements_without_duplicating_the_statement
 
     linked = client.post(f"/api/bank/connections/{pending['id']}/confirm").json()
     assert linked["status"] == "LINKED" and linked["accounts"][0]["iban"] == "ES00 •••• 0001"
-    assert linked["result"] == {"imported": 2, "duplicated": 2, "auto_matched": 1, "accounts": 1}  # la comisión se justifica sola
+    assert linked["result"] == {"imported": 2, "duplicated": 2, "auto_matched": 1, "accounts": 1, "skipped": 0}  # la comisión se justifica sola
     descriptions = [row["description"] for row in client.get("/api/bank/reconciliation").json()["movements"]]
     assert sum("1210" in text or "FAC-0901" in text for text in descriptions) == 1
     assert "RECIBO SEGURO LOCAL POLIZA 0000 · ASEGURADORA FICTICIA S.A." in descriptions

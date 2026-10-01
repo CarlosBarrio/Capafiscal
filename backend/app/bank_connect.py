@@ -42,19 +42,54 @@ def masked(iban: str | None) -> str | None:
     return f"{clean[:4]} •••• {clean[-4:]}"
 
 
-def to_row(item: dict[str, Any]) -> dict[str, Any] | None:
-    """Un movimiento del agregador → la fila común del banco (la misma que un extracto)."""
+def to_row(item: dict[str, Any], occurrence: int = 1) -> dict[str, Any] | None:
+    """Un movimiento del agregador → la fila común del banco (la misma que un extracto).
+
+    None si no se puede usar: sin fecha o importe, importe cero u otra divisa (se cuentan aparte, no se pierden en silencio).
+    """
     booked = item.get("bookingDate") or item.get("valueDate")
-    amount = (item.get("transactionAmount") or {}).get("amount")
-    if not booked or amount is None:
+    money = item.get("transactionAmount") or {}
+    amount = money.get("amount")
+    if not booked or amount is None or Decimal(str(amount)) == 0 or (money.get("currency") or "EUR") != "EUR":
         return None
     text = item.get("remittanceInformationUnstructured") or " ".join(item.get("remittanceInformationUnstructuredArray") or [])
     party = item.get("creditorName") or item.get("debtorName")
     description = " · ".join(part for part in (text.strip() if text else "", party or "") if part) or item.get("additionalInformation") or "Movimiento"
     balance = ((item.get("balanceAfterTransaction") or {}).get("balanceAmount") or {}).get("amount")
-    external = item.get("transactionId") or item.get("internalTransactionId") or f"{booked}|{amount}|{description}"
+    # Algunos bancos no dan transactionId: sin él, dos cargos iguales el mismo día serían uno. Se numeran.
+    external = item.get("transactionId") or item.get("internalTransactionId") or item.get("entryReference") \
+        or f"{booked}|{amount}|{description}|{occurrence}"
     return {"booking_date": date.fromisoformat(booked[:10]), "description": description[:500], "amount": Decimal(str(amount)),
             "balance": Decimal(str(balance)) if balance is not None else None, "external_id": str(external)}
+
+
+def to_rows(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """Filas utilizables y cuántas se han dejado fuera (sin fecha, importe cero u otra divisa)."""
+    from collections import Counter
+
+    seen: Counter[tuple] = Counter()
+    rows, skipped = [], 0
+    for item in items:
+        key = (item.get("bookingDate"), (item.get("transactionAmount") or {}).get("amount"), item.get("remittanceInformationUnstructured"))
+        seen[key] += 1
+        row = to_row(item, seen[key])
+        if row is None:
+            skipped += 1
+        else:
+            rows.append(row)
+    return rows, skipped
+
+
+REQUISITION_STATES = {
+    "CR": "creada: falta que el titular entre en su banco",
+    "GC": "el titular está dando su consentimiento",
+    "UA": "el banco está identificando al titular",
+    "RJ": "el banco o el titular rechazó la autorización: hay que empezar de nuevo",
+    "SA": "el titular está eligiendo las cuentas",
+    "GA": "el banco está concediendo el acceso",
+    "EX": "la autorización ha caducado: hay que empezar de nuevo",
+    "LN": "enlazado",
+}
 
 
 class GoCardlessProvider:
@@ -65,7 +100,7 @@ class GoCardlessProvider:
         self.secret_id, self.secret_key = secret_id, secret_key
         self._token: str | None = None
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+    def _request(self, method: str, path: str, retried: bool = False, **kwargs: Any) -> Any:
         import httpx
 
         headers = {"accept": "application/json"}
@@ -75,18 +110,33 @@ class GoCardlessProvider:
             response = httpx.request(method, f"{self.base_url}{path}", headers=headers, timeout=30, **kwargs)
         except httpx.HTTPError as error:
             raise BankProviderError(f"No se pudo conectar con el agregador bancario: {type(error).__name__}") from error
+        if response.status_code == 401 and path != "/token/new/" and not retried:
+            self._token = None  # token caducado o revocado: se pide otro y se repite una vez
+            self._cache.pop(self.secret_id, None)
+            return self._request(method, path, retried=True, **kwargs)
         if response.status_code in (401, 403) and path.startswith("/accounts/"):
             raise ConsentExpired("El banco ya no da acceso: el consentimiento ha caducado o se retiró. Hay que renovarlo.")
         if response.status_code == 429:
             raise BankProviderError("El banco limita las consultas (unas 4 al día por cuenta): se reintentará más tarde.")
         if response.status_code >= 400:
-            raise BankProviderError(f"El agregador respondió {response.status_code}: {response.text[:200]}")
+            raise BankProviderError(f"El agregador respondió {response.status_code}" + (": el banco no está disponible ahora, se reintentará"
+                                    if response.status_code >= 500 else f": {response.text[:200]}"))
         return response.json()
 
+    # El token dura ~24 h: se reutiliza entre peticiones (el agregador limita cuántos se piden).
+    _cache: dict[str, tuple[str, float]] = {}
+
     def token(self) -> str:
+        import time
+
         if self._token is None:
-            data = self._request("POST", "/token/new/", json={"secret_id": self.secret_id, "secret_key": self.secret_key})
-            self._token = data["access"]
+            cached = self._cache.get(self.secret_id)
+            if cached and cached[1] > time.time():
+                self._token = cached[0]
+            else:
+                data = self._request("POST", "/token/new/", json={"secret_id": self.secret_id, "secret_key": self.secret_key})
+                self._token = data["access"]
+                self._cache[self.secret_id] = (self._token, time.time() + max(60, int(data.get("access_expires", 86400)) - 300))
         return self._token
 
     def institutions(self, country: str = "ES") -> list[dict[str, Any]]:
@@ -103,6 +153,10 @@ class GoCardlessProvider:
     def requisition(self, requisition_id: str) -> dict[str, Any]:
         data = self._request("GET", f"/requisitions/{requisition_id}/")
         return {"status": data.get("status"), "accounts": data.get("accounts") or []}
+
+    def revoke(self, requisition_id: str) -> None:
+        """Retira el acceso en el agregador (el banco deja de dar datos)."""
+        self._request("DELETE", f"/requisitions/{requisition_id}/")
 
     def account(self, account_id: str) -> dict[str, Any]:
         details = self._request("GET", f"/accounts/{account_id}/details/").get("account") or {}
@@ -136,6 +190,9 @@ class FolderProvider:
     def requisition(self, requisition_id: str) -> dict[str, Any]:
         return self._read("requisition.json")
 
+    def revoke(self, requisition_id: str) -> None:
+        return None
+
     def account(self, account_id: str) -> dict[str, Any]:
         details = self._read(f"details_{account_id}.json").get("account") or {}
         return {"id": account_id, "iban": masked(details.get("iban")), "name": details.get("name")}
@@ -159,3 +216,23 @@ def provider() -> GoCardlessProvider | FolderProvider | None:
 NOT_CONFIGURED = ("Conexión bancaria no configurada. Hace falta un agregador PSD2 con licencia: credenciales de GoCardless "
                   "Bank Account Data en BANK_DATA_SECRET_ID y BANK_DATA_SECRET_KEY, salida a internet hacia su API y que el "
                   "titular autorice el acceso desde su banco. Mientras, importa el extracto CSV o Excel.")
+
+
+def check() -> int:
+    """`python -m app.bank_connect`: comprueba credenciales y red con el agregador antes de conectar un banco real."""
+    source = provider()
+    if source is None:
+        print(NOT_CONFIGURED)
+        return 1
+    try:
+        banks = source.institutions("ES")
+    except BankProviderError as error:
+        print(f"✕ {error}")
+        return 1
+    sandbox = any(item["id"] == "SANDBOXFINANCE_SFIN0000" for item in banks)
+    print(f"✓ Agregador accesible ({source.name}): {len(banks)} bancos en España" + (" · banco de pruebas SANDBOXFINANCE_SFIN0000 disponible" if sandbox else ""))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(check())

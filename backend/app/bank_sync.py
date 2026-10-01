@@ -15,7 +15,7 @@ from app.bank_connect import NOT_CONFIGURED
 from app.bank_connect import BankProviderError
 from app.bank_connect import ConsentExpired
 from app.bank_connect import provider
-from app.bank_connect import to_row
+from app.bank_connect import to_rows
 from app.models import BankConnection
 
 CONSENT_DAYS = 90
@@ -78,12 +78,23 @@ def confirm(database: Session, connection: BankConnection, *, actor: str) -> dic
     try:
         state = source.requisition(connection.requisition_id)
         if state["status"] != "LN":
-            raise BankSyncError("El banco aún no ha confirmado la autorización: termina el proceso en la web del banco y vuelve a intentarlo.")
+            from app.bank_connect import REQUISITION_STATES
+
+            if state["status"] in ("RJ", "EX"):
+                connection.status, connection.last_error = "ERROR", f"Autorización {REQUISITION_STATES[state['status']]}."
+                database.flush()
+            raise BankSyncError(f"El banco aún no ha confirmado la autorización ({REQUISITION_STATES.get(state['status'], state['status'])}).")
+        if not state["accounts"]:
+            raise BankSyncError("La autorización no incluye ninguna cuenta: vuelve a conectar y elige al menos una.")
         connection.accounts = [source.account(account_id) for account_id in state["accounts"]]
     except BankProviderError as error:
         raise BankSyncError(str(error)) from error
     connection.status, connection.last_error = "LINKED", None
     connection.consent_expires_at = datetime.now(timezone.utc) + timedelta(days=CONSENT_DAYS)
+    # Renovar = conectar de nuevo el mismo banco: la conexión caducada queda sustituida.
+    for old_connection in database.scalars(select(BankConnection).where(BankConnection.id != connection.id, BankConnection.institution_id == connection.institution_id,
+                                                                        BankConnection.status.in_(("EXPIRED", "ERROR", "PENDING")))).all():
+        old_connection.status, old_connection.link = "REMOVED", None
     add_audit_event(database, action="bank.connected", entity_type="bank_connection", entity_id=connection.id, actor=actor,
                     event_data={"institution": connection.institution_name or connection.institution_id, "accounts": len(connection.accounts)})
     database.flush()
@@ -100,30 +111,48 @@ def sync(database: Session, connection: BankConnection, *, actor: str = "banco-c
     source = require_provider()
     today = today or date.today()
     since = (connection.last_sync_at.date() - timedelta(days=OVERLAP_DAYS)) if connection.last_sync_at else today - timedelta(days=CONSENT_DAYS)
-    totals = {"imported": 0, "duplicated": 0, "auto_matched": 0, "accounts": 0}
-    try:
-        for account in connection.accounts or []:
-            rows = [row for row in (to_row(item) for item in source.transactions(account["id"], since)) if row]
-            label = account.get("iban") or account.get("name") or connection.institution_name or "Banco conectado"
-            result = store_rows(database, rows, source=f"{CONNECTED_SOURCE} · {connection.institution_name or connection.institution_id} · {label}",
-                                account_label=label, actor=actor, external=True)
-            totals["imported"] += result["imported"]
-            totals["duplicated"] += result["duplicated"]
-            totals["auto_matched"] += result["auto_matched"]
-            totals["accounts"] += 1
-    except ConsentExpired as error:
-        connection.status, connection.last_error = "EXPIRED", str(error)
-        database.flush()
-        return {**serialize(connection), "result": totals}
-    except BankProviderError as error:
-        connection.last_error = str(error)
-        database.flush()
-        return {**serialize(connection), "result": totals}
-    connection.last_sync_at, connection.last_error = datetime.now(timezone.utc), None
-    connection.last_result = (f"{totals['imported']} movimiento(s) nuevos, {totals['duplicated']} ya estaban"
-                              f" y {totals['auto_matched']} conciliado(s) solos")
+    totals = {"imported": 0, "duplicated": 0, "auto_matched": 0, "accounts": 0, "skipped": 0}
+    errors = []
+    accounts = []
+    for account in connection.accounts or []:
+        account = dict(account)
+        try:
+            rows, skipped = to_rows(source.transactions(account["id"], since))
+        except ConsentExpired as error:
+            connection.status, connection.last_error = "EXPIRED", str(error)
+            database.flush()
+            return {**serialize(connection), "result": totals}
+        except BankProviderError as error:  # una cuenta que falla no impide leer las demás
+            account["last_error"] = str(error)
+            errors.append(f"{account.get('iban') or account['id']}: {error}")
+            accounts.append(account)
+            continue
+        label = account.get("iban") or account.get("name") or connection.institution_name or "Banco conectado"
+        result = store_rows(database, rows, source=f"{CONNECTED_SOURCE} · {connection.institution_name or connection.institution_id} · {label}",
+                            account_label=label, actor=actor, external=True)
+        account.update(last_sync_at=datetime.now(timezone.utc).isoformat(), last_error=None)
+        accounts.append(account)
+        for key in ("imported", "duplicated", "auto_matched"):
+            totals[key] += result[key]
+        totals["accounts"] += 1
+        totals["skipped"] += skipped
+    connection.accounts = accounts
+    connection.last_error = "; ".join(errors) or None
+    if totals["accounts"]:
+        connection.last_sync_at = datetime.now(timezone.utc)
+        connection.last_result = (f"{totals['imported']} movimiento(s) nuevos, {totals['duplicated']} ya estaban"
+                                  f" y {totals['auto_matched']} conciliado(s) solos"
+                                  + (f"; {totals['skipped']} sin usar (importe cero u otra divisa)" if totals["skipped"] else ""))
     database.flush()
     return {**serialize(connection), "result": totals}
+
+
+def expiring(connection: BankConnection, today: date, days: int = 10) -> int | None:
+    """Días que le quedan al consentimiento si caduca pronto (para avisar antes de que dejen de llegar movimientos)."""
+    if connection.status != "LINKED" or connection.consent_expires_at is None:
+        return None
+    left = (connection.consent_expires_at.date() - today).days
+    return left if left <= days else None
 
 
 def sync_all(database: Session, *, today: date | None = None) -> dict[str, Any]:
@@ -137,7 +166,16 @@ def sync_all(database: Session, *, today: date | None = None) -> dict[str, Any]:
 def remove(database: Session, connection: BankConnection, *, actor: str) -> dict[str, Any]:
     from app.invoice_service import add_audit_event
 
-    connection.status, connection.link = "REMOVED", None
-    add_audit_event(database, action="bank.disconnected", entity_type="bank_connection", entity_id=connection.id, actor=actor, event_data={})
+    revoked, note = False, None
+    source = provider()
+    if source is not None and connection.requisition_id:
+        try:
+            source.revoke(connection.requisition_id)
+            revoked = True
+        except BankProviderError as error:  # se desconecta igual en CapaFiscal; se dice que el agregador no confirmó
+            note = f"No se pudo retirar el acceso en el agregador ({error}): revócalo también desde tu banco."
+    connection.status, connection.link, connection.last_error = "REMOVED", None, note
+    add_audit_event(database, action="bank.disconnected", entity_type="bank_connection", entity_id=connection.id, actor=actor,
+                    event_data={"revoked_at_provider": revoked})
     database.flush()
     return serialize(connection)

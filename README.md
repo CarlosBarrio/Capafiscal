@@ -126,7 +126,7 @@ con el teclado (j / k) y no escribe nada al leerla (`GET /api/work`).
 - *Banco conectado*: necesita credenciales de un agregador PSD2
   (`BANK_DATA_SECRET_ID` y `BANK_DATA_SECRET_KEY`, API de GoCardless Bank
   Account Data), salida a internet y que el titular autorice en su banco (90 días).
-  Sin eso se importa el extracto CSV/Excel.
+  Sin eso se importa el extracto CSV/Excel. Guía de prueba con un banco real: `docs/banco_real.md`.
 - *A3, Sage u Holded*: el libro diario es genérico (importable con una plantilla
   de columnas). Sus formatos propios necesitan su especificación de importación.
 
