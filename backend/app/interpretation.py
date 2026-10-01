@@ -226,6 +226,12 @@ def refine(
     info: dict[str, Any] = {"reasons": reasons, "engine": "reglas"}
     if not reasons and not force:
         return {**result, "interpretation": info}
+    if not force:
+        from app.routing import allowed_reasons
+
+        if not allowed_reasons(reasons):
+            # Los datos dicen que Claude no mejora este tipo de duda: no se gasta; va a una persona.
+            return {**result, "interpretation": {**info, "fallback": "política de routing: Claude no mejora este tipo de duda", "skipped_by_policy": True}}
     if not llm.available():
         return {**result, "interpretation": {**info, "fallback": "sin ANTHROPIC_API_KEY"}}
 

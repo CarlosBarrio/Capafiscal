@@ -1,15 +1,13 @@
 """
-Conector DEHú (pendiente).
+Conector DEHú: DEHú → adaptador → evento → /api/events (entrada común).
 
-La conexión oficial necesita alta en la DEHú, certificado electrónico de la
-empresa y, para una gestoría, apoderamiento de cada cliente. Cuando exista,
-solo tendrá que convertir cada notificación en un evento y entregarlo:
+    adapter.py   metadatos + PDF de una notificación → documento + notificación
+                 con las fechas oficiales → evento «dehu:<id>» (idempotente)
+    client.py    transportes: carpeta con lo descargado de la DEHú (hoy) y,
+                 cuando haya alta, certificado y apoderamientos, la conexión
+                 directa (mismo contrato `pending()`)
 
-    intake.ingest(database, source="dehu", external_id=<identificador DEHú>,
-                  kind="notification", payload={"notification": {...}})
-
-o por HTTP: POST /api/events {"kind": "notification", "source": "dehu",
-"external_id": ..., "notification": {...}}. El resto del sistema ya está
-preparado (idempotencia incluida: la misma notificación no abre dos
-expedientes).
+Por HTTP: POST /api/connectors/dehu/import con los metadatos y el PDF en
+base64, o POST /api/connectors/dehu/poll para leer la carpeta configurada
+(DEHU_INBOX_DIR).
 """

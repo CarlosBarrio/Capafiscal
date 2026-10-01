@@ -268,6 +268,14 @@ def learning_stats(database: DatabaseDependency) -> dict[str, Any]:
     return stats(database)
 
 
+@router.get("/agents/routing", tags=["Agentes"])
+def agents_routing() -> dict[str, Any]:
+    """Cuándo se llama a Claude: la política vigente por tipo de duda y de dónde sale."""
+    from app.routing import load_policy
+
+    return load_policy()
+
+
 @router.get("/agents/pulse", tags=["Agentes"])
 def agents_pulse(database: DatabaseDependency) -> dict[str, Any]:
     from app.agents.pulse import pulse_status
@@ -455,6 +463,41 @@ def retry_event(event_id: int, database: DatabaseDependency) -> dict[str, Any]:
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return {"event": serialize_event(event), "case": serialize_case(database, case, full=True) if case else None}
+
+
+class DehuPayload(BaseModel):
+    identifier: str = Field(min_length=1, max_length=200)
+    issuer: str = Field(default="", max_length=255)
+    subject: str = Field(default="", max_length=2000)
+    holder_tax_id: str | None = Field(default=None, max_length=20)
+    kind: str = Field(default="notificacion", pattern="^(notificacion|comunicacion)$")
+    available_at: date | None = None
+    accessed_at: date | None = None
+    pdf_base64: str | None = None
+    filename: str | None = Field(default=None, max_length=255)
+
+
+@router.post("/connectors/dehu/import", tags=["Conectores"], status_code=201)
+def dehu_import(payload: DehuPayload, database: DatabaseDependency) -> dict[str, Any]:
+    """Una notificación de la DEHú (metadatos + PDF opcional) → expediente."""
+    from app.connectors.dehu.adapter import DehuItem
+    from app.connectors.dehu.adapter import ingest_dehu
+
+    return ingest_dehu(database, DehuItem.from_payload(payload.model_dump()))
+
+
+@router.post("/connectors/dehu/poll", tags=["Conectores"])
+def dehu_poll(database: DatabaseDependency) -> dict[str, Any]:
+    """Procesa la carpeta de notificaciones descargadas de la DEHú (DEHU_INBOX_DIR)."""
+    from pathlib import Path
+
+    from app.config import settings
+    from app.connectors.dehu.client import FolderTransport
+    from app.connectors.dehu.client import poll
+
+    if not settings.dehu_inbox_dir:
+        raise HTTPException(status_code=400, detail="Configura DEHU_INBOX_DIR con la carpeta de notificaciones descargadas de la DEHú.")
+    return poll(database, FolderTransport(Path(settings.dehu_inbox_dir)))
 
 
 @router.get("/connectors/email", tags=["Conectores"])

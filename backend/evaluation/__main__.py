@@ -16,6 +16,7 @@ Uso (desde backend/):
     python -m evaluation casos --dataset b_sintetico       # evalúa expedientes completos (reglas)
     python -m evaluation casos --dataset c_ciego --ciego   # una sola vez, al final (queda anotado)
     python -m evaluation comparar --dataset b_sintetico    # reglas vs Claude vs híbrido (ANTHROPIC_API_KEY)
+    python -m evaluation politica --informe evaluation/informes/comparar_b_sintetico_<fecha>.json   # routing de Claude
 
 Conjuntos: A = desarrollo (se puede mirar y ajustar reglas con ellos),
 B = evaluación (no se usan para cambiar reglas), C = ciego (no se tocan
@@ -221,8 +222,34 @@ def compare(argv: list[str]) -> int:
     return 0
 
 
+def policy(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="python -m evaluation politica")
+    parser.add_argument("--informe", required=True, help="JSON de `python -m evaluation comparar`")
+    parser.add_argument("--motor", default="hibrido", choices=["hibrido", "claude"])
+    parser.add_argument("--con-correcciones", action="store_true", help="Suma las correcciones humanas a campos que puso Claude (base de datos actual)")
+    args = parser.parse_args(argv)
+    from app.routing import claude_corrections
+    from app.routing import derive_policy
+    from app.routing import save_policy
+
+    corrections = None
+    if args.con_correcciones:
+        from app.database import SessionLocal
+
+        with SessionLocal() as database:
+            corrections = claude_corrections(database)
+    result = derive_policy(json.loads(Path(args.informe).read_text(encoding="utf-8")), engine=args.motor, corrections=corrections)
+    path = save_policy(result)
+    for key, item in sorted(result["reasons"].items()):
+        print(f"{'Claude' if item['use_claude'] else 'reglas → persona':>17} · {key}: {item['why']}")
+    print(f"Política guardada en {path}")
+    return 0
+
+
 def main() -> int:
     argv = sys.argv[1:]
+    if argv and argv[0] == "politica":
+        return policy(argv[1:])
     if argv and argv[0] == "comparar":
         return compare(argv[1:])
     if argv and argv[0] in {"generar-b", "generar-c"}:
