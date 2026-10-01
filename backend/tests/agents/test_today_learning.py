@@ -33,7 +33,7 @@ def test_today_ranks_by_impact_and_says_why(client):
     assert "fiscal" in today and "bank" in today
 
 
-def test_human_corrections_are_recorded_and_change_routing(client):
+def test_corrections_propose_a_rule_that_only_acts_after_admin_approval(client):
     from app.database import SessionLocal
     from app.learning import correction_hints
 
@@ -54,9 +54,40 @@ def test_human_corrections_are_recorded_and_change_routing(client):
     stats = client.get("/api/learning").json()
     assert stats["invoice_fields"]["invoice_number"]["corrected"] == 2
     assert stats["corrections_by_error"]["numero"] == 2 and stats["invoices_reviewed"] == 1
+
+    # 1. El patrón se convierte en PROPUESTA, con evidencia y simulación sobre el histórico…
+    listing = client.get("/api/learning/rules").json()
+    rule = next(item for item in listing["rules"] if item["field"] == "invoice_number")
+    assert rule["status"] == "PROPUESTA" and rule["version"] is None and listing["version"] == 0
+    assert rule["evidence"]["corrections"] == 2 and len(rule["evidence"]["examples"]) == 2
+    assert rule["simulation"]["invoices_affected"] == 3 and rule["simulation"]["would_have_caught"] == 2
+    # …pero no cambia nada mientras no se apruebe.
+    with SessionLocal() as database:
+        assert correction_hints(database, "B11111110") == []
+
+    # 2. Aprobada: entra en vigor con versión.
+    approved = client.post(f"/api/learning/rules/{rule['id']}/aprobar", json={"note": "visto"}).json()
+    assert approved["status"] == "APROBADA" and approved["version"] == 1
     with SessionLocal() as database:
         hints = correction_hints(database, "B11111110")
-    assert any(hint.startswith("invoice_number corregido 2 veces") for hint in hints)
+    assert any(hint.startswith("invoice_number corregido 2 veces") and "v1" in hint for hint in hints)
+    assert client.post(f"/api/learning/rules/{rule['id']}/aprobar", json={}).status_code == 409
+
+    # 3. Retirada: deja de actuar; queda el rastro.
+    assert client.post(f"/api/learning/rules/{rule['id']}/retirar", json={}).json()["status"] == "RETIRADA"
+    with SessionLocal() as database:
+        assert correction_hints(database, "B11111110") == []
+    actions = {event["action"] for event in client.get("/api/activity", params={"limit": 50}).json()}
+    assert {"learning.rule_aprobada", "learning.rule_retirada"} <= actions
+
+
+def test_only_admins_decide_learning_rules():
+    from app.auth import permitted
+
+    assert permitted("ADMIN", "POST", "/api/learning/rules/3/aprobar")
+    for role in ("GESTOR", "REVISOR", "CLIENTE", "LECTURA"):
+        assert not permitted(role, "POST", "/api/learning/rules/3/aprobar")
+        assert permitted(role, "GET", "/api/learning/rules")
 
 
 def test_dismissed_alarm_counts_as_false_positive(client):

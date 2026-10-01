@@ -2858,3 +2858,13 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 .ev-ok { color: var(--green); font-weight: 700; }
 .ev-no { color: var(--faint); font-weight: 700; }
 .ev-mid { color: var(--amber); font-weight: 700; }
+
+/* Reglas aprendidas */
+.rule-list { display: flex; flex-direction: column; }
+.rule-row { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--line); }
+.rule-row:first-child { border-top: none; padding-top: 0; }
+.rule-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rule-main p { margin: 0; color: var(--ink-2); font-size: 13.5px; }
+.rule-title { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rule-actions { display: flex; gap: 8px; flex-shrink: 0; }
+@media (max-width: 640px) { .rule-row { flex-direction: column; } }

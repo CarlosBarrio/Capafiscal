@@ -256,8 +256,12 @@ dinero en juego + tipo de asunto), con el porqué en una línea, más el trimest
 
 **Aprendizaje** (`GET /api/learning`): cada corrección, aprobación, rechazo o descarte
 queda registrado (predicción, decisión, tipo de error, motor). Sirve para medir la
-precisión real, para que lo que las personas corrigen a menudo en un proveedor deje de
-darse por bueno solo con reglas, y como etiquetas reales para evaluar.
+precisión real y como etiquetas reales para evaluar. El sistema **no aprende en silencio**:
+si un campo se corrige a menudo en un proveedor, propone una regla (`GET /api/learning/rules`)
+con su evidencia y una simulación sobre el histórico («de 14 facturas, en 5 la persona lo
+corrigió»). Solo un administrador la aprueba (`POST /api/learning/rules/{id}/aprobar`), y
+entonces entra en vigor con un número de versión; se puede rechazar o retirar, y todo queda
+en el registro de actividad.
 
 **Routing de Claude** (`GET /api/agents/routing`): Claude solo entra en las dudas donde
 los datos dicen que mejora (`python -m evaluation politica --informe …`).

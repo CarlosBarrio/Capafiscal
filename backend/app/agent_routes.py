@@ -268,6 +268,46 @@ def learning_stats(database: DatabaseDependency) -> dict[str, Any]:
     return stats(database)
 
 
+class RuleDecision(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
+
+
+@router.get("/learning/rules", tags=["Agentes"])
+def learning_rules(database: DatabaseDependency) -> dict[str, Any]:
+    """Reglas aprendidas de las correcciones: propuestas (con evidencia y simulación), aprobadas, rechazadas y retiradas."""
+    from app.learning import propose_rules
+    from app.learning import ruleset_version
+    from app.learning import serialize_rule
+    from app.models import LearningRule
+
+    propose_rules(database)
+    database.commit()
+    rules = database.scalars(select(LearningRule).order_by(LearningRule.id.desc())).all()
+    return {
+        "version": ruleset_version(database),
+        "rules": [serialize_rule(rule) for rule in rules],
+        "policy": "Ninguna regla aprendida actúa hasta que la aprueba un administrador.",
+    }
+
+
+@router.post("/learning/rules/{rule_id}/{decision}", tags=["Agentes"])
+def learning_rule_decide(rule_id: int, decision: str, payload: RuleDecision, database: DatabaseDependency, actor_header: ActorHeader = None) -> dict[str, Any]:
+    """Aprobar, rechazar o retirar una regla (solo administradores cuando hay usuarios)."""
+    from app.learning import decide_rule
+    from app.learning import serialize_rule
+    from app.models import LearningRule
+
+    rule = database.get(LearningRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Regla no encontrada.")
+    try:
+        decide_rule(database, rule, decision, normalize_actor(actor_header), payload.note)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    database.commit()
+    return serialize_rule(rule)
+
+
 @router.get("/agents/routing", tags=["Agentes"])
 def agents_routing() -> dict[str, Any]:
     """Cuándo se llama a Claude: la política vigente por tipo de duda y de dónde sale."""

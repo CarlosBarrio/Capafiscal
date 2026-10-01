@@ -8,8 +8,14 @@ en qué contexto (proveedor, trámite, hallazgos).
 
 Para qué sirve:
     - medir la precisión real por campo, proveedor, motor y tipo de aviso;
-    - el routing: un campo que las personas corrigen a menudo en un
-      proveedor deja de darse por bueno con reglas (pasa a Claude y a revisión);
+    - proponer reglas, NUNCA aplicarlas solo: si un campo se corrige a menudo
+      en un proveedor, se propone «no darlo por bueno con reglas». La propuesta
+      lleva su evidencia y una simulación sobre el histórico, y solo entra en
+      vigor cuando un administrador la aprueba (con número de versión):
+
+          correcciones → patrón → propuesta → simulación → aprobación → versión
+
+      Así el sistema no aprende en silencio una mala decisión humana;
     - evaluar: las correcciones son etiquetas reales (`python -m evaluation decisiones`);
     - personalizar por empresa (la categoría ya se aprende por proveedor).
 """
@@ -26,10 +32,11 @@ from app.models import AuditEvent
 from app.models import Case
 from app.models import DecisionRecord
 from app.models import Invoice
+from app.models import LearningRule
 
 INVOICE_FIELDS = ("supplier_name", "supplier_tax_id", "customer_name", "customer_tax_id", "invoice_number", "invoice_date", "due_date",
                   "subtotal", "tax_total", "withholding_total", "total", "category", "direction")
-HINT_MIN_CORRECTIONS = 2
+HINT_MIN_CORRECTIONS = 2  # correcciones del mismo campo y proveedor para proponer una regla
 
 
 def text(value: Any) -> str | None:
@@ -105,16 +112,111 @@ def record_case_decision(database: Session, case: Case, decision: str, actor: st
 
 
 def correction_hints(database: Session, subject_key: str | None) -> list[str]:
-    """Campos que las personas corrigen a menudo para este proveedor: no darlos por buenos con reglas."""
+    """Los motivos que las reglas APROBADAS añaden para este proveedor (las propuestas no actúan)."""
     if not subject_key:
         return []
-    rows = database.execute(
-        select(DecisionRecord.field, DecisionRecord.error_type).where(
-            DecisionRecord.entity_type == "invoice", DecisionRecord.outcome == "corregido", DecisionRecord.subject_key == subject_key
-        )
+    rules = database.scalars(
+        select(LearningRule).where(LearningRule.status == "APROBADA", LearningRule.kind == "revisar_campo", LearningRule.subject_key == subject_key)
     ).all()
-    counts = Counter(field for field, _kind in rows)
-    return [f"{field} corregido {count} veces en este proveedor" for field, count in counts.most_common() if count >= HINT_MIN_CORRECTIONS]
+    return [f"{rule.field} corregido {rule.evidence.get('corrections', '?')} veces en este proveedor (regla v{rule.version})" for rule in rules]
+
+
+def detected_patterns(database: Session) -> dict[tuple[str, str], list[DecisionRecord]]:
+    """Correcciones repetidas del mismo campo en el mismo proveedor."""
+    rows = database.scalars(
+        select(DecisionRecord).where(DecisionRecord.entity_type == "invoice", DecisionRecord.outcome == "corregido", DecisionRecord.subject_key.is_not(None))
+    ).all()
+    groups: dict[tuple[str, str], list[DecisionRecord]] = defaultdict(list)
+    for record in rows:
+        groups[(record.subject_key, record.field)].append(record)
+    return {key: items for key, items in groups.items() if len({item.entity_id for item in items}) >= HINT_MIN_CORRECTIONS}
+
+
+def simulate(database: Session, subject_key: str, field: str) -> dict[str, Any]:
+    """Qué habría pasado con el histórico si la regla hubiera estado en vigor."""
+    invoices = database.scalars(
+        select(Invoice).where((Invoice.supplier_tax_id == subject_key) | (Invoice.customer_tax_id == subject_key) | (Invoice.supplier_name == subject_key))
+    ).all()
+    corrected = {
+        record.entity_id for record in database.scalars(
+            select(DecisionRecord).where(DecisionRecord.entity_type == "invoice", DecisionRecord.outcome == "corregido",
+                                         DecisionRecord.subject_key == subject_key, DecisionRecord.field == field)
+        ).all()
+    }
+    affected = len(invoices)
+    caught = len(corrected & {invoice.id for invoice in invoices})
+    return {
+        "invoices_affected": affected,
+        "would_have_caught": caught,
+        "extra_reviews": max(0, affected - caught),
+        "precision": round(caught / affected, 3) if affected else None,
+        "summary": (f"De {affected} factura(s) de este proveedor, {affected} habrían pasado por revisión del campo «{field}»; "
+                    f"en {caught} una persona lo corrigió de verdad ({max(0, affected - caught)} revisión(es) de más).") if affected else "Sin facturas en el histórico.",
+    }
+
+
+def propose_rules(database: Session) -> list[LearningRule]:
+    """Convierte patrones de corrección en propuestas (idempotente). No activa nada."""
+    existing = {(rule.subject_key, rule.field): rule for rule in database.scalars(select(LearningRule).where(LearningRule.kind == "revisar_campo")).all()}
+    proposed = []
+    for (subject_key, field), records in detected_patterns(database).items():
+        invoices = sorted({record.entity_id for record in records})
+        evidence = {
+            "corrections": len(invoices), "invoice_ids": invoices[:20],
+            "examples": [{"invoice_id": record.entity_id, "predicted": record.predicted, "human": record.human, "engine": record.engine,
+                          "at": record.created_at.isoformat() if record.created_at else None} for record in records[-5:]],
+        }
+        rule = existing.get((subject_key, field))
+        if rule is None:
+            invoice = database.get(Invoice, invoices[-1])
+            name = (invoice.customer_name if invoice and invoice.direction == "ISSUED" else invoice.supplier_name if invoice else None) or subject_key
+            rule = LearningRule(kind="revisar_campo", subject_key=subject_key, subject_name=name, field=field, status="PROPUESTA",
+                                evidence=evidence, simulation=simulate(database, subject_key, field))
+            database.add(rule)
+            proposed.append(rule)
+        elif rule.status == "PROPUESTA":
+            rule.evidence, rule.simulation = evidence, simulate(database, subject_key, field)
+    database.flush()
+    return proposed
+
+
+def ruleset_version(database: Session) -> int:
+    from sqlalchemy import func
+
+    return database.scalar(select(func.max(LearningRule.version))) or 0
+
+
+def decide_rule(database: Session, rule: LearningRule, decision: str, actor: str | None, note: str | None = None) -> LearningRule:
+    """Aprobar, rechazar o retirar una regla. Aprobar crea una versión nueva del conjunto de reglas."""
+    from datetime import datetime
+    from datetime import timezone
+
+    allowed = {"aprobar": ({"PROPUESTA"}, "APROBADA"), "rechazar": ({"PROPUESTA"}, "RECHAZADA"), "retirar": ({"APROBADA"}, "RETIRADA")}
+    if decision not in allowed:
+        raise ValueError("Decisión no válida: aprobar, rechazar o retirar.")
+    sources, target = allowed[decision]
+    if rule.status not in sources:
+        raise ValueError(f"La regla está {rule.status.lower()}: no se puede {decision}.")
+    if decision == "aprobar":
+        rule.simulation = simulate(database, rule.subject_key, rule.field)  # se aprueba con la simulación al día
+        rule.version = ruleset_version(database) + 1
+    rule.status, rule.decided_by, rule.decided_at, rule.note = target, actor, datetime.now(timezone.utc), note
+    from app.invoice_service import add_audit_event
+
+    add_audit_event(database, action=f"learning.rule_{target.lower()}", entity_type="learning_rule", entity_id=rule.id, actor=actor or "persona",
+                    event_data={"subject": rule.subject_key, "field": rule.field, "version": rule.version, "note": note})
+    database.flush()
+    return rule
+
+
+def serialize_rule(rule: LearningRule) -> dict[str, Any]:
+    return {
+        "id": rule.id, "kind": rule.kind, "subject_key": rule.subject_key, "subject_name": rule.subject_name, "field": rule.field,
+        "status": rule.status, "version": rule.version, "evidence": rule.evidence, "simulation": rule.simulation,
+        "effect": f"Las facturas de {rule.subject_name or rule.subject_key} dejan de dar por bueno «{rule.field}» solo con reglas: pasa a interpretación y revisión.",
+        "decided_by": rule.decided_by, "decided_at": rule.decided_at.isoformat() if rule.decided_at else None, "note": rule.note,
+        "created_at": rule.created_at.isoformat() if rule.created_at else None,
+    }
 
 
 def stats(database: Session) -> dict[str, Any]:

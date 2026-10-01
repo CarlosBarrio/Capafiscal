@@ -50,6 +50,7 @@ REVIEW_WRITES = (
     r"^/api/notifications/\d+$", r"^/api/bank/transactions/\d+/(confirm|unmatch)$", r"^/api/bank/(confirm-suggestions|reconcile)$",
     r"^/api/events/\d+/retry$",
 )
+ADMIN_WRITES = (r"^/api/learning/rules/\d+/(aprobar|rechazar|retirar)$",)  # cambiar cómo trabaja el sistema es cosa del administrador
 ITERATIONS = 200_000
 
 
@@ -107,7 +108,7 @@ def permitted(role: str, method: str, path: str) -> bool:
     method = method.upper()
     if method in {"GET", "HEAD", "OPTIONS"}:
         return True
-    if path.startswith("/api/admin/"):
+    if path.startswith("/api/admin/") or any(re.match(pattern, path) for pattern in ADMIN_WRITES):
         return role == "ADMIN"
     if role in {"ADMIN", "GESTOR"}:
         return True

@@ -797,8 +797,38 @@
     }
   }
 
+  const RULE_STATUS = { PROPUESTA: ["Propuesta", "status-warning"], APROBADA: ["En vigor", "status-success"], RECHAZADA: ["Rechazada", "status-neutral"], RETIRADA: ["Retirada", "status-neutral"] };
+
+  async function loadLearningRules() {
+    const data = await window.apiRequest("/learning/rules");
+    document.getElementById("learningSub").textContent = `Versión ${data.version} · ${data.policy}`;
+    const container = document.getElementById("learningRules");
+    if (!data.rules.length) {
+      container.innerHTML = `<p class="empty-inline">Sin patrones todavía. Cuando corrijas varias veces el mismo campo de un proveedor, aquí aparecerá una propuesta para que decidas.</p>`;
+      return;
+    }
+    container.innerHTML = data.rules.map((rule) => {
+      const [label, className] = RULE_STATUS[rule.status] || [rule.status, "status-neutral"];
+      return `
+        <div class="rule-row">
+          <div class="rule-main">
+            <div class="rule-title"><span class="status-pill mini ${className}">${esc(label)}${rule.version ? ` · v${rule.version}` : ""}</span><strong>${esc(rule.subject_name || rule.subject_key)} · «${esc(rule.field)}»</strong></div>
+            <p>${esc(rule.effect)}</p>
+            <small class="muted">Evidencia: corregido en ${rule.evidence.corrections} factura(s)${(rule.evidence.examples || []).slice(-2).map((ex) => ` · «${esc(ex.predicted ?? "vacío")}» → «${esc(ex.human ?? "vacío")}»`).join("")}</small>
+            <small class="muted block">Simulación: ${esc(rule.simulation.summary || "")}</small>
+            ${rule.decided_by ? `<small class="muted block">${esc(label)} por ${esc(rule.decided_by)} el ${esc(window.formatDate(rule.decided_at))}${rule.note ? ` · ${esc(rule.note)}` : ""}</small>` : ""}
+          </div>
+          <div class="rule-actions">
+            ${rule.status === "PROPUESTA" ? `<button type="button" class="btn-ghost" data-rule="${rule.id}" data-decision="rechazar">Rechazar</button><button type="button" class="act-btn act-primary" data-rule="${rule.id}" data-decision="aprobar">Aprobar</button>` : ""}
+            ${rule.status === "APROBADA" ? `<button type="button" class="btn-ghost" data-rule="${rule.id}" data-decision="retirar">Retirar</button>` : ""}
+          </div>
+        </div>`;
+    }).join("");
+  }
+
   async function loadAgents() {
     loadIntake().catch((error) => window.showMessage(error.message, "error"));
+    loadLearningRules().catch((error) => { document.getElementById("learningRules").innerHTML = `<p class="empty-inline">${esc(error.message)}</p>`; });
     const [data, runs] = await Promise.all([window.apiRequest("/agents"), window.apiRequest("/agents/runs?limit=12")]);
     document.getElementById("agentsIntro").innerHTML = `
       <div class="agents-intro-body">
@@ -927,6 +957,16 @@
     });
 
     section.addEventListener("click", (event) => {
+      const ruleButton = event.target.closest("[data-rule]");
+      if (ruleButton) {
+        const decision = ruleButton.dataset.decision;
+        const note = decision === "aprobar" ? "" : window.prompt(`Motivo para ${decision} (opcional):`, "");
+        if (note === null) return;
+        ruleButton.disabled = true;
+        return window.jsonRequest(`/learning/rules/${ruleButton.dataset.rule}/${decision}`, "POST", { note: note || null })
+          .then(() => { window.showMessage(decision === "aprobar" ? "Regla aprobada: entra en vigor con una versión nueva." : "Hecho.", "success"); return loadLearningRules(); })
+          .catch((error) => { ruleButton.disabled = false; window.showMessage(error.message, "error"); });
+      }
       const card = event.target.closest("[data-case]");
       if (card) return openCase(Number(card.dataset.case)).catch((error) => window.showMessage(error.message, "error"));
       const run = event.target.closest("[data-open-case]");

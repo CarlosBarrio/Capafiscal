@@ -1828,6 +1828,30 @@ class DecisionRecord(TenantMixin, Base):
     context: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
+class LearningRule(TenantMixin, Base):
+    """Una regla aprendida de las correcciones humanas. No actúa hasta que un administrador la aprueba.
+
+    Ciclo: PROPUESTA (detectada con su evidencia y su simulación) → APROBADA (entra en vigor
+    con un número de versión) o RECHAZADA; una aprobada se puede RETIRAR.
+    """
+
+    __tablename__ = "learning_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)  # revisar_campo
+    subject_key: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    subject_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    field: Mapped[str] = mapped_column(String(60), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PROPUESTA", index=True)
+    version: Mapped[int | None] = mapped_column(Integer, nullable=True)  # versión del conjunto de reglas en que entró
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    simulation: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    decided_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 
 # -------------------------------------------------------------------
 # Multiempresa: gestoría → clientes, usuarios y sesiones (tablas comunes)
