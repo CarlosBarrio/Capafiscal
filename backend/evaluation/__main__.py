@@ -49,6 +49,27 @@ def git_commit() -> str:
         return "?"
 
 
+def append_history(path: Path, report: dict, dataset: str, sets: list[str]) -> None:
+    """Una línea por motor y ejecución: así se ve cómo evoluciona el sistema."""
+    import csv
+
+    new = not path.exists()
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        if new:
+            writer.writerow(["fecha", "commit", "dataset", "conjuntos", "motor", "documentos", "acierto_campos", "perfectos", "solo_reglas", "con_ia", "humano", "error_silencioso", "coste_usd", "errores_conocidos_pendientes"])
+        for engine, data in report["engines"].items():
+            if not data["available"]:
+                continue
+            pending = sum(1 for row in data["rows"] for item in row.get("known_errors") or [] if not row["checks"].get(item["campo"]))
+            outcomes = data.get("outcomes") or {}
+            writer.writerow([
+                datetime.now().isoformat(timespec="seconds"), git_commit(), dataset, "+".join(sets), engine, data["docs"],
+                data["field_accuracy"], data["perfect"], outcomes.get("solo_reglas", ""), outcomes.get("con_ia", ""),
+                outcomes.get("humano", ""), outcomes.get("error_silencioso", ""), round(data["cost_per_doc_usd"] * data["docs"], 4), pending,
+            ])
+
+
 def prepare(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m evaluation preparar")
     parser.add_argument("dataset")
@@ -108,6 +129,8 @@ def evaluate(argv: list[str]) -> int:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     (out / f"{dataset.name}-{stamp}.md").write_text(markdown, encoding="utf-8")
     (out / f"{dataset.name}-{stamp}.json").write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+
+    append_history(out / "historial.csv", report, dataset.name, sorted(sets))
 
     if args.ciego:
         log = out / "ciego.log"

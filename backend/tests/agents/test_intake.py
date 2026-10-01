@@ -101,3 +101,27 @@ def test_uploads_are_registered_as_events(client):
     events = client.get("/api/events").json()["events"]
     upload = next(item for item in events if item["source"] == "upload")
     assert upload["kind"] == "document" and upload["status"] == "COMPLETED" and upload["case_id"]
+
+
+def test_external_notification_with_dates_and_amount(client):
+    """Como entregará DEHú: fechas e importe en JSON."""
+    setup_company(client)
+    body = client.post("/api/events", json={"kind": "notification", "source": "dehu", "external_id": "DEHU-F1", "notification": {
+        **DEHU_NOTIFICATION, "notification_type": "LIQUIDACION", "notified_at": "2026-09-28", "amount": 1234.56,
+    }}).json()
+    assert body["event"]["status"] == "COMPLETED", body["event"]["error"]
+    assert body["case"]["amount"] == 1234.56 and body["case"]["deadline"]
+
+
+def test_an_open_reading_session_does_not_block_uploads(client):
+    """El sincronizador de Outlook lee con una sesión abierta y sube adjuntos por la API interna."""
+    from app.database import SessionLocal
+    from app.models import Document
+
+    setup_company(client)
+    with SessionLocal() as database:
+        database.query(Document).count()  # transacción de lectura abierta
+        response = client.post("/api/upload", files={"uploaded_file": ("nota.txt", "Requerimiento de información de la AGENCIA TRIBUTARIA".encode(), "text/plain")})
+        assert response.status_code == 201, response.text
+        events = client.get("/api/events").json()["events"]
+        assert events and events[0]["source"] == "upload"

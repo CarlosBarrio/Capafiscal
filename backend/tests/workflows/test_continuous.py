@@ -108,3 +108,17 @@ def test_pulse_runs_the_three_triggers_and_reports_activity(client, monkeypatch)
     assert briefing["pulse"]["last_cycle_at"]
 
 
+
+
+def test_director_measures_work_human_intervention_and_time_saved(client):
+    run_scenario(client, load(SCENARIOS_DIR / "notification_001.json"))   # va a una persona (escrito que aprobar)
+    run_scenario(client, load(SCENARIOS_DIR / "invoice_anomaly_001.json"))  # va a una persona (factura sospechosa)
+    run_scenario(client, load(SCENARIOS_DIR / "invoice_normal_001.json"))   # resuelto solo
+    board = client.get("/api/briefing").json()["board"]
+    intervention = board["intervention"]
+    assert intervention["total"] == 3 and intervention["solo"] == 1 and intervention["human"] == 2 and intervention["failed"] == 0
+    assert intervention["human_rate"] == round(2 / 3, 3)
+    assert board["work"]["cases"] == 2 and board["work"]["anomalies"] == 1 and board["work"]["requests"] >= 2
+    saved = board["time_saved"]
+    assert saved["minutes"] > 0 and "Estimación" in saved["note"]
+    assert {item["key"] for item in saved["assumptions"]} >= {"case_notification", "case_anomaly", "request"}

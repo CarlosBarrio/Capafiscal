@@ -209,6 +209,18 @@ def daily_briefing(database: Session, today: date | None = None, limit: int = 8)
 
 AUTO_RESOLVED_PREFIX = "Resuelta automáticamente"
 
+# Minutos que le llevaría a una persona hacer a mano cada trabajo. Son una
+# ESTIMACIÓN explícita (se muestran en pantalla) para ajustar con el piloto.
+MINUTES_SAVED = {
+    "document": (4, "leer, comprobar y registrar un documento"),
+    "case_notification": (45, "preparar un expediente de notificación (análisis, documentación y escrito)"),
+    "case_anomaly": (15, "investigar una factura o movimiento sospechoso"),
+    "case_deadline": (30, "preparar un modelo (borrador, revisión de facturas y pasos)"),
+    "request": (10, "pedir un documento y perseguirlo hasta recibirlo"),
+    "duplicate": (2, "detectar y descartar un duplicado"),
+    "auto_closed": (5, "revisar y cerrar un aviso que ya no aplica"),
+}
+
 
 def attention_reason(case: Case, today: date) -> str:
     """Una línea con el porqué: plazo, dato del hallazgo o bloqueo."""
@@ -310,6 +322,64 @@ def operational_board(database: Session, today: date | None = None, *, days: int
         {"key": "duplicates", "count": int(duplicates), "label": "entrada(s) repetidas ignoradas"},
     ]
 
+    # Trabajo realizado e intervención humana en el periodo (entradas registradas).
+    from app.models import AuditEvent
+
+    events = database.scalars(select(IngestedEvent).where(IngestedEvent.created_at >= since)).all()
+    ai_documents = {
+        str(value) for value in database.scalars(
+            select(AuditEvent.entity_id).where(AuditEvent.action == "document.interpretation", AuditEvent.created_at >= since)
+        ).all()
+    }
+    solo = with_ai = human = failed = 0
+    for event in events:
+        used_ai = str((event.payload or {}).get("document_id")) in ai_documents
+        if event.status == "FAILED":
+            failed += 1
+        elif event.status == "NEEDS_HUMAN" or event.case_id is not None:
+            human += 1
+        elif used_ai:
+            with_ai += 1
+        else:
+            solo += 1
+    handled = len(events)
+    new_cases = database.scalars(select(Case).where(Case.created_at >= since)).all()
+    requests_created = database.scalar(select(func.count()).select_from(DocumentRequest).where(DocumentRequest.created_at >= since)) or 0
+    documents = sum(1 for event in events if event.kind in {"document", "invoice"})
+    work = {
+        "events": handled,
+        "documents": documents,
+        "cases": len(new_cases),
+        "anomalies": sum(1 for case in new_cases if case.kind == "ANOMALY"),
+        "deadlines": sum(1 for case in new_cases if case.kind == "DEADLINE"),
+        "requests": requests_created,
+    }
+    intervention = {
+        "total": handled,
+        "solo": solo,
+        "with_ai": with_ai,
+        "human": human,
+        "failed": failed,
+        "human_rate": round((human + failed) / handled, 3) if handled else None,
+        "automatic_rate": round((solo + with_ai) / handled, 3) if handled else None,
+    }
+    units = {
+        "document": documents,
+        "case_notification": sum(1 for case in new_cases if case.kind == "NOTIFICATION"),
+        "case_anomaly": work["anomalies"],
+        "case_deadline": work["deadlines"],
+        "request": requests_created,
+        "duplicate": int(duplicates),
+        "auto_closed": auto_closed,
+    }
+    minutes = sum(units[key] * MINUTES_SAVED[key][0] for key in units)
+    time_saved = {
+        "minutes": minutes,
+        "hours": round(minutes / 60, 1),
+        "assumptions": [{"key": key, "minutes": MINUTES_SAVED[key][0], "what": MINUTES_SAVED[key][1], "count": units[key]} for key in units if units[key]],
+        "note": "Estimación con tiempos supuestos por tarea; se ajustará con datos del piloto.",
+    }
+
     top = attention[:3]
     if len(top) < 3:
         extra = [
@@ -326,4 +396,7 @@ def operational_board(database: Session, today: date | None = None, *, days: int
         "pending": {"count": sum(item["count"] for item in pending_items), "items": [item for item in pending_items if item["count"]]},
         "resolved": {"count": sum(item["count"] for item in resolved_items), "items": [item for item in resolved_items if item["count"]]},
         "top": top,
+        "work": work,
+        "intervention": intervention,
+        "time_saved": time_saved,
     }

@@ -1,6 +1,6 @@
 # Hoja de ruta
 
-Línea base congelada: PR #1, commit `96f848a`, 104 tests. Lo que viene
+Líneas base: `96f848a` (104 tests, motor de agentes) y **`v0.3-base-evaluacion` = `c33ff9c`** (131 tests, base congelada para la fase de evaluación). Lo que viene
 después no rehace el núcleo y mantiene esos tests en verde.
 
 | # | Hito | Estado |
@@ -33,3 +33,22 @@ Fase 4 (fuentes reales: DEHú, correo) · Fase 5 (piloto) · Fase 6 (escalar cas
 Fuera de alcance hasta el piloto: agentes nuevos (nóminas, altas,
 contratos, WhatsApp), un chatbot fiscal y cambios en el núcleo (agentes,
 expedientes, traza, memoria, contratos, Detector, reanudación).
+
+## Fase 3 · validar (en curso)
+
+| Paso | Estado |
+|---|---|
+| Medición: errores silenciosos / persona / IA / solos, matriz de errores, A-B-C, valor de Claude, errores conocidos, historial | ✅ |
+| Director: trabajo realizado, % de intervención humana y tiempo ahorrado estimado | ✅ |
+| Prueba de resistencia (100 eventos simultáneos) | ✅ Encontró y corrigió 3 problemas de concurrencia (+1 de fechas que destapó la demo) |
+| Demo «cero intervención» (DEHú y correo) | ✅ `scripts/demo_cero_intervencion.py` |
+| 1. Conjunto B (documentos nuevos, sin ajustar reglas con ellos) | ⏳ Necesita documentos |
+| 2. Línea base de reglas en B y en C | ⏳ |
+| 3. Claude real (`ANTHROPIC_API_KEY`) | ⏳ |
+| 4. Híbrido + enrutado (¿cuándo merece la pena Claude?) | ⏳ Medición lista |
+| 5. Conjunto C ciego (examen final) | ⏳ |
+| 6. DEHú real (adaptador: DEHú → Event → `/api/events`) | ⏳ Pendiente de acceso |
+
+Error conocido que se sigue: factura de una tienda de informática
+clasificada como «Servicios profesionales» (conjunto A). No se corrige hasta
+ver en B si es aislado o sistemático.

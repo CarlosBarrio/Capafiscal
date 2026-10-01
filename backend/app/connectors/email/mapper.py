@@ -78,6 +78,7 @@ def ingest_email(database: Session, message: ParsedEmail, *, provider: str = "im
     """Convierte un correo en eventos de la entrada común."""
     from app.agents.intake import ingest
     from app.agents.intake import serialize_event
+    from app.agents.intake import with_retry
 
     allowed = settings.allowed_extension_set
     results: list[dict[str, Any]] = []
@@ -92,20 +93,25 @@ def ingest_email(database: Session, message: ParsedEmail, *, provider: str = "im
             skipped.append(f"{attachment.filename} (demasiado grande)")
             continue
         document, created = store_document(database, attachment, provider=provider, message=message)
-        event, duplicate, case = ingest(
-            database,
-            source="email",
-            external_id=f"{message.message_id}#{attachment.sha256[:16]}",
-            kind="document",
-            payload={
-                "document_id": document.id,
-                "message_id": message.message_id,
-                "from": message.sender,
-                "subject": message.subject,
-                "filename": attachment.filename,
-            },
-        )
-        database.commit()
+        def work(document_id=document.id, attachment=attachment):
+            result = ingest(
+                database,
+                source="email",
+                external_id=f"{message.message_id}#{attachment.sha256[:16]}",
+                kind="document",
+                payload={
+                    "document_id": document_id,
+                    "message_id": message.message_id,
+                    "from": message.sender,
+                    "subject": message.subject,
+                    "filename": attachment.filename,
+                },
+            )
+            database.commit()
+            return result
+
+        event, duplicate, case = with_retry(database, work)
+        document = database.get(Document, document.id)
         results.append(
             {
                 "filename": attachment.filename,

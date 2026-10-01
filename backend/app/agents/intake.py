@@ -22,6 +22,8 @@ from datetime import timezone
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import AgentStep
@@ -46,6 +48,19 @@ def payload_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
 
 
+def notification_data(raw: dict[str, Any]) -> dict[str, Any]:
+    """El evento se guarda en JSON (fechas como texto); el servicio espera fechas e importes."""
+    from decimal import Decimal
+
+    data = dict(raw)
+    for key in ("available_at", "notified_at", "deadline", "document_date"):
+        if isinstance(data.get(key), str) and data[key]:
+            data[key] = date.fromisoformat(data[key][:10])
+    if data.get("amount") not in (None, ""):
+        data["amount"] = Decimal(str(data["amount"]))
+    return data
+
+
 def dispatch(database: Session, event: IngestedEvent, holder: dict[str, Any], *, trigger: str, today: date | None) -> Case | None:
     """Convierte el evento registrado en un recorrido del orquestador."""
     from app.agents.base import Event
@@ -62,7 +77,7 @@ def dispatch(database: Session, event: IngestedEvent, holder: dict[str, Any], *,
         if not notification_id:
             from app.notification_service import create_notification
 
-            notification = create_notification(database, document=None, data=payload.get("notification") or {}, actor=event.source)
+            notification = create_notification(database, document=None, data=notification_data(payload.get("notification") or {}), actor=event.source)
             database.flush()
             notification_id = notification.id
             event.payload = {**payload, "notification_id": notification_id}
@@ -90,6 +105,37 @@ def dispatch(database: Session, event: IngestedEvent, holder: dict[str, Any], *,
     raise ValueError(f"Tipo de evento desconocido: {event.kind}")
 
 
+def with_retry(database: Session, work, *, attempts: int = 6):
+    """Reintenta una entrada si SQLite está ocupado por otra escritura simultánea.
+
+    Es seguro gracias a la idempotencia: lo que no llegó a guardarse se repite
+    entero y lo que ya estaba se reconoce como duplicado.
+    """
+    import time
+
+    from sqlalchemy.exc import OperationalError
+
+    for attempt in range(attempts):
+        try:
+            if not database.in_transaction():
+                # En SQLite: transacción con turno de escritura desde el principio.
+                database.connection(execution_options={"sqlite_immediate": True})
+            return work()
+        except OperationalError as error:
+            if "locked" not in str(error).lower() or attempt == attempts - 1:
+                raise
+            database.rollback()
+            time.sleep(0.05 * (2 ** attempt))
+    return None  # pragma: no cover
+
+
+def count_duplicate(database: Session, event: IngestedEvent) -> None:
+    """Suma un repetido con una actualización atómica (resiste peticiones simultáneas)."""
+    database.execute(update(IngestedEvent).where(IngestedEvent.id == event.id).values(duplicates=IngestedEvent.duplicates + 1))
+    database.flush()
+    database.refresh(event)
+
+
 def ingest(
     database: Session,
     *,
@@ -109,16 +155,26 @@ def ingest(
 
     if event is not None:
         if event.status in SETTLED and event.payload_hash == digest and not force:
-            event.duplicates += 1
-            database.flush()
+            count_duplicate(database, event)
             return event, True, database.get(Case, event.case_id) if event.case_id else None
         # Contenido distinto (actualización) o intento anterior fallido: se vuelve a procesar.
         event.payload = {**(event.payload or {}), **payload}
         event.payload_hash = digest
     else:
         event = IngestedEvent(source=source, external_id=external_id[:255], kind=kind, status="RECEIVED", payload=payload, payload_hash=digest)
-        database.add(event)
-        database.flush()
+        savepoint = database.begin_nested()
+        try:
+            database.add(event)
+            database.flush()
+            savepoint.commit()
+        except IntegrityError:
+            # Otra petición registró el mismo evento a la vez: es un duplicado, no un error.
+            savepoint.rollback()
+            existing = database.scalar(select(IngestedEvent).where(IngestedEvent.source == source, IngestedEvent.external_id == external_id[:255]))
+            if existing is None:
+                raise
+            count_duplicate(database, existing)
+            return existing, True, database.get(Case, existing.case_id) if existing.case_id else None
 
     case = process(database, event, trigger=trigger or source, today=today)
     return event, False, case

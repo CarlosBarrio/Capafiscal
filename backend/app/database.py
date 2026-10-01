@@ -32,6 +32,34 @@ engine = create_engine(
 )
 
 
+if settings.database_url.startswith("sqlite"):
+    from sqlalchemy import event
+
+    # SQLite con varias peticiones a la vez: el driver pysqlite gestiona las
+    # transacciones a su manera y, con SAVEPOINT y escrituras simultáneas,
+    # puede deshacer trabajo en silencio. Receta de SQLAlchemy: que el BEGIN
+    # lo emita SQLAlchemy, modo WAL (las lecturas no bloquean a las
+    # escrituras) y espera ante bloqueos en lugar de fallar. No se usa
+    # BEGIN IMMEDIATE: bloquearía a quien lee y abre otra sesión (p. ej. el
+    # sincronizador de Outlook, que sube adjuntos por la API interna).
+    @event.listens_for(engine, "connect")
+    def _sqlite_connect(dbapi_connection, _record):
+        dbapi_connection.isolation_level = None
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA busy_timeout = 30000")
+        if ":memory:" not in settings.database_url:
+            cursor.execute("PRAGMA journal_mode = WAL")
+        cursor.execute("PRAGMA foreign_keys = OFF")
+        cursor.close()
+
+    @event.listens_for(engine, "begin")
+    def _sqlite_begin(connection):
+        # Las transacciones que van a escribir seguro (la entrada común) piden
+        # el turno de escritura al empezar: esperan en vez de chocar.
+        immediate = connection.get_execution_options().get("sqlite_immediate")
+        connection.exec_driver_sql("BEGIN IMMEDIATE" if immediate else "BEGIN")
+
+
 SessionLocal = sessionmaker(
     bind=engine,
     autocommit=False,

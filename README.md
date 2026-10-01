@@ -86,6 +86,11 @@ La pantalla *Hoy* abre con el Director:
   «9,0 veces por encima de lo habitual») y lo que se ha bloqueado.
 - 🟠 **Pendiente**: documentos pedidos sin recibir, plazos de los próximos 15
   días, expedientes para revisar sin prisa y escritos listos para presentar.
+- **Trabajo realizado e intervención humana**: entradas, documentos,
+  expedientes, anomalías y documentos solicitados. El % de intervención humana
+  se calcula sobre las entradas: resueltas solas, con IA, enviadas a una
+  persona o fallidas. Incluye el **tiempo ahorrado estimado**, con los
+  supuestos a la vista y pendientes de ajustar en el piloto.
 - 🟢 **Resuelto sin intervención** en los últimos 7 días: documentos que los
   agentes revisaron sin nada que objetar, expedientes preparados de principio
   a fin, documentos conseguidos por el Perseguidor, avisos cerrados solos y
@@ -107,6 +112,57 @@ en la misma entrada única y el mismo orquestador:
 El Director muestra si la máquina está en marcha («CapaFiscal está
 trabajando · último ciclo hace 3 min»). **Trabajar ahora** lanza un ciclo
 completo de los tres disparadores.
+
+## Demo: cero intervención
+
+```bash
+cd backend
+python scripts/demo_cero_intervencion.py
+```
+
+Parte solo de un evento externo y muestra, paso a paso y con la hora, hasta
+dónde llega CapaFiscal sin que nadie toque nada. Usa una base de datos
+temporal. Recorre dos casos:
+
+1. DEHú → requerimiento → expediente → documentos pedidos → escrito.
+2. Correo → factura 6 veces por encima de lo habitual → investigación.
+
+En los dos acaba en «Espera tu revisión». El Director resume después qué
+queda para la persona.
+
+## Prueba de resistencia
+
+`tests/workflows/test_resistencia.py` lanza 100 eventos a la vez por la
+entrada única:
+
+- 20 facturas, 20 notificaciones, 15 embargos y 15 plazos;
+- 10 duplicados, 10 documentos ambiguos y 10 en los que un agente falla.
+
+Comprueba que:
+
+- no se duplican expedientes ni códigos;
+- no se pierden eventos;
+- los repetidos se cuentan;
+- los errores quedan aislados y se pueden reanudar;
+- la traza es coherente;
+- el Director refleja el estado real.
+
+La prueba y la demo destaparon cuatro problemas, ya corregidos:
+
+1. Un duplicado que llegaba a la vez que el original devolvía un error en vez
+   de tratarse como repetido.
+2. El contador de repetidos podía perder sumas: ahora es una actualización
+   atómica.
+3. Con escrituras concurrentes, SQLite perdía trabajo en silencio. Ahora
+   SQLAlchemy emite el `BEGIN`, la base usa el modo WAL y espera ante
+   bloqueos. La entrada común pide el turno de escritura al empezar
+   (`BEGIN IMMEDIATE`) y reintenta si la base está ocupada, lo que es seguro
+   gracias a la idempotencia.
+4. Una notificación con fechas llegada por `/api/events` (como lo hará DEHú)
+   fallaba.
+
+SQLite sirve para una empresa. Para una gestoría con muchos usuarios a la
+vez, PostgreSQL, y repetir esta prueba.
 
 ## Lectura de facturas reales y evaluación
 

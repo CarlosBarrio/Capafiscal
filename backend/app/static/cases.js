@@ -120,6 +120,17 @@
           <small class="muted">Últimos ${board.period_days} días</small>
         </section>
       </div>
+      ${board.work ? `
+        <div class="board-work">
+          <span><strong>${board.work.events}</strong> entradas trabajadas</span>
+          <span><strong>${board.work.documents}</strong> documentos</span>
+          <span><strong>${board.work.cases}</strong> expedientes</span>
+          <span><strong>${board.work.anomalies}</strong> anomalías</span>
+          <span><strong>${board.work.requests}</strong> documentos solicitados</span>
+          ${board.intervention.total ? `<span class="board-human" title="${esc(`${board.intervention.solo} solos · ${board.intervention.with_ai} con IA · ${board.intervention.human} a una persona · ${board.intervention.failed} fallidos`)}">Intervención humana: <strong>${(board.intervention.human_rate * 100).toFixed(1).replace(".", ",")} %</strong></span>` : ""}
+          ${board.time_saved.minutes ? `<span title="${esc(board.time_saved.note + " " + board.time_saved.assumptions.map((item) => `${item.count} × ${item.minutes} min (${item.what})`).join("; "))}">Tiempo ahorrado estimado: <strong>≈ ${String(board.time_saved.hours).replace(".", ",")} h</strong></span>` : ""}
+          <small class="muted">Últimos ${board.period_days} días</small>
+        </div>` : ""}
       ${board.top.length ? `
         <div class="board-top">
           <h3>${board.top.length === 1 ? "Esta es la cosa" : `Estas son las ${board.top.length} cosas`} que deberías revisar hoy</h3>

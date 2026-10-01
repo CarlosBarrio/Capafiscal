@@ -266,8 +266,9 @@ def run_agents_for_document(database, document_id: int | None, *, force: bool = 
         return
 
     from app.agents.intake import ingest
+    from app.agents.intake import with_retry
 
-    try:
+    def work():
         ingest(
             database,
             source="upload",
@@ -277,6 +278,9 @@ def run_agents_for_document(database, document_id: int | None, *, force: bool = 
             force=force,
         )
         database.commit()
+
+    try:
+        with_retry(database, work)
     except Exception:
         database.rollback()
         logging.getLogger(__name__).exception("Los agentes no pudieron procesar el documento %s", document_id)

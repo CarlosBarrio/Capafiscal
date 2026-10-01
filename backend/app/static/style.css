@@ -2696,3 +2696,6 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 @media (max-width: 900px) { .board-grid { grid-template-columns: 1fr; } }
 .board-head-side { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .board-counts li { display: grid; grid-template-columns: 28px 1fr; align-items: baseline; }
+.board-work { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; margin-top: 12px; padding: 10px 14px; border-radius: 10px; background: var(--bg, #faf9f7); border: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
+.board-work strong { color: var(--ink); }
+.board-human strong { color: var(--brand); }

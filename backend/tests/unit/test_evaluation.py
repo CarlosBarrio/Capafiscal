@@ -87,3 +87,53 @@ def test_draft_and_merge_labels(tmp_path):
     labels = json.loads((folder / "labels.json").read_text(encoding="utf-8"))
     assert labels["casos"][0]["expected"]["category"] == "Software e informática" and "revisado" not in labels["casos"][0]
     assert load_dataset(folder).cases[0].set == "B"
+
+
+def test_outcomes_error_matrix_and_known_errors(tmp_path):
+    folder = copy_dataset(tmp_path)
+    labels = json.loads((folder / "labels.json").read_text(encoding="utf-8"))
+    tienda = next(case for case in labels["casos"] if case["id"] == "tienda_ticket")
+    tienda["expected"]["category"] = "Software e informática"  # las reglas dicen «Servicios profesionales»
+    tienda["errores_conocidos"] = [{"campo": "category", "nota": "error conocido de A"}]
+    (folder / "labels.json").write_text(json.dumps(labels), encoding="utf-8")
+
+    report = run(load_dataset(folder), ["reglas"])
+    rules = report["engines"]["reglas"]
+    assert rules["outcomes"] == {"solo_reglas": 4, "con_ia": 0, "humano": 0, "error_silencioso": 1}
+    assert rules["error_matrix"] == {"error_clasificacion": 1}
+    assert rules["confusion"] == {"Software e informática → Servicios profesionales": 1}
+    assert set(rules["by_set"]) == {"A", "B"}
+    markdown = to_markdown(report)
+    assert "Errores silenciosos" in markdown and "sigue fallando" in markdown
+    assert "## Por conjunto (reglas)" in markdown and "## Matriz de errores" in markdown
+
+
+def test_routing_value_when_rules_are_not_sure(tmp_path, monkeypatch):
+    """Si las reglas dudan, el híbrido llama a Claude; el informe dice cuánto aportó y cuánto costó."""
+    from app import interpretation
+    from app.agents import llm
+
+    dataset = load_dataset(copy_dataset(tmp_path))
+    truth = {case.path.name: case.expected for case in dataset.cases}
+    real_needs_help = interpretation.needs_help
+
+    def doubtful(result, company_ids):
+        # Antes de pasar por Claude, las reglas «dudan» de todo; después, se evalúa de verdad.
+        return ["prueba: reglas no concluyentes"] if "interpretation" not in result else real_needs_help(result, company_ids)
+
+    def fake_extract(*, pdf_bytes=None, text=None, company=None, model=None):
+        name = next(name for name in truth if (tmp_path / "ds" / name).read_bytes() == pdf_bytes)
+        data = {key: truth[name].get(key, "") for key in llm.INVOICE_FIELDS}
+        return data, {"model": "claude-opus-5-5", "input_tokens": 1000, "output_tokens": 100, "cost_usd": llm.estimate_cost("claude-opus-5-5", 1000, 100)}
+
+    monkeypatch.setattr(interpretation, "needs_help", doubtful)
+    monkeypatch.setattr(llm, "available", lambda: True)
+    monkeypatch.setattr(llm, "extract_invoice", fake_extract)
+    report = run(dataset, ["reglas", "hibrido"])
+    hybrid = report["engines"]["hibrido"]
+    assert hybrid["outcomes"]["con_ia"] == 5 and hybrid["claude_share"] == 1.0
+    from evaluation.core import routing_value
+
+    routing = routing_value(report)
+    assert routing["claude_called"] == 5 and routing["fields_broken"] == 0 and routing["cost_usd"] == 0.03
+    assert "¿Cuándo merece la pena llamar a Claude?" in to_markdown(report)

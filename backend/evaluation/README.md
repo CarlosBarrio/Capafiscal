@@ -100,3 +100,30 @@ El informe incluye:
 - por qué entró Claude en cada documento del híbrido.
 
 Sin clave, la columna de Claude aparece como «no ejecutado».
+
+## Qué mide además del acierto
+
+- **Qué pasa con cada documento**:
+  - resuelto solo, con reglas;
+  - resuelto con IA;
+  - enviado a una persona, porque el sistema detecta que no está seguro;
+  - **error silencioso**: no avisa y está mal. Es la cifra que más importa
+    vigilar.
+- **Matriz de errores**: `error_sentido`, `error_proveedor`, `error_nif`,
+  `error_numero`, `error_fecha`, `error_importes`, `error_iva` y
+  `error_clasificacion`. Incluye la confusión de la clasificación
+  («esperado → leído»), para ver si un fallo es aislado o sistemático.
+- **Por conjunto** (A, B y C, lado a lado) y **por característica** del
+  documento (maqueta, sector…).
+- **¿Cuándo merece la pena llamar a Claude?**: en cuántos documentos entró,
+  cuántos campos corrigió, cuántos empeoró, el coste por campo corregido y
+  cuántos documentos resolvieron las reglas solas a coste 0.
+- **Errores conocidos**: los casos que se dejan sin corregir a propósito
+  (`"errores_conocidos"` en la etiqueta) aparecen en cada informe como
+  «sigue fallando» o «corregido». Ahora mismo, la factura de la tienda está
+  clasificada como «Servicios profesionales» cuando es «Software e
+  informática». Es un error silencioso en el conjunto A y se usa para ver en
+  B si el fallo es aislado o sistemático.
+- **Historial**: cada ejecución añade una línea a `informes/historial.csv`
+  (fecha, commit, conjuntos, motor, acierto, resultados y errores conocidos
+  pendientes), para ver cómo evoluciona el sistema.

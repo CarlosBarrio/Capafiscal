@@ -383,8 +383,14 @@ def post_event(payload: EventIn, database: DatabaseDependency, response: Respons
         body = {"model": payload.model, "year": payload.year, "quarter": payload.quarter, "due": due.isoformat()}
         external_id = payload.external_id or f"{payload.model}:{payload.year}-{payload.quarter}"
 
-    event, duplicate, case = ingest(database, source=payload.source, external_id=external_id, kind=payload.kind, payload=body)
-    database.commit()
+    from app.agents.intake import with_retry
+
+    def work():
+        result = ingest(database, source=payload.source, external_id=external_id, kind=payload.kind, payload=body)
+        database.commit()
+        return result
+
+    event, duplicate, case = with_retry(database, work)
     if duplicate:
         response.status_code = 200
     run = database.get(AgentRun, event.run_id) if event.run_id else None
@@ -419,11 +425,17 @@ def retry_event(event_id: int, database: DatabaseDependency) -> dict[str, Any]:
     from app.agents.intake import serialize_event
     from app.case_service import serialize_case
 
+    from app.agents.intake import with_retry
+
+    def work():
+        result = retry(database, event_id)
+        database.commit()
+        return result
+
     try:
-        event, case = retry(database, event_id)
+        event, case = with_retry(database, work)
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    database.commit()
     return {"event": serialize_event(event), "case": serialize_case(database, case, full=True) if case else None}
 
 
