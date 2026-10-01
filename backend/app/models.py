@@ -766,6 +766,9 @@ class CompanyProfile(TenantMixin, Base):
     default_payment_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Email de la gestoría o asesor externo (cierre trimestral).
     advisor_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Perfil para Inteligencia: datos comunes (sector, CNAE, ubicación, radio, tamaño)
+    # y la configuración de cada radar (juridico, arquitectura, subvenciones). Ver app/intelligence/profile.py.
+    intel_profile: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     # Interés de demora comercial (Ley 3/2004) vigente, en %.
     late_interest_rate: Mapped[Decimal | None] = mapped_column(
         Numeric(5, 2),
@@ -1852,6 +1855,85 @@ class Counter(TenantMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     value: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+
+# -------------------------------------------------------------------
+# Inteligencia: información externa (BOE, ayudas, licitaciones)
+# -------------------------------------------------------------------
+
+
+class IntelSource(Base):
+    """Una fuente oficial externa (BOE, BDNS, PLACSP). Común a todos los clientes: es información pública."""
+
+    __tablename__ = "intel_sources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)  # regulation, grant, tender
+    url: Mapped[str] = mapped_column(String(255), nullable=False)
+    frequency: Mapped[str] = mapped_column(String(20), nullable=False, default="daily")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")  # active, error, pending
+    last_checked: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)  # días descargados, etc.
+
+
+class ExternalItem(Base):
+    """Algo publicado fuera de la empresa: una disposición, una ayuda, una licitación. Común a todos los clientes.
+
+    `evidence` guarda de dónde sale cada dato (fuente, documento, fecha, URL, fragmento).
+    `analysis` guarda el resumen de la IA ya validado contra el texto oficial.
+    """
+
+    __tablename__ = "external_items"
+    __table_args__ = (UniqueConstraint("source_code", "external_id", name="uq_external_items_source_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_code: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # regulation, grant, tender
+    external_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    section: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    category: Mapped[str | None] = mapped_column(String(255), nullable=True)  # epígrafe del BOE
+    rank: Mapped[str | None] = mapped_column(String(80), nullable=True)  # Ley, Real Decreto, Orden…
+    publication_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+    subjects: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)  # materias oficiales
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requirements: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    pdf_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    xml_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    raw: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    analysis: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    detail_fetched: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class IntelMatch(TenantMixin, Base):
+    """Por qué un elemento externo importa a ESTE cliente, con qué relevancia y qué ha decidido la persona."""
+
+    __tablename__ = "intel_matches"
+    __table_args__ = (UniqueConstraint("tenant_id", "item_id", "radar", name="uq_intel_matches_tenant_item_radar"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("external_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    radar: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # juridico, subvenciones, arquitectura
+    relevance: Mapped[str] = mapped_column(String(10), nullable=False)  # alta, media, baja
+    areas: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    reasons: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="nueva")  # nueva, revisada, descartada
+    profile_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    decided_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class LearningRule(TenantMixin, Base):

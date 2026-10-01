@@ -26,7 +26,8 @@ from tests.integration.test_multiempresa import multi  # noqa: F401 (fixture)
 from tests.integration.test_multiempresa import upload
 
 MARK = "SECRETO-B"
-GLOBAL_TABLES = {"organizations", "users", "clients", "user_clients", "api_sessions"}  # comunes a la gestoría
+GLOBAL_TABLES = {"organizations", "users", "clients", "user_clients", "api_sessions",  # comunes a la gestoría
+                 "intel_sources", "external_items"}  # información pública (BOE…): lo de cada cliente está en intel_matches
 PUBLIC_PREFIXES = ("/api/portal/", "/api/auth/")  # acceso por token de un solo uso o de sesión, no por cliente
 # Acciones sin identificador que recorren «todo»: si el aislamiento fallase, tocarían a B.
 SWEEP_ACTIONS = ("/api/bank/reconcile", "/api/bank/confirm-suggestions", "/api/agents/anomalies/scan", "/api/agents/pulse/run",
@@ -36,7 +37,7 @@ TABLE_FOR_PARAM = {
     "transaction_id": "bank_transactions", "notification_id": "fiscal_notifications", "customer_id": "customers", "project_id": "projects",
     "absence_id": "absences", "assignment_id": "project_assignments", "attachment_id": "case_attachments", "entry_id": "time_entries",
     "event_id": "ingested_events", "message_id": "outbox_messages", "payslip_id": "payslips", "rule_id": "learning_rules",
-    "run_id": "agent_runs", "template_id": "recurring_invoices",
+    "run_id": "agent_runs", "template_id": "recurring_invoices", "match_id": "intel_matches",
 }
 
 
@@ -86,6 +87,9 @@ def seed_b(client, headers, tmp_path):
     client.post("/api/sales/customers", json={"name": f"{MARK} Cliente S.L.", "tax_id": "B00600063"}, headers=headers).raise_for_status()
     client.post("/api/team/projects", json={"name": f"Proyecto {MARK}"}, headers=headers).raise_for_status()
     client.post("/api/agents/anomalies/scan", json={}, headers=headers)
+    # Inteligencia: el perfil y las novedades relevantes de B son de B (el BOE es público y común).
+    client.put("/api/intelligence/profile", json={"common": {"sector": MARK}, "juridico": {"areas": ["laboral", "mercantil"]}}, headers=headers).raise_for_status()
+    client.post("/api/intelligence/refresh", json={"day": "2026-09-29", "back_days": 1}, headers=headers).raise_for_status()
 
 
 def concrete_urls(path: str, b_ids: dict[str, list[int]]) -> list[str]:
@@ -112,8 +116,13 @@ def test_tables_with_data_all_carry_tenant_id():
     assert tables - tenant_tables() <= GLOBAL_TABLES, f"Tablas sin tenant_id: {sorted(tables - tenant_tables() - GLOBAL_TABLES)}"
 
 
-def test_client_a_cannot_read_or_change_anything_of_client_b(client, multi, tmp_path):  # noqa: F811
+def test_client_a_cannot_read_or_change_anything_of_client_b(client, multi, tmp_path, monkeypatch):  # noqa: F811
+    from pathlib import Path
+
+    from app.config import settings
     from app.main import app
+
+    monkeypatch.setattr(settings, "intel_boe_folder", Path(__file__).resolve().parents[1] / "fixtures" / "boe")
 
     admin, a, b = multi["admin"], multi["a"], multi["b"]
     seed_b(client, as_(admin, b), tmp_path)

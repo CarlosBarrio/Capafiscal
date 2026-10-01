@@ -275,6 +275,43 @@ descargado (`DEHU_INBOX_DIR`, `POST /api/connectors/dehu/poll`). Las fechas de l
 son las oficiales: el plazo deja de ser estimado. La conexión directa necesita alta,
 certificado y apoderamientos; entrará como otro transporte, sin tocar el resto.
 
+## Inteligencia: lo relevante que pasa fuera de la empresa
+
+No es un buscador ni un chatbot: CapaFiscal vigila **fuentes oficiales**, se queda con lo
+que toca al perfil de la empresa y lo explica con evidencia. Una sola pantalla con tres
+radares: **Jurídico** (BOE, conectado), **Subvenciones** (BDNS, siguiente conector) y
+**Arquitectura** (Plataforma de Contratación del Sector Público). Los radares sin conector
+lo dicen; nunca muestran resultados de ejemplo.
+
+```
+BOE (API de datos abiertos) → sumario diario → reglas contra el perfil → ficha oficial
+de los candidatos (rango, entrada en vigor, materias, texto) → resumen con IA validado
+→ pantalla con evidencia
+```
+
+- **Perfil común** (`app/intelligence/profile.py`): sector, CNAE, comunidad, radio, tamaño,
+  más la configuración de cada radar (áreas jurídicas, especialidades, intereses). Un sector
+  nuevo es otra configuración, no otra aplicación.
+- **Relevancia con reglas, sin porcentajes inventados** (`relevance.py`): sección del BOE,
+  área en el título, el epígrafe o las materias oficiales, departamento, rango y comunidad
+  autónoma. *Alta*, *informativa* o fuera, con cada razón ✓/✗ a la vista.
+- **La IA no es la fuente** (`summarizer.py`): solo resume candidatos, y cada afirmación
+  lleva una cita literal que se comprueba en el texto oficial; la que no aparece se descarta
+  (y se cuenta). Sin clave de IA no hay resumen: se muestra el extracto oficial.
+- **Evidencia**: cada dato remite a fuente, documento, fecha, URL y fragmento.
+- Cada novedad responde: qué ha pasado, de dónde viene, por qué es relevante, a quién
+  afecta, qué significa, qué puedo hacer y qué evidencia lo demuestra. Se puede marcar como
+  revisada o descartar (queda en la actividad).
+- Trabaja sola: la automatización «Radar jurídico (BOE)» corre cada día a las 08:00; también
+  «Consultar ahora». Si no hay red hacia `www.boe.es`, se puede importar el sumario JSON
+  descargado a mano (`POST /api/intelligence/import`) o apuntar `INTEL_BOE_FOLDER` a una
+  carpeta con los sumarios y fichas.
+- API: `GET /api/intelligence?radar=juridico`, `GET /api/intelligence/items/{id}`,
+  `GET|PUT /api/intelligence/profile`, `POST /api/intelligence/refresh`.
+
+Las pruebas usan un sumario **sintético** con el formato de la API oficial
+(`backend/tests/fixtures/boe`, marcado «SIMULACIÓN»).
+
 ## Multiempresa (gestoría → clientes) y permisos
 
 Con `AUTH_REQUIRED=true`:
@@ -424,8 +461,8 @@ se abre el expediente de «factura sospechosa» y una persona lo aprueba.
 El esquema lo gestiona **Alembic** (`backend/migrations`). Al arrancar,
 CapaFiscal aplica las migraciones que falten (`alembic upgrade head`). Una base
 creada antes de Alembic se completa como antes (tablas y columnas que falten,
-sin borrar datos) y se marca en la versión base; desde ahí recibe las
-migraciones normales. `tests/integration/test_migrations.py` comprueba que las
+sin borrar datos), queda igual que los modelos actuales y se marca en la última
+versión; desde ahí recibe las migraciones normales. `tests/integration/test_migrations.py` comprueba que las
 migraciones dejan exactamente el esquema de los modelos y que una base antigua
 se adopta sin perder datos.
 

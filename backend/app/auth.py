@@ -48,7 +48,7 @@ CLIENT_WRITES = (
 REVIEW_WRITES = (
     r"^/api/invoices/\d+(/(approve|reject|reopen|payment))?$", r"^/api/cases/\d+(/(approve|resolve|reopen|rerun|file|request-documents))?$",
     r"^/api/notifications/\d+$", r"^/api/bank/transactions/\d+/(confirm|unmatch)$", r"^/api/bank/(confirm-suggestions|reconcile)$",
-    r"^/api/events/\d+/retry$",
+    r"^/api/events/\d+/retry$", r"^/api/intelligence/items/\d+/status$",
 )
 ADMIN_WRITES = (r"^/api/learning/rules/\d+/(aprobar|rechazar|retirar)$",)  # cambiar cómo trabaja el sistema es cosa del administrador
 ITERATIONS = 200_000

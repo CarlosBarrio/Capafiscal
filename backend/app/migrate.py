@@ -6,8 +6,8 @@ Al arrancar, `migrate()`:
     base vacía                        → alembic upgrade head
     base con alembic_version          → alembic upgrade head (aplica lo que falte)
     base anterior a Alembic           → se completa como antes (tablas y columnas que falten,
-                                        datos de tablas sustituidas) y se marca en la versión base;
-                                        desde ahí, las migraciones siguientes se aplican normal
+                                        datos de tablas sustituidas): queda como los modelos actuales,
+                                        así que se marca en la última versión; desde ahí, normal
 
 Para cambiar el esquema: modifica los modelos y genera la migración
 (`alembic revision --autogenerate -m "…"` dentro de backend/), revísala y súbela.
@@ -56,13 +56,13 @@ def migrate(engine: Engine | None = None) -> str:
         tables = set(inspect(connection).get_table_names())
     legacy = "alembic_version" not in tables and bool(tables & set(Base.metadata.tables))
     if legacy:
-        # Base creada con create_all antes de Alembic: se completa y se marca en la versión base.
+        # Base creada con create_all antes de Alembic: se completa hasta los modelos actuales y se marca en la última versión.
         Base.metadata.create_all(bind=engine)
         add_missing_columns()
         migrate_legacy_automation_settings()
         with engine.begin() as connection:
-            command.stamp(alembic_config(connection), "base_0001")
-        logger.info("Base anterior a Alembic: completada y marcada en la versión base.")
+            command.stamp(alembic_config(connection), "head")
+        logger.info("Base anterior a Alembic: completada y marcada en la última versión.")
     with engine.begin() as connection:
         command.upgrade(alembic_config(connection), "head")
     return "legado→stamp" if legacy else "upgrade"

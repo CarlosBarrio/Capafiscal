@@ -77,3 +77,23 @@ def test_database_created_before_alembic_is_adopted_without_losing_data():
         assert connection.execute(text("SELECT supplier_name FROM invoices")).scalar() == "ANTIGUA S.L."
         moved = connection.execute(text("SELECT tenant_id, enabled FROM automation_client_settings WHERE code = 'daily_summary'")).one()
     assert moved.tenant_id == 0 and not moved.enabled
+
+
+def test_upgrade_from_previous_version_keeps_data():
+    """Camino incremental real: base_0001 con datos → head (añade Inteligencia) sin tocar lo que había."""
+    from alembic import command
+
+    from app.database import engine
+    from app.migrate import alembic_config
+    from app.migrate import migrate
+
+    drop_everything()
+    with engine.begin() as connection:
+        command.upgrade(alembic_config(connection), "base_0001")
+        connection.execute(text("INSERT INTO company_profile (name, tenant_id, updated_at) VALUES ('Empresa previa S.L.', 0, CURRENT_TIMESTAMP)"))
+    assert "intel_matches" not in inspect(engine).get_table_names()
+    assert migrate() == "upgrade"
+    assert current_revision() == head_revision()
+    assert schema_differences() == []
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT name FROM company_profile")).scalar() == "Empresa previa S.L."

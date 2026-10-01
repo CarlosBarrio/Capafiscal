@@ -241,6 +241,16 @@ def job_follow_up(database: Session, now: datetime) -> tuple[int, str]:
     return result["reminders"], f"{result['reminders']} recordatorio(s) preparados" + (f"; {result['escalated']} expediente(s) escalados" if result["escalated"] else "") + "."
 
 
+def job_intelligence(database: Session, now: datetime) -> tuple[int, str]:
+    from app.intelligence.service import run
+
+    result = run(database, today=now.date())
+    fetched, matched = result["fetched"], result["matched"]
+    if fetched["errors"]:
+        return 0, f"BOE no disponible: {fetched['errors'][0]}. Se reintentará en la próxima ejecución."
+    return matched["visible"], f"BOE: {fetched['new']} disposición(es) nuevas; {matched['visible']} relevante(s) para tu perfil ({matched['analysed']} resumida(s) con IA)."
+
+
 AUTOMATIONS: tuple[Automation, ...] = (
     Automation("AGENT_PIPELINE", "Orquestador de expedientes", "Cada notificación nueva recorre los agentes de punta a punta: la detecta, la asigna, mira el impacto fiscal, busca antecedentes, reúne la documentación y prepara la respuesta.", "Cada 5 minutos", 0, 5, "interval", job_agents, 45, "Agente", "expedientes"),
     Automation("EMAIL_INBOX", "Buzón de correo", "Lee los correos nuevos (IMAP o la carpeta data/buzon), guarda sus facturas y notificaciones y las pasa al orquestador como cualquier otra entrada.", "Cada 5 minutos", 0, 5, "interval", job_email, 5, "Agente", "expedientes"),
@@ -250,6 +260,7 @@ AUTOMATIONS: tuple[Automation, ...] = (
     Automation("BANK_MATCH", "Conciliación bancaria", "Cruza los movimientos importados con facturas pendientes y propone el cobro o pago.", "Cada día · 06:30", 6, 30, "daily", job_bank, 3, "Finanzas", "negocio"),
     Automation("RECURRING_INVOICES", "Facturas recurrentes", "Genera (y emite si lo indicas) las cuotas, igualas y alquileres que se facturan cada periodo.", "Cada día · 07:00", 7, 0, "daily", job_recurring, 10, "Ventas", "ventas"),
     Automation("DAILY_DIGEST", "Resumen diario", "Prepara un correo con lo urgente del día: plazos, cobros, mensajes y fichajes.", "Cada día · 07:30", 7, 30, "daily", job_digest, 5, "Agente", "panel"),
+    Automation("INTEL_BOE", "Radar jurídico (BOE)", "Descarga el sumario del BOE, filtra lo que toca tus áreas, lo explica con la fuente oficial y lo deja en Inteligencia.", "Cada día · 08:00", 8, 0, "daily", job_intelligence, 10, "Agente", "inteligencia"),
     Automation("DUNNING", "Reclamación de impagos", "Revisa las facturas vencidas y redacta el recordatorio, el segundo aviso o el requerimiento formal con intereses.", "Cada día · 08:00", 8, 0, "daily", job_dunning, 15, "Ventas", "ventas"),
     Automation("TIMESHEET_WATCH", "Vigilancia del registro de jornada", "Detecta fichajes olvidados, jornadas de más de 9 h, descansos cortos y días sin registro.", "Cada día · 10:00", 10, 0, "daily", job_timesheet, 4, "Personas", "jornada"),
     Automation("PAYROLL_DRAFT", "Borrador de nóminas", "El día 25 prepara la nómina del mes de toda la plantilla para que solo tengas que revisar y aprobar.", "Cada mes · día 25", 7, 0, "monthly", job_payroll, 20, "Personas", "nominas", day=25),

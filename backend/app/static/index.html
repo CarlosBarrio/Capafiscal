@@ -15,7 +15,7 @@
   >
   <link
     rel="stylesheet"
-    href="/static/style.css?v=98"
+    href="/static/style.css?v=99"
   >
 </head>
 <body>
@@ -63,6 +63,7 @@
   <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
   <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
   <symbol id="i-archive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></symbol>
+  <symbol id="i-radar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6-6"/><circle cx="12" cy="12" r="1"/></symbol>
   <symbol id="i-brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 3 3h1V4zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-3 3h-1V4z"/></symbol>
 </svg>
 <div class="app-shell">
@@ -83,6 +84,9 @@
         </button>
         <button type="button" class="nav-tab" data-tab="expedientes">
           <svg class="icon"><use href="#i-archive"/></svg><span class="nav-label">Expedientes</span><span class="tab-count tab-count-alert hidden" id="cntCases">0</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="inteligencia">
+          <svg class="icon"><use href="#i-radar"/></svg><span class="nav-label">Inteligencia</span><span class="tab-count hidden" id="cntIntel">0</span>
         </button>
         <button type="button" class="nav-tab" data-tab="asistente">
           <svg class="icon"><use href="#i-sparkles"/></svg><span class="nav-label">Asistente</span>
@@ -246,6 +250,31 @@
       </div>
       <div id="recentDocuments"></div>
     </div>
+  </section>
+
+  <!-- INTELIGENCIA -->
+  <section class="tab-panel" id="tab-inteligencia">
+    <div class="section-title">
+      <h1>Inteligencia</h1>
+      <p>Lo relevante que CapaFiscal ha encontrado fuera de tu empresa, con su fuente oficial.</p>
+    </div>
+
+    <div class="intel-bar">
+      <div class="segmented" id="intelRadars" role="tablist" aria-label="Radar">
+        <button type="button" class="segment" role="tab" data-radar="arquitectura">Arquitectura</button>
+        <button type="button" class="segment active" role="tab" data-radar="juridico" aria-selected="true">Jurídico</button>
+        <button type="button" class="segment" role="tab" data-radar="subvenciones">Subvenciones</button>
+      </div>
+      <div class="card-actions">
+        <button type="button" class="btn-ghost" id="intelProfileToggle" aria-expanded="false"><svg class="icon"><use href="#i-edit"/></svg> Perfil del radar</button>
+        <button type="button" class="btn-ghost" id="intelRefresh"><svg class="icon"><use href="#i-repeat"/></svg> Consultar ahora</button>
+      </div>
+    </div>
+
+    <form class="card intel-profile hidden" id="intelProfile"></form>
+
+    <div class="intel-status" id="intelStatus" aria-live="polite"></div>
+    <div class="intel-list" id="intelList"></div>
   </section>
 
   <!-- FACTURAS -->
@@ -1707,6 +1736,18 @@
   <input type="file" id="caseFileInput" class="hidden">
 </dialog>
 
+<dialog class="document-detail-dialog intel-dialog" id="intelDialog" aria-labelledby="intelDialogTitle">
+  <div class="detail-dialog-header">
+    <div>
+      <p class="intel-dialog-eyebrow" id="intelDialogEyebrow"></p>
+      <h2 id="intelDialogTitle"></h2>
+    </div>
+    <button type="button" class="icon-button" data-close-dialog aria-label="Cerrar"><svg class="icon"><use href="#i-close"/></svg></button>
+  </div>
+  <div id="intelDialogBody"></div>
+  <div class="dialog-footer" id="intelDialogActions"></div>
+</dialog>
+
 <dialog class="document-detail-dialog invoice-dialog" id="invoiceDialog">
   <div class="detail-dialog-header">
     <div>
@@ -1920,6 +1961,7 @@
 <script src="/static/outbox.js?v=3"></script>
 <script src="/static/timesheet.js?v=3"></script>
 <script src="/static/automations.js?v=4"></script>
-<script src="/static/shell.js?v=4"></script>
+<script src="/static/intelligence.js?v=1"></script>
+<script src="/static/shell.js?v=5"></script>
 </body>
 </html>

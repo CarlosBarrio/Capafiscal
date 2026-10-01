@@ -68,6 +68,9 @@ class Settings(BaseSettings):
 
     # IA opcional (Claude). Sin clave, los agentes usan reglas y plantillas.
     anthropic_api_key: str = ""
+    # Inteligencia: carpeta con sumarios/documentos del BOE descargados a mano (sin red hacia boe.es).
+    intel_boe_folder: Path | None = None
+    intel_window_days: int = 30  # días de publicaciones que se miran en cada radar
     agent_model: str = "claude-opus-5-5"
     auth_required: bool = False  # multiempresa: usuarios, roles y aislamiento estricto por cliente
     session_hours: int = 12
