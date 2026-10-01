@@ -212,12 +212,17 @@ def refine(
     company_name: str | None = None,
     model: str | None = None,
     force: bool = False,
+    extra_reasons: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Si las reglas no bastan y hay IA configurada, Claude interpreta y las reglas validan."""
+    """Si las reglas no bastan y hay IA configurada, Claude interpreta y las reglas validan.
+
+    ``extra_reasons``: motivos que vienen del aprendizaje (p. ej. campos que las
+    personas corrigen a menudo en este proveedor).
+    """
     from app.agents import llm
 
     company_ids = {normalize_tax_id(item) for item in (company_tax_ids or []) if item}
-    reasons = needs_help(result, company_ids)
+    reasons = needs_help(result, company_ids) + list(extra_reasons or [])
     info: dict[str, Any] = {"reasons": reasons, "engine": "reglas"}
     if not reasons and not force:
         return {**result, "interpretation": info}

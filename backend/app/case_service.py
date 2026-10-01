@@ -250,7 +250,14 @@ def sync_notification(database: Session, case: Case, status: str) -> None:
 
 
 def record_decision(case: Case, decision: str, actor: str, note: str | None) -> None:
-    """La decisión humana queda en el expediente: la Memoria y el Detector aprenden de ella."""
+    """La decisión humana queda en el expediente y en el registro de decisiones: la Memoria, el Detector y la evaluación aprenden de ella."""
+    from sqlalchemy.orm import object_session
+
+    from app.learning import record_case_decision
+
+    database = object_session(case)
+    if database is not None:
+        record_case_decision(database, case, decision, actor, note)
     case.facts = {
         **(case.facts or {}),
         "human_decision": {"decision": decision, "actor": actor, "note": note, "at": datetime.now(timezone.utc).isoformat()},

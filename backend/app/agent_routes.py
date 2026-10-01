@@ -250,6 +250,24 @@ def briefing(database: DatabaseDependency) -> dict[str, Any]:
     return data
 
 
+@router.get("/today", tags=["Agentes"])
+def today_view(database: DatabaseDependency) -> dict[str, Any]:
+    """¿Qué tengo que hacer hoy? Rojo/naranja/verde, lo de más impacto con el porqué, el trimestre y el banco."""
+    from app.agents.director import operational_board
+
+    board = operational_board(database)
+    database.commit()
+    return {key: board[key] for key in ("date", "attention", "pending", "resolved", "top", "fiscal", "bank", "intervention", "time_saved")}
+
+
+@router.get("/learning", tags=["Agentes"])
+def learning_stats(database: DatabaseDependency) -> dict[str, Any]:
+    """Qué corrigen y deciden las personas: precisión por campo, por motor y por tipo de aviso."""
+    from app.learning import stats
+
+    return stats(database)
+
+
 @router.get("/agents/pulse", tags=["Agentes"])
 def agents_pulse(database: DatabaseDependency) -> dict[str, Any]:
     from app.agents.pulse import pulse_status

@@ -883,12 +883,16 @@ def process_document(
         # Si las reglas no bastan y hay IA configurada, Claude interpreta
         # y las reglas validan cada valor antes de aceptarlo.
         from app.interpretation import refine
+        from app.learning import correction_hints
 
+        # Lo que las personas corrigen a menudo en este proveedor no se da por bueno solo con reglas.
+        rules_supplier = ((result.get("fields") or {}).get("supplier_tax_id") or {}).get("value")
         result = refine(
             file_path,
             result,
             company_tax_ids=company_tax_ids(database),
             company_name=company_name(database),
+            extra_reasons=correction_hints(database, rules_supplier),
         )
         interpretation = result.get("interpretation") or {}
         if interpretation.get("meta"):
@@ -1120,6 +1124,10 @@ def update_invoice(
 
     after = invoice_snapshot(invoice)
 
+    from app.learning import record_invoice_corrections
+
+    record_invoice_corrections(database, invoice, before, after, actor)
+
     if before.get("category") != after.get("category"):
         learn_supplier_rule(database, invoice, actor)
 
@@ -1173,6 +1181,9 @@ def approve_invoice(
             "posible duplicado antes de aprobar."
         )
 
+    from app.learning import record_invoice_review
+
+    record_invoice_review(database, invoice, "aprobado", actor)
     invoice.review_status = "APPROVED"
     invoice.approved_at = utc_now()
     invoice.rejected_at = None
@@ -1213,6 +1224,9 @@ def reject_invoice(
     reason: str,
     actor: str = "user",
 ) -> Invoice:
+    from app.learning import record_invoice_review
+
+    record_invoice_review(database, invoice, "rechazado", actor, reason)
     invoice.review_status = "REJECTED"
     invoice.rejected_at = utc_now()
     invoice.approved_at = None

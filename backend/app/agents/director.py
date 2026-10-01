@@ -250,6 +250,49 @@ def attention_reason(case: Case, today: date) -> str:
     return (case.summary or "")[:120]
 
 
+# Peso del tipo de asunto en el impacto: lo que tiene consecuencias legales o de dinero inmediato pesa más.
+TYPE_WEIGHT = {
+    "EMBARGO": 20, "EMBARGO_CREDITOS": 20, "EMBARGO_SALARIOS": 20, "EMBARGO_CUENTAS": 20, "APREMIO": 18, "SANCION": 16,
+    "REQUERIMIENTO": 14, "COMPROBACION_LIMITADA": 14, "VERIFICACION_DATOS": 12, "PROPUESTA_LIQUIDACION": 14, "LIQUIDACION": 14,
+}
+TYPE_WHY = {
+    "EMBARGO": "embargo: hay que retener desde ya", "APREMIO": "apremio: si no se paga, embargo", "SANCION": "sanción: plazo de alegaciones",
+    "REQUERIMIENTO": "requerimiento: no atenderlo puede sancionarse", "PROPUESTA_LIQUIDACION": "propuesta de liquidación: último momento para alegar",
+    "LIQUIDACION": "liquidación: pago en voluntaria",
+}
+
+
+def impact(case: Case, today: date) -> dict[str, Any]:
+    """Cuánto importa un asunto hoy: urgencia + dinero en juego + tipo + bloqueo, con el porqué."""
+    import math
+
+    facts = case.facts or {}
+    days_left = (case.deadline - today).days if case.deadline else None
+    urgency = 10 if days_left is None else 50 if days_left <= 0 else 45 if days_left <= 2 else 35 if days_left <= 7 else 20 if days_left <= 15 else 5
+    retention = (facts.get("embargo") or {}).get("retain_now")
+    amount = float(retention) if retention else float(case.amount) if case.amount is not None else None
+    money = min(30.0, 6 * math.log10(abs(amount) + 1)) if amount else 0.0
+    procedure = case.procedure or ""
+    family = next((name for name in TYPE_WEIGHT if procedure.startswith(name)), None)
+    kind = TYPE_WEIGHT.get(family or "", 0) or {"high": 12, "medium": 6, "low": 2}.get(facts.get("severity") or "", 0) + (8 if case.kind == "DEADLINE" else 0)
+    blocked = 10 if facts.get("processing") else 0
+    score = round(urgency + money + kind + blocked)
+    why = []
+    if days_left is not None:
+        why.append("plazo vencido" if days_left < 0 else "vence hoy" if days_left == 0 else f"vence en {days_left} día(s)")
+    if amount:
+        from app.agents.base import eur
+
+        why.append(f"{eur(abs(amount))} en juego" if not retention else f"{eur(retention)} a retener")
+    if family and TYPE_WHY.get(family.split("_")[0] if family.startswith("EMBARGO") else family):
+        why.append(TYPE_WHY[family.split("_")[0] if family.startswith("EMBARGO") else family])
+    elif case.kind == "ANOMALY" and facts.get("severity"):
+        why.append(f"riesgo {({'high': 'alto', 'medium': 'medio', 'low': 'bajo'}).get(facts['severity'], facts['severity'])}")
+    if blocked:
+        why.append("un agente no pudo terminar")
+    return {"score": score, "amount": amount, "days_left": days_left, "why": " · ".join(why) or (case.summary or "")[:120]}
+
+
 def operational_board(database: Session, today: date | None = None, *, days: int = 7) -> dict[str, Any]:
     """Qué requiere atención, qué está pendiente y qué se ha resuelto solo."""
     from datetime import datetime
@@ -380,14 +423,22 @@ def operational_board(database: Session, today: date | None = None, *, days: int
         "note": "Estimación con tiempos supuestos por tarea; se ajustará con datos del piloto.",
     }
 
-    top = attention[:3]
-    if len(top) < 3:
-        extra = [
-            {"case_id": case.id, "code": case.code, "title": case.title, "reason": attention_reason(case, today), "level": case.level, "priority": case.priority, "kind": case.kind, "blocked": False}
-            for case in sorted(cases, key=lambda item: -item.priority)
-            if case.status in {"WAITING_HUMAN", "READY_TO_FILE"} and not any(item.get("case_id") == case.id for item in top)
-        ]
-        top += extra[: 3 - len(top)]
+    # Lo que más impacto tiene hoy, con el porqué (urgencia, dinero, tipo de asunto, bloqueos).
+    by_id = {case.id: case for case in cases}
+    for item in attention:
+        if item.get("case_id") in by_id:
+            item["impact"] = impact(by_id[item["case_id"]], today)
+        else:
+            item["impact"] = {"score": 100, "amount": None, "days_left": None, "why": "entrada que no se pudo procesar"}
+    attention.sort(key=lambda item: -item["impact"]["score"])
+    candidates = [
+        {"case_id": case.id, "code": case.code, "title": case.title, "reason": attention_reason(case, today), "level": case.level,
+         "priority": case.priority, "kind": case.kind, "blocked": bool((case.facts or {}).get("processing")), "impact": impact(case, today)}
+        for case in cases if case.status in {"WAITING_HUMAN", "READY_TO_FILE"}
+    ]
+    ranked = sorted(attention + [item for item in candidates if not any(other.get("case_id") == item["case_id"] for other in attention)],
+                    key=lambda item: -item["impact"]["score"])
+    top = ranked[:3]
 
     return {
         "date": today.isoformat(),
@@ -396,7 +447,32 @@ def operational_board(database: Session, today: date | None = None, *, days: int
         "pending": {"count": sum(item["count"] for item in pending_items), "items": [item for item in pending_items if item["count"]]},
         "resolved": {"count": sum(item["count"] for item in resolved_items), "items": [item for item in resolved_items if item["count"]]},
         "top": top,
+        "fiscal": fiscal_snapshot(database, today),
+        "bank": bank_snapshot(database, today),
         "work": work,
         "intervention": intervention,
         "time_saved": time_saved,
     }
+
+
+def fiscal_snapshot(database: Session, today: date) -> list[dict[str, Any]]:
+    """Cómo va el trimestre: una línea por modelo."""
+    from app.fiscal_position import positions
+
+    try:
+        report = positions(database, today=today)
+    except Exception:  # la foto fiscal no debe tumbar el panel
+        return []
+    return [{"model": item["model"], "period": item["period_label"], "status": item["status"], "headline": item["headline"], "summary": item["summary"],
+             "due_date": item["due_date"], "days_left": item["days_left"], "information_available": item["information_available"]} for item in report["models"]]
+
+
+def bank_snapshot(database: Session, today: date) -> dict[str, Any] | None:
+    from app.models import BankTransaction
+    from app.reconciliation import reconcile
+
+    if database.scalar(select(BankTransaction.id).limit(1)) is None:
+        return None
+    report = reconcile(database, today=today, auto=False)
+    return {"counts": report["counts"], "reconciled_rate": report["reconciled_rate"], "total": report["total"]}
+

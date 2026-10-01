@@ -1795,3 +1795,24 @@ class CounterpartyProfile(Base):
     profile: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
 
+
+class DecisionRecord(Base):
+    """Lo que propuso el sistema y lo que decidió una persona: datos propios para aprender y evaluar."""
+
+    __tablename__ = "decision_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+    actor: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # invoice, case
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    document_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    field: Mapped[str] = mapped_column(String(60), nullable=False)  # campo corregido o «*» para la decisión global
+    predicted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    human: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # corregido, confirmado, rechazado, aprobado, resuelto, descartado
+    error_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    engine: Mapped[str | None] = mapped_column(String(30), nullable=True)  # reglas, claude
+    subject_key: Mapped[str | None] = mapped_column(String(150), nullable=True, index=True)  # NIF del proveedor/cliente
+    context: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
