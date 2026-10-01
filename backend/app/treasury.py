@@ -133,6 +133,7 @@ def predict(database: Session, *, today: date | None = None, horizon_days: int =
     outflows_30 = sum((-Decimal(str(item["amount"])) for item in movements if item["amount"] < 0 and item["date"] <= (today + timedelta(days=30)).isoformat()), Decimal("0"))
     cushion = (outflows_30 * CUSHION_SHARE).quantize(Decimal("0.01"))
     risk = risk_of(today, balance, lowest, cushion, movements)
+    basis = confidence_of(movements, balance)
     warnings = [f"{risk['headline']}. {risk['explanation']}"] if risk["level"] in ("alto", "medio") else []
     warnings += [text for text in base["warnings"] if "negativo" not in text and "extracto bancario" not in text]
     return {
@@ -141,7 +142,7 @@ def predict(database: Session, *, today: date | None = None, horizon_days: int =
         "warnings": warnings, "note": " ".join(ASSUMPTIONS_NOTE),
         "today": today.isoformat(), "horizon_days": horizon_days, "current_balance": balance, "balance_date": base["balance_date"],
         "projected_balance": float(running) if running is not None else None, "lowest_point": lowest, "cushion": float(cushion),
-        "risk": risk, "movements": movements,
+        "risk": risk, "movements": movements, "confidence": basis,
         "recurring": [item for item in movements if item["type"] == "recurring"],
         "delayed_collections": [item for item in movements if item.get("why", "").startswith("este cliente")],
         "assumptions": [
@@ -152,6 +153,24 @@ def predict(database: Session, *, today: date | None = None, horizon_days: int =
             f"Colchón de seguridad: una cuarta parte de los pagos de los próximos 30 días ({eur(cushion)}).",
         ],
     }
+
+
+def confidence_of(movements: list[dict[str, Any]], balance: float | None) -> dict[str, Any]:
+    """Una cifra prevista nunca va sola: con qué confianza y de qué está hecha."""
+    def count(kind: str) -> int:
+        return sum(1 for item in movements if item["type"] == kind)
+
+    total = sum(abs(item["amount"]) for item in movements) or 0
+    guessed = sum(abs(item["amount"]) for item in movements
+                  if item.get("estimated_date") or item["type"] in ("recurring", "tax") or item.get("why", "").startswith("este cliente"))
+    share = guessed / total if total else 0
+    level = "baja" if balance is None or share > 0.5 else "media" if share > 0.2 else "alta"
+    parts = [(count("collection"), "cobro(s) previstos"), (count("payment"), "pago(s) de facturas"), (count("recurring"), "cargo(s) habituales"),
+             (count("tax"), "impuesto(s) estimados"), (count("payroll") + count("social_security"), "nómina(s) y seguros sociales")]
+    reasons = " + ".join(f"{number} {label}" for number, label in parts if number) or "sin movimientos previstos"
+    why = ("sin saldo del banco" if balance is None else
+           f"{round(share * 100)} % del importe es estimado (fechas supuestas, retrasos medios, cargos habituales o impuestos)")
+    return {"level": level, "reasons": reasons, "why": why, "estimated_share": round(share, 2)}
 
 
 def risk_of(today: date, balance: float | None, lowest: dict[str, Any] | None, cushion: Decimal, movements: list[dict[str, Any]]) -> dict[str, Any]:

@@ -34,7 +34,7 @@ def journal_view(database: DatabaseDependency, date_from: date | None = None, da
 
     start, end = period(date_from, date_to)
     report = accounting.journal(database, start, end)
-    name = f"libro_diario_{start:%Y%m%d}_{end:%Y%m%d}"
+    name = f"borrador_libro_diario_{start:%Y%m%d}_{end:%Y%m%d}"
     if format == "csv":
         return Response(accounting.to_csv(report), media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="{name}.csv"'})

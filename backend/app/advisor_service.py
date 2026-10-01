@@ -203,8 +203,8 @@ def build_advisor_pack(database: Session, *, year: int, quarter: int) -> bytes:
         from app import accounting
 
         diary = accounting.journal(database, date_from, date_to)
-        archive.writestr(f"06_contabilidad/libro_diario_{year}_{quarter}T.xlsx", accounting.to_xlsx(diary))
-        archive.writestr(f"06_contabilidad/libro_diario_{year}_{quarter}T.csv", accounting.to_csv(diary))
+        archive.writestr(f"06_contabilidad/borrador_libro_diario_{year}_{quarter}T.xlsx", accounting.to_xlsx(diary))
+        archive.writestr(f"06_contabilidad/borrador_libro_diario_{year}_{quarter}T.csv", accounting.to_csv(diary))
 
         # LEEME
         lines = [
@@ -218,7 +218,7 @@ def build_advisor_pack(database: Session, *, year: int, quarter: int) -> bytes:
             "  03_facturas  PDF de todas las facturas aprobadas del trimestre",
             f"  04_nominas   Recibos y resumen de {len(runs)} nómina(s) aprobada(s)",
             f"  05_banco     {summary['transactions']} movimiento(s) bancario(s) con su conciliación",
-            f"  06_contabilidad  Libro diario: {diary['count']} asiento(s) con el Plan General Contable (CSV y Excel)"
+            f"  06_contabilidad  BORRADOR de libro diario (a revisar por la gestoría): {diary['count']} asiento(s) con el Plan General Contable (CSV y Excel)"
             + (f"; {len(diary['pending'])} elemento(s) aún sin contabilizar" if diary["pending"] else ""),
             "",
             "RESULTADO ESTIMADO DE LOS MODELOS",

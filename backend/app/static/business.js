@@ -214,7 +214,8 @@
     const sub = document.getElementById("cashflowSub");
     sub.textContent =
       `Entradas ${money(forecast.expected_inflows)} · salidas ${money(forecast.expected_outflows)}` +
-      (forecast.projected_balance !== null ? ` · saldo final previsto ${money(forecast.projected_balance)}` : "");
+      (forecast.projected_balance !== null ? ` · saldo final previsto ${money(forecast.projected_balance)}` : "") +
+      (forecast.confidence ? ` · confianza ${forecast.confidence.level}: ${forecast.confidence.reasons} (${forecast.confidence.why})` : "");
 
     document.getElementById("cashflowWarnings").innerHTML = (forecast.warnings || [])
       .map((text) => `<div class="report-warning">${window.icon("alert")}<span>${esc(text)}</span></div>`)

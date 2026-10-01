@@ -279,13 +279,15 @@ def treasury_items(database: Session, today: date) -> list[dict[str, Any]]:
     from app.treasury import predict
 
     try:
-        risk = predict(database, today=today, horizon_days=60)["risk"]
+        forecast = predict(database, today=today, horizon_days=60)
+        risk, basis = forecast["risk"], forecast["confidence"]
     except Exception:  # la previsión no debe tumbar la lista
         return []
     if risk["level"] not in ("alto", "medio"):
         return []
     first = risk["actions"][0] if risk["actions"] else {"label": "Ver la previsión de caja", "tab": "negocio"}
-    return [item("accion", "liquidity", risk.get("date"), risk["headline"], risk["explanation"],
+    return [item("accion", "liquidity", risk.get("date"), risk["headline"],
+                 f"{risk['explanation']} Confianza {basis['level']}: {basis['reasons']}.",
                  action={"label": "Ver previsión", "tab": "negocio", "anchor": "cashflowCard"},
                  checked=[{"label": action["label"], "ok": None} for action in risk["actions"]] or [{"label": first["label"], "ok": None}],
                  score=90 if risk["level"] == "alto" else 45, when=risk.get("date"))]
@@ -312,17 +314,17 @@ def overnight(database: Session, since: datetime) -> dict[str, Any]:
 
 
 def learning(database: Session) -> dict[str, Any]:
-    """«CapaFiscal ha aprendido N reglas»: lo aprendido de tus correcciones, aprobado por una persona y versionado."""
+    """Patrones que CapaFiscal ha visto en tus correcciones y cuántos has confirmado tú (nada se aplica sin confirmar)."""
     rules = database.scalars(select(LearningRule)).all()
-    approved = [rule for rule in rules if rule.status == "APROBADA"]
-    version = max((rule.version or 0 for rule in approved), default=0)
+    confirmed = [rule for rule in rules if rule.status == "APROBADA"]
+    version = max((rule.version or 0 for rule in confirmed), default=0)
     proposals = sum(1 for rule in rules if rule.status == "PROPUESTA")
     if not rules:
-        text = "Aún no ha aprendido reglas: aprende de tus correcciones y te las propone."
+        text = "Sin patrones todavía: cuando corrijas algo varias veces, CapaFiscal te propondrá una regla."
     else:
-        text = (f"CapaFiscal ha aprendido {len(approved)} regla(s)" + (f" (versión {version})" if version else "")
-                + (f" · {proposals} propuesta(s) esperan tu decisión" if proposals else ""))
-    return {"approved": len(approved), "version": version, "proposals": proposals, "text": text}
+        text = (f"{len(rules)} patrón(es) detectados en tus correcciones · {len(confirmed)} confirmados por ti"
+                + (f" · {proposals} esperan tu decisión" if proposals else ""))
+    return {"patterns": len(rules), "approved": len(confirmed), "version": version, "proposals": proposals, "text": text}
 
 
 def work_center(database: Session, *, today: date | None = None, now: datetime | None = None, user_name: str | None = None) -> dict[str, Any]:

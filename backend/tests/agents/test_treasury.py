@@ -33,6 +33,8 @@ def test_monthly_charges_without_invoice_are_projected(client):
     recurring = forecast["recurring"]
     assert [item["date"] for item in recurring] == ["2026-10-05"] and recurring[0]["amount"] == -1500.0
     assert "4 meses" in recurring[0]["why"] and forecast["projected_balance"] == 6500.0 - 1500.0
+    # La cifra prevista nunca va sola: confianza y de qué está hecha.
+    assert forecast["confidence"]["level"] == "baja" and forecast["confidence"]["reasons"] == "1 cargo(s) habituales"
 
 
 def test_collections_move_to_when_the_customer_really_pays(client):

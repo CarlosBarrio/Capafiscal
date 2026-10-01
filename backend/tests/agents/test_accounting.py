@@ -13,6 +13,7 @@ def lines_of(entry):
 def test_journal_books_invoices_and_reconciled_movements(client):
     setup_month(client)
     report = client.get("/api/accounting/journal", params=SEPTEMBER).json()
+    assert report["status"] == "BORRADOR" and "revísalo con tu gestoría" in report["note"]
     assert report["count"] and all(entry["balanced"] for entry in report["entries"])
     assert report["totals"]["debit"] == report["totals"]["credit"]
 

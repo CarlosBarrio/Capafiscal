@@ -35,7 +35,7 @@
     { label: "Cerrar el mes", hint: "Cierre · qué bloquea y qué ha hecho CapaFiscal", icon: "lock", run: () => window.activateTab("cierre") },
     { label: "Conectar el banco", hint: "Negocio · los movimientos llegan solos (PSD2)", icon: "link", run: () => { window.activateTab("negocio"); window.setTimeout(() => document.getElementById("bankConnections")?.scrollIntoView({ block: "start" }), 300); } },
     { label: "Previsión de caja y riesgo de liquidez", hint: "Negocio · tesorería", icon: "trending", run: () => { window.activateTab("negocio"); window.setTimeout(() => document.getElementById("cashflowCard")?.scrollIntoView({ block: "start" }), 300); } },
-    { label: "Libro diario para la gestoría", hint: "Informes · asientos con el PGC", icon: "download", run: () => { window.activateTab("informes"); window.setTimeout(() => document.getElementById("journalCard")?.scrollIntoView({ block: "start" }), 300); } },
+    { label: "Borrador contable (libro diario)", hint: "Informes · asientos propuestos con el PGC", icon: "download", run: () => { window.activateTab("informes"); window.setTimeout(() => document.getElementById("journalCard")?.scrollIntoView({ block: "start" }), 300); } },
     { label: "Novedades del BOE para mis áreas", hint: "Más · radar jurídico", icon: "radar", run: () => window.activateTab("inteligencia") },
     { label: "Buscar anomalías", hint: "Detector · facturas, banco e IVA", icon: "alert", run: () => { window.activateTab("expedientes"); window.setTimeout(() => document.getElementById("scanAnomalies")?.click(), 80); } },
     { label: "Nueva factura", hint: "Ventas · emitir y registrar", icon: "invoice", run: () => window.newSalesInvoice?.() },

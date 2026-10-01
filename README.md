@@ -87,6 +87,10 @@ cuadros de mando decorativos ni automatizaciones de escaparate.
 
 ## Centro de trabajo (Hoy): una sola lista
 
+CapaFiscal dice **qué ha comprobado**, no «la IA ha decidido»: la mayor parte del
+trabajo lo hacen reglas y estadística sobre los datos de la empresa; la IA solo
+interpreta lo que las reglas no resuelven y su salida se valida con reglas.
+
 *Hoy* es una lista única en cuatro grupos, en vez de varias bandejas:
 
 - 🔴 **Requiere tu decisión**: expedientes, facturas por revisar, conflictos del
@@ -102,7 +106,7 @@ Cada elemento dice **qué ha comprobado CapaFiscal** y lleva su acción. Lo raro
 *para esta empresa* encabeza la factura («suele facturarte 400 €; esta es de
 2.000 €», «cambia la cuenta de pago») y se puede preguntar **«¿qué cambia si la
 apruebo?»** antes de decidir. Arriba: el estado vivo (último ciclo), lo hecho en
-las últimas 24 h, el cierre del mes en curso y las reglas aprendidas. Se mueve
+las últimas 24 h, el cierre del mes en curso y los patrones detectados en tus correcciones (y cuántos has confirmado: ninguno se aplica sin ti). Se mueve
 con el teclado (j / k) y no escribe nada al leerla (`GET /api/work`).
 
 ## Del dato al cierre, sin volver a teclear
@@ -111,8 +115,8 @@ con el teclado (j / k) y no escribe nada al leerla (`GET /api/work`).
 |---|---|---|
 | **Cierre del mes** | Concilia lo seguro, pasa el Detector y comprueba diez cosas; % cerrado contable a mano | Cierre del mes · `/api/close` |
 | **Conciliación profesional** | Varias facturas en un pago, pagos a cuenta, devoluciones, comisiones, traspasos, nóminas, Seguridad Social e impuestos; solo lo SEGURO sin persona | Negocio · Banco |
-| **Libro diario** | Asientos con el PGC de facturas y banco conciliado; comprobaciones de cuadre; CSV/Excel y en el paquete trimestral | Informes · `/api/accounting/journal` |
-| **Tesorería predictiva** | Cada cliente cobra cuando suele pagar, cargos habituales sin factura, riesgo de liquidez con el porqué y qué hacer | Negocio · `/api/treasury` |
+| **Borrador contable** | Libro diario *propuesto* con el PGC de facturas y banco conciliado; comprobaciones de cuadre; CSV/Excel y en el paquete trimestral. Es un borrador para la gestoría hasta validar rectificativas, anticipos, pagos parciales e impuestos con datos reales | Informes · `/api/accounting/journal` |
+| **Tesorería predictiva** | Cada cliente cobra cuando suele pagar, cargos habituales sin factura, riesgo de liquidez con el porqué y qué hacer. Toda cifra prevista lleva su confianza (alta/media/baja) y de qué está hecha | Negocio · `/api/treasury` |
 | **¿Qué cambia si…?** | Aprobar, pagar, aplazar, descartar o un gasto nuevo: efecto en 303, caja y cierre, sin guardar nada | Hoy · `/api/simulate` |
 | **Perseguidor** | Recordatorio a las 48 h, segundo a los 5 días, aviso al gestor a los 8; al llegar todo, recalcula el expediente | Expedientes |
 | **Banco conectado (PSD2)** | Movimientos cada 6 h por un agregador con licencia, sin duplicar el extracto y conciliados al entrar | Negocio · Banco |

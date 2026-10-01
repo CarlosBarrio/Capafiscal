@@ -1,5 +1,5 @@
 """
-Contabilización: el libro diario sale de lo que ya está en CapaFiscal, sin volver a teclear nada.
+Contabilización (BORRADOR): el libro diario sale de lo que ya está en CapaFiscal, sin volver a teclear nada.
 
     factura recibida aprobada   6xx (base, + recargo) + 472 IVA soportado  a  400/410 proveedor (+ 4751 retención)
     factura emitida aprobada    430 cliente (+ 473 retención)              a  7xx (base) + 477 IVA repercutido
@@ -172,7 +172,10 @@ def journal(database: Session, date_from: date, date_to: date) -> dict[str, Any]
         "from": date_from.isoformat(), "to": date_to.isoformat(), "entries": entries, "count": len(entries), "totals": totals,
         "balances": [{"account": key, "name": ACCOUNTS.get(key, ""), "balance": float(value)} for key, value in sorted(balances.items())],
         "checks": checks, "pending": not_booked + pending,
-        "note": "Libro diario genérico con el Plan General Contable. Para importarlo en A3, Sage u Holded con su formato propio hace falta su especificación de importación.",
+        "status": "BORRADOR",
+        "note": ("Borrador contable: revísalo con tu gestoría antes de darlo por definitivo. Casos aún por validar con datos reales: "
+                 "rectificativas, anticipos, pagos parciales, impuestos y movimientos sin conciliar. Formato genérico con el Plan General "
+                 "Contable; para A3, Sage u Holded con su formato propio hace falta su especificación de importación."),
     }
 
 
@@ -204,7 +207,7 @@ def to_xlsx(report: dict[str, Any]) -> bytes:
 
     book = Workbook()
     sheet = book.active
-    sheet.title = "Libro diario"
+    sheet.title = "Borrador libro diario"
     sheet.append([column.replace("_", " ").capitalize() for column in COLUMNS])
     for cell in sheet[1]:
         cell.font = Font(bold=True)

@@ -100,7 +100,7 @@ def test_work_center_puts_the_rare_thing_first_and_shows_what_was_learned(client
     data = client.get("/api/work").json()
     item = next(row for row in data["groups"][0]["items"] if row["kind"] == "invoice")
     assert "suele facturarte" in item["why"] and "5 veces lo habitual" in item["why"]
-    assert data["learning"]["approved"] == 0 and "aprende de tus correcciones" in data["learning"]["text"]
+    assert data["learning"]["approved"] == 0 and "Sin patrones todavía" in data["learning"]["text"]
 
 
 def test_reading_profiles_never_writes(client):
