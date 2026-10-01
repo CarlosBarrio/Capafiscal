@@ -28,12 +28,74 @@
     yearSelect.addEventListener("change", loadAll);
 
     document.getElementById("taxCalendar")?.addEventListener("click", onCalendarClick);
+    document.getElementById("taxPosition")?.addEventListener("click", onCalendarClick);
+  }
+
+  const GAP_LABELS = {
+    pendiente_revision: "Facturas sin revisar",
+    factura_falta: "Facturas habituales que no han llegado",
+    movimiento_sin_factura: "Movimientos del banco sin factura",
+  };
+
+  async function loadPosition() {
+    const container = document.getElementById("taxPosition");
+    if (!container) return;
+    try {
+      renderPosition(await window.apiRequest("/taxes/position"));
+    } catch (error) {
+      container.innerHTML = `<p class="empty-inline">${esc(error.message)}</p>`;
+    }
+  }
+
+  function renderPosition(data) {
+    document.getElementById("taxPositionSub").textContent = `${data.period_label} · calculado ${new Date().toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`;
+    const container = document.getElementById("taxPosition");
+    if (!data.models.length) {
+      container.innerHTML = `<p class="empty-inline">No hay modelos trimestrales para ${esc(data.period_label)}.</p>`;
+      return;
+    }
+    container.innerHTML = data.models.map((item) => {
+      const share = Math.round((item.information_available || 0) * 100);
+      const groups = {};
+      item.gaps.forEach((gap) => { (groups[gap.type] = groups[gap.type] || []).push(gap); });
+      const status = item.status === "FILED" ? ["Presentado", "status-success"] : item.status === "COMPLETE" ? ["Completo", "status-success"] : ["Incompleto", "status-warning"];
+      const pending = item.result_with_pending !== null && item.result_with_pending !== undefined;
+      return `
+        <div class="position-row">
+          <div class="position-main">
+            <div class="position-title">
+              <strong>Modelo ${esc(item.model)}</strong>
+              <span class="status-pill mini ${status[1]}">${status[0]}</span>
+              <span class="muted">vence ${window.formatDay(item.due_date)}${item.days_left >= 0 ? ` · ${item.days_left} d` : ""}</span>
+            </div>
+            <dl class="position-figures">
+              <div><dt>Con lo aprobado</dt><dd>${money(item.result)}</dd></div>
+              ${pending ? `<div><dt>Si apruebas lo pendiente</dt><dd>${money(item.result_with_pending)}</dd></div>` : ""}
+              <div><dt>Información disponible</dt><dd>${share} %</dd></div>
+            </dl>
+            <span class="meter" aria-hidden="true"><span style="width:${share}%"></span></span>
+            <small class="muted">${item.approved_invoices} factura(s) aprobadas incluidas · % calculado sobre el importe conocido del periodo</small>
+          </div>
+          ${item.gaps.length || item.discrepancies.length ? `
+            <details class="position-gaps">
+              <summary>Qué falta (${item.gaps.length + item.discrepancies.length})</summary>
+              ${Object.entries(groups).map(([type, gaps]) => `
+                <p class="position-gap-title">${esc(GAP_LABELS[type] || type)}</p>
+                <ul>${gaps.map((gap) => `<li><span>${esc(gap.label)}</span><span class="num">${money(gap.amount)}</span></li>`).join("")}</ul>`).join("")}
+              ${item.discrepancies.length ? `
+                <p class="position-gap-title">Discrepancias</p>
+                <ul>${item.discrepancies.map((gap) => `<li><span>${esc(gap.label)}</span><span class="num">${money(gap.amount)}</span></li>`).join("")}</ul>` : ""}
+            </details>` : ""}
+          <button type="button" class="btn-ghost" data-action="draft" data-model="${esc(item.model)}" data-year="${item.year}" data-period="${item.quarter}">Ver borrador</button>
+        </div>`;
+    }).join("");
   }
 
   async function loadAll() {
     const year = Number(document.getElementById("taxYear").value);
 
     try {
+      loadPosition();
       const calendar = await window.apiRequest(`/taxes/calendar?year=${year}`);
       renderCalendar(calendar);
 
@@ -119,7 +181,7 @@
             : ""}
           ${entry.status === "FILED"
             ? `<button type="button" class="btn-ghost" data-action="unfile" data-model="${esc(entry.model)}" data-year="${entry.period_year}" data-period="${entry.period}">Desmarcar</button>`
-            : `<button type="button" class="act-btn act-primary" data-action="file" data-model="${esc(entry.model)}" data-year="${entry.period_year}" data-period="${entry.period}" data-estimate="${entry.estimate ?? ""}">Presentado</button>`}
+            : `<button type="button" class="btn-ghost" data-action="file" data-model="${esc(entry.model)}" data-year="${entry.period_year}" data-period="${entry.period}" data-estimate="${entry.estimate ?? ""}">Marcar presentado</button>`}
         </div>
       </div>
     `;

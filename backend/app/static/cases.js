@@ -49,6 +49,15 @@
     return [`${days} d`, days === 1 ? "queda 1 día" : `quedan ${days} días`];
   }
 
+  // El titular del expediente es el trámite; a quién afecta solo se dice cuando no es tu propia empresa.
+  function subjectLine(item, always = false) {
+    const subject = item.subject || {};
+    if (!subject.name) return "";
+    if (subject.type === "company") return always ? `Afecta a tu empresa${subject.tax_id ? ` · ${subject.tax_id}` : ""}` : "";
+    const kinds = { employee: "persona de la plantilla", customer: "cliente", supplier: "proveedor", unknown: "tercero" };
+    return `Afecta a ${subject.name}${kinds[subject.type] ? ` · ${kinds[subject.type]}` : ""}`;
+  }
+
   /* ------------------------------------------------------------
   DIRECTOR: lo que hay que revisar hoy
   ------------------------------------------------------------ */
@@ -71,8 +80,8 @@
               <span class="briefing-rank">${index + 1}</span>
               <span class="briefing-icon">${window.icon(SOURCE_ICONS[item.source] || "calendar")}</span>
               <span class="briefing-body">
-                <strong>${esc(item.subtitle || item.title)}</strong>
-                <span>${esc(item.subtitle ? item.title : item.detail || "")}</span>
+                <strong>${esc(item.title)}</strong>
+                <span>${esc(item.detail || "")}</span>
               </span>
               <span class="briefing-when">
                 ${item.deadline ? `<small>${esc(day(item.deadline))}</small>` : ""}
@@ -86,17 +95,69 @@
     `;
   }
 
+  const BANK_STATES = [
+    ["CONCILIADO", "conciliados"],
+    ["POSIBLE", "posibles"],
+    ["SIN_FACTURA", "sin justificar"],
+  ];
+
+  function percent(value) {
+    return `${Math.round((value || 0) * 100)} %`;
+  }
+
+  function fiscalHtml(models) {
+    if (!models?.length) return `<p class="board-empty">Sin obligaciones trimestrales que vigilar.</p>`;
+    return models.map((item) => {
+      const amount = (item.headline || "").replace(/^\S+ estimado:\s*/, "");
+      const rest = (item.summary || "").split(" · ").slice(1).join(" · ");
+      const days = item.days_left;
+      return `
+        <div class="today-fiscal-row">
+          <div class="today-fiscal-top">
+            <strong>Modelo ${esc(item.model)} <span class="muted">${esc(item.period)}</span></strong>
+            <span class="muted">${item.status === "FILED" ? "presentado" : days === null || days === undefined ? "" : days < 0 ? `venció hace ${Math.abs(days)} d` : `vence ${esc(day(item.due_date))} · ${days} d`}</span>
+          </div>
+          <span class="today-fiscal-amount">${esc(amount)}</span>
+          <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round((item.information_available || 0) * 100)}" aria-label="Información disponible del ${esc(item.model)}"><span style="width:${Math.round((item.information_available || 0) * 100)}%"></span></span>
+          <small class="muted">${percent(item.information_available)} de la información${rest ? ` · ${esc(rest)}` : ""}</small>
+        </div>`;
+    }).join("");
+  }
+
+  function bankHtml(bank) {
+    if (!bank?.total) return `<p class="board-empty">Importa el extracto del banco para conciliar pagos y cobros.</p>`;
+    const counts = bank.counts || {};
+    const exceptions = (counts.IMPORTE_DISTINTO || 0) + (counts.DUPLICADO || 0);
+    return `
+      <dl class="today-stats">
+        <div><dt>movimientos</dt><dd>${bank.total}</dd></div>
+        ${BANK_STATES.map(([key, label]) => `<div><dt>${label}</dt><dd>${counts[key] || 0}</dd></div>`).join("")}
+      </dl>
+      ${exceptions || counts.FACTURA_SIN_PAGO ? `<small class="muted">${[
+        exceptions ? `${exceptions} con importe distinto o duplicado` : "",
+        counts.FACTURA_SIN_PAGO ? `${counts.FACTURA_SIN_PAGO} factura(s) aprobadas sin pago en el banco` : "",
+      ].filter(Boolean).join(" · ")}</small>` : ""}
+    `;
+  }
+
   function boardHtml(board, pulse) {
     if (!board) return "";
     const attention = board.attention.items;
-    const listItem = (item) => `
-      <button type="button" class="board-item lvl-${esc(item.level)}" ${item.case_id ? `data-open-case="${item.case_id}"` : item.event_id ? `data-go-intake="${item.event_id}"` : ""}>
-        <strong>${esc(item.title)}</strong>
-        <span>${esc(item.reason || "")}</span>
-      </button>`;
     const countList = (items, empty) => items.length
       ? `<ul class="board-counts">${items.map((item) => `<li><strong>${item.count}</strong> ${esc(item.label)}</li>`).join("")}</ul>`
       : `<p class="board-empty">${esc(empty)}</p>`;
+    const topItem = (item, index) => `
+      <li>
+        <button type="button" class="today-top-item lvl-${esc(item.level)}" ${item.case_id ? `data-open-case="${item.case_id}"` : item.event_id ? `data-go-intake="${item.event_id}"` : ""}>
+          <span class="briefing-rank">${index + 1}</span>
+          <span class="today-top-body">
+            <strong>${esc(item.title)}</strong>
+            <span class="today-top-why">${esc(item.impact?.why || item.reason || "")}</span>
+          </span>
+          <span class="today-top-go">Abrir ${window.icon("chevron")}</span>
+        </button>
+      </li>`;
+    const extra = attention.length - board.top.length;
     return `
       <div class="board-head">
         <span class="briefing-eyebrow">${window.icon("chart")} Director · ${esc(window.formatDay(board.date))}</span>
@@ -105,37 +166,43 @@
           <button type="button" class="btn-ghost" data-run-pulse>${window.icon("play")} Trabajar ahora</button>
         </span>
       </div>
-      <div class="board-grid">
-        <section class="board-col col-red">
-          <h3><span class="board-dot"></span>${attention.length ? `${attention.length} ${attention.length === 1 ? "cosa requiere" : "cosas requieren"} tu atención` : "Nada urgente"}</h3>
-          ${attention.length ? attention.slice(0, 4).map(listItem).join("") + (attention.length > 4 ? `<button type="button" class="link-button" data-go-cases>y ${attention.length - 4} más</button>` : "") : `<p class="board-empty">Ningún plazo encima ni nada bloqueado.</p>`}
+      <div class="today-states">
+        <section class="today-state state-red">
+          <h3><span class="board-dot"></span>Requiere tu atención</h3>
+          <strong class="today-count">${attention.length}</strong>
+          <p class="board-empty">${attention.length ? "Decisiones tuyas, ordenadas abajo por impacto." : "Ningún plazo encima ni nada bloqueado."}</p>
         </section>
-        <section class="board-col col-orange">
-          <h3><span class="board-dot"></span>${board.pending.count} ${board.pending.count === 1 ? "cosa pendiente" : "cosas pendientes"}</h3>
+        <section class="today-state state-orange">
+          <h3><span class="board-dot"></span>Pendiente</h3>
+          <strong class="today-count">${board.pending.count}</strong>
           ${countList(board.pending.items, "Nada a medias.")}
         </section>
-        <section class="board-col col-green">
-          <h3><span class="board-dot"></span>${board.resolved.count} resuelta(s) sin intervención</h3>
+        <section class="today-state state-green">
+          <h3><span class="board-dot"></span>Resuelto sin ti</h3>
+          <strong class="today-count">${board.resolved.count}</strong>
           ${countList(board.resolved.items, "Aún no hay trabajo automático esta semana.")}
-          <small class="muted">Últimos ${board.period_days} días</small>
         </section>
       </div>
-      ${board.work ? `
-        <div class="board-work">
-          <span><strong>${board.work.events}</strong> entradas trabajadas</span>
-          <span><strong>${board.work.documents}</strong> documentos</span>
-          <span><strong>${board.work.cases}</strong> expedientes</span>
-          <span><strong>${board.work.anomalies}</strong> anomalías</span>
-          <span><strong>${board.work.requests}</strong> documentos solicitados</span>
-          ${board.intervention.total ? `<span class="board-human" title="${esc(`${board.intervention.solo} solos · ${board.intervention.with_ai} con IA · ${board.intervention.human} a una persona · ${board.intervention.failed} fallidos`)}">Intervención humana: <strong>${(board.intervention.human_rate * 100).toFixed(1).replace(".", ",")} %</strong></span>` : ""}
-          ${board.time_saved.minutes ? `<span title="${esc(board.time_saved.note + " " + board.time_saved.assumptions.map((item) => `${item.count} × ${item.minutes} min (${item.what})`).join("; "))}">Tiempo ahorrado estimado: <strong>≈ ${String(board.time_saved.hours).replace(".", ",")} h</strong></span>` : ""}
-          <small class="muted">Últimos ${board.period_days} días</small>
-        </div>` : ""}
+      <div class="today-grid">
+        <section class="today-block">
+          <div class="today-block-head"><h3>Fiscal</h3><button type="button" class="link-button" data-go-tab="impuestos">Ver impuestos</button></div>
+          ${fiscalHtml(board.fiscal)}
+        </section>
+        <section class="today-block">
+          <div class="today-block-head"><h3>Banco</h3><button type="button" class="link-button" data-go-tab="negocio" data-go-anchor="bankCard">Ver conciliación</button></div>
+          ${bankHtml(board.bank)}
+        </section>
+      </div>
       ${board.top.length ? `
-        <div class="board-top">
-          <h3>${board.top.length === 1 ? "Esta es la cosa" : `Estas son las ${board.top.length} cosas`} que deberías revisar hoy</h3>
-          <ol>${board.top.map((item, index) => `<li><span class="briefing-rank">${index + 1}</span>${listItem(item)}</li>`).join("")}</ol>
+        <div class="today-top">
+          <h3>${board.top.length === 1 ? "Lo que deberías revisar hoy" : `Las ${board.top.length} cosas que deberías revisar hoy`}</h3>
+          <ol>${board.top.map(topItem).join("")}</ol>
+          ${extra > 0 ? `<button type="button" class="link-button" data-go-cases>Y ${extra} más en Expedientes</button>` : ""}
         </div>` : ""}
+      ${board.work ? `
+        <p class="today-work">
+          Últimos ${board.period_days} días: ${board.work.events} entradas trabajadas · ${board.work.documents} documentos · ${board.work.cases} expedientes · ${board.work.anomalies} anomalías · ${board.work.requests} documentos pedidos${board.intervention.total ? ` · <span title="${esc(`${board.intervention.solo} solos · ${board.intervention.with_ai} con IA · ${board.intervention.human} a una persona · ${board.intervention.failed} fallidos`)}">intervención humana ${(board.intervention.human_rate * 100).toFixed(1).replace(".", ",")} %</span>` : ""}${board.time_saved.minutes ? ` · <span title="${esc(board.time_saved.note + " " + board.time_saved.assumptions.map((item) => `${item.count} × ${item.minutes} min (${item.what})`).join("; "))}">≈ ${String(board.time_saved.hours).replace(".", ",")} h ahorradas (estimación)</span>` : ""}
+        </p>` : ""}
     `;
   }
 
@@ -200,8 +267,8 @@
               <span>${esc(item.kind === "ANOMALY" ? item.procedure_label : item.organism_label || "")}</span>
               ${item.reference ? `<span>ref. ${esc(item.reference)}</span>` : ""}
             </span>
-            <strong class="case-headline">${esc(item.headline || item.title)}</strong>
-            <span class="case-title">${esc(item.title)}</span>
+            <strong class="case-headline">${esc(item.title || item.headline)}</strong>
+            ${subjectLine(item) ? `<span class="case-title">${esc(subjectLine(item))}</span>` : ""}
             ${item.summary ? `<span class="case-summary">${esc(item.summary)}</span>` : ""}
             <span class="case-meta">
               ${progress}
@@ -258,8 +325,8 @@
     document.getElementById("caseBanner").innerHTML = `
       <div class="case-banner-main">
         <span class="case-banner-eyebrow"><span class="level-dot"></span>${esc(LEVEL_LABELS[item.level])} · <span class="mono">${esc(item.code)}</span>${item.reference ? ` · ref. ${esc(item.reference)}` : ""}</span>
-        <h2>${esc(item.headline || item.title)}</h2>
-        <p>${esc(item.title)}</p>
+        <h2>${esc(item.title || item.headline)}</h2>
+        ${subjectLine(item, true) ? `<p>${esc(subjectLine(item, true))}</p>` : ""}
       </div>
       <div class="case-banner-side">
         ${["NOTIFICATION", "DEADLINE"].includes(item.kind) ? `<div class="case-countdown"><strong>${esc(big)}</strong><small>${esc(small)}</small></div>` : ""}
@@ -343,15 +410,78 @@
         <button type="button" class="act-btn" data-retry-event="${facts.processing.event_id}">${window.icon("repeat")} Reanudar</button>
       </div>` : "";
 
+    // Lo que ya dice el resumen no se repite como hallazgo.
+    const lead = (item.summary || "").toLowerCase();
+    const found = insights.filter((text) => !lead.includes(String(text).toLowerCase().replace(/\.$/, "")));
+
+    const steps = item.run?.steps || [];
+    const checked = steps.length ? `
+      <div class="summary-block">
+        <h3>Qué ha comprobado</h3>
+        <ol class="brief-list">
+          ${steps.map((step) => `
+            <li class="${step.status !== "OK" ? "is-failed" : ""}">
+              <span class="brief-agent">${esc(step.agent_name)}</span>
+              <span>${esc(step.summary)}${step.engine && step.engine !== "reglas" ? ` <span class="status-pill mini status-info">${esc(step.engine)}</span>` : ""}${step.status !== "OK" ? ` <span class="status-pill mini status-danger">${esc(step.status)}</span>` : ""}</span>
+            </li>`).join("")}
+        </ol>
+        <button type="button" class="link-button brief-more" data-show-pane="traza">Ver la traza con evidencias</button>
+      </div>` : "";
+
+    const docs = item.documents || [];
+    const missingDocs = docs.filter((doc) => ["missing", "partial", "requested"].includes(doc.status));
+    const docsBlock = docs.length ? `
+      <div class="summary-block">
+        <h3>Qué documentos necesita</h3>
+        <p class="brief-line"><strong>${item.documents_ready ?? docs.filter((doc) => ["ready", "received", "provided"].includes(doc.status)).length} de ${item.documents_total ?? docs.length}</strong> preparados${missingDocs.length ? `; faltan ${missingDocs.length}:` : "."}</p>
+        ${missingDocs.length ? `<ul class="brief-list plain">${missingDocs.map((doc) => `<li><span class="status-pill mini ${DOC_CLASS[doc.status] || "status-neutral"}">${esc(doc.status_label)}</span><span>${esc(doc.label)}</span></li>`).join("")}</ul>` : ""}
+        <button type="button" class="link-button brief-more" data-show-pane="documentacion">Ver la documentación</button>
+      </div>` : "";
+
+    const placeholders = (item.draft_response || "").match(/\[[^\]]+\]/g) || [];
+    const open = ["WAITING_HUMAN", "WAITING_DOCS", "OPEN"].includes(item.status);
+    const auto = [];
+    const yours = [];
+    const readyDocs = docs.filter((doc) => doc.status === "ready").length;
+    if (readyDocs) auto.push(`${readyDocs} documento(s) localizados y preparados para el paquete`);
+    if (item.has_draft) auto.push(item.draft_edited ? "Borrador de respuesta (editado por ti)" : "Borrador de respuesta redactado");
+    if (item.requests_pending) auto.push(`Ha pedido ${item.requests_pending} documento(s) y enviará recordatorios`);
+    if (item.internal_deadline && open) auto.push(`Vigila el plazo y te avisa antes del ${day(item.internal_deadline)}`);
+    if (open) {
+      if (placeholders.length) yours.push(`Completar ${placeholders.length} hueco(s) del borrador`);
+      const toProvide = missingDocs.filter((doc) => doc.status !== "requested");
+      if (toProvide.length) yours.push(`Aportar o pedir ${toProvide.length} documento(s)`);
+      yours.push(item.kind === "ANOMALY" ? "Aprobar la recomendación o descartarla" : item.kind === "DEADLINE" ? "Confirmar que está listo para presentar" : item.has_draft ? "Aprobar la respuesta y presentarla en la sede" : "Confirmar que está resuelto");
+    } else if (item.status === "READY_TO_FILE") {
+      yours.push("Presentarlo en la sede y anotar el justificante");
+    }
+    const split = auto.length || yours.length ? `
+      <div class="summary-block brief-split">
+        <div>
+          <h3>Lo hace CapaFiscal</h3>
+          ${auto.length ? `<ul class="brief-list plain">${auto.map((text) => `<li>${window.icon("check")}<span>${esc(text)}</span></li>`).join("")}</ul>` : `<p class="board-empty">Nada automático en este trámite.</p>`}
+        </div>
+        <div>
+          <h3>Lo apruebas tú</h3>
+          ${yours.length ? `<ul class="brief-list plain">${yours.map((text) => `<li>${window.icon("users")}<span>${esc(text)}</span></li>`).join("")}</ul>` : `<p class="board-empty">Nada pendiente.</p>`}
+        </div>
+      </div>` : "";
+
     document.getElementById("casePaneSummary").innerHTML = `
       ${processing}
       <p class="case-lead">${esc(item.summary || "")}</p>
-      ${insights.length ? `<div class="insight-list">${insights.map((text) => `<div class="report-warning">${window.icon("bulb")}<span>${esc(text)}</span></div>`).join("")}</div>` : ""}
+      ${split}
       <div class="case-summary-grid">
         <div>
+          ${found.length || findings ? `
+            <div class="summary-block">
+              <h3>Qué ha encontrado</h3>
+              ${found.length ? `<ul class="brief-list found">${found.map((text) => `<li>${esc(text)}</li>`).join("")}</ul>` : ""}
+            </div>` : ""}
+          ${findings}
           <div class="summary-block">
-            <h3>Qué hay que hacer</h3>
-            ${facts.recommendation ? `<p class="recommendation">${window.icon("sparkles")}<span><small>Recomendación de los agentes</small>${esc(facts.recommendation)}</span></p>` : ""}
+            <h3>Qué recomienda</h3>
+            ${facts.recommendation ? `<p class="recommendation">${window.icon("sparkles")}<span>${esc(facts.recommendation)}</span></p>` : ""}
             <ul class="check-list">
               ${(item.actions || []).map((action, index) => `
                 <li class="check-item">
@@ -364,7 +494,8 @@
               <button type="submit" class="btn-ghost">Añadir</button>
             </form>
           </div>
-          ${findings}
+          ${docsBlock}
+          ${checked}
           ${antecedents}
           ${anomalyEvidence}
         </div>
@@ -775,6 +906,13 @@
       const brief = event.target.closest("[data-brief]");
       if (brief) return openBriefingItem(Number(brief.dataset.brief));
       if (event.target.closest("[data-go-cases]")) return window.activateTab("expedientes");
+      const goTab = event.target.closest("#homeBriefing [data-go-tab]");
+      if (goTab) {
+        window.activateTab(goTab.dataset.goTab);
+        const anchor = goTab.dataset.goAnchor;
+        if (anchor) window.setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ block: "start" }), 300);
+        return;
+      }
       const boardCase = event.target.closest("#homeBriefing [data-open-case]");
       if (boardCase) return openCase(Number(boardCase.dataset.openCase)).catch((error) => window.showMessage(error.message, "error"));
       const pulseButton = event.target.closest("[data-run-pulse]");
@@ -844,6 +982,9 @@
       }
     });
     document.getElementById("intakeList").addEventListener("click", (event) => {
+      const paneLink = event.target.closest("[data-show-pane]");
+      if (paneLink) return showPane(paneLink.dataset.showPane);
+
       const retryButton = event.target.closest("[data-retry-event]");
       if (retryButton) retryEvent(Number(retryButton.dataset.retryEvent));
     });

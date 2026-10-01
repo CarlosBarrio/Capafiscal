@@ -39,6 +39,7 @@
     { label: "Subir documentos", hint: "Facturas o notificaciones en PDF", icon: "upload", run: () => document.getElementById("fileInput")?.click() },
     { label: "Nueva persona", hint: "Equipo", icon: "users", run: () => { window.activateTab("equipo"); window.setTimeout(() => document.getElementById("newEmployeeButton")?.click(), 50); } },
     { label: "Preparar nómina del mes", hint: "Nóminas", icon: "wallet", run: () => { window.activateTab("nominas"); document.getElementById("payrollCreateForm")?.scrollIntoView({ behavior: "smooth" }); } },
+    { label: "Conciliación bancaria", hint: "Negocio · movimientos, posibles y sin factura", icon: "link", run: () => { window.activateTab("negocio"); window.setTimeout(() => document.getElementById("bankCard")?.scrollIntoView({ block: "start" }), 300); } },
     { label: "Importar extracto bancario", hint: "Negocio · conciliación", icon: "link", run: () => { window.activateTab("negocio"); window.setTimeout(() => document.getElementById("bankImportForm")?.scrollIntoView({ behavior: "smooth" }), 300); } },
     { label: "Registrar notificación", hint: "AEAT, Seguridad Social…", icon: "landmark", run: () => { window.activateTab("notificaciones"); const form = document.getElementById("notificationFormCard"); if (form) { form.open = true; form.scrollIntoView({ behavior: "smooth" }); } } },
     { label: "Exportar libro registro", hint: "Informes", icon: "download", run: () => window.activateTab("informes") },

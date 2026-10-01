@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1.0"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
   >
   <title>CapaFiscal · Administrativo digital</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,7 +15,7 @@
   >
   <link
     rel="stylesheet"
-    href="/static/style.css?v=95"
+    href="/static/style.css?v=96"
   >
 </head>
 <body>
@@ -180,41 +180,12 @@
   <section class="tab-panel active" id="tab-panel">
     <div class="section-title">
       <h1 id="greetingLine">
-        Resumen de documentación
+        Hoy
       </h1>
       <p id="panelPeriodNote">
-        Información calculada a partir de documentos reales.
+        Qué ha pasado, qué ha hecho CapaFiscal y qué te toca a ti.
       </p>
     </div>
-
-    <div class="kpi-row">
-      <div class="kpi kpi-risk">
-        <span class="kpi-value" id="mRisks">0</span>
-        <span class="kpi-label" id="mRisksLabel">
-          decisiones pendientes
-        </span>
-      </div>
-      <div class="kpi">
-        <span class="kpi-value" id="mIva">0 €</span>
-        <span class="kpi-label" id="mIvaLabel">
-          IVA estimado del trimestre (303)
-        </span>
-      </div>
-      <div class="kpi">
-        <span class="kpi-value" id="mSpend">0 €</span>
-        <span class="kpi-label" id="mSpendLabel">
-          resultado del trimestre
-        </span>
-      </div>
-      <div class="kpi kpi-payments">
-        <span class="kpi-value" id="mUnpaid">0 €</span>
-        <span class="kpi-label" id="mUnpaidLabel">
-          pendiente de pago
-        </span>
-      </div>
-    </div>
-
-    <div id="agentWork" class="agent-work"></div>
 
     <div id="homeBriefing" class="briefing-card hidden"></div>
 
@@ -455,7 +426,7 @@
       <p class="report-note" id="cashflowNote"></p>
     </div>
 
-    <div class="card">
+    <div class="card" id="bankCard">
       <div class="card-head">
         <h2>Banco y conciliación</h2>
         <span class="card-sub" id="bankSub"></span>
@@ -471,6 +442,7 @@
         </label>
         <button type="submit" class="act-btn act-primary">Importar movimientos</button>
       </form>
+      <dl class="today-stats bank-summary" id="bankSummary"></dl>
       <div class="bank-toolbar">
         <div class="segmented" id="bankFilter">
           <button type="button" class="segment active" data-status="">Todos</button>
@@ -517,6 +489,14 @@
         </label>
         <p class="filter-summary" id="taxFormNote"></p>
       </div>
+    </div>
+
+    <div class="card" id="taxPositionCard">
+      <div class="card-head">
+        <h2>Posición del trimestre</h2>
+        <span class="card-sub" id="taxPositionSub"></span>
+      </div>
+      <div id="taxPosition" class="position-list"></div>
     </div>
 
     <div class="tax-layout">
@@ -1255,7 +1235,7 @@
     </div>
 
     <div class="chat-card">
-      <div class="chat-window" id="chatWindow" aria-live="polite"></div>
+      <div class="chat-window" id="chatWindow"></div>
       <div class="chat-suggestions" id="chatSuggestions">
         <button type="button" class="chip">¿Cuánto IVA llevo este trimestre?</button>
         <button type="button" class="chip">¿Qué modelos tengo que presentar?</button>
@@ -1920,22 +1900,22 @@
 <div id="appMessages" class="app-messages"></div>
 
 <script src="/static/auth.js?v=1"></script>
-<script src="/static/app.js?v=62"></script>
+<script src="/static/app.js?v=63"></script>
 <script src="/static/reports.js?v=3"></script>
 <script src="/static/assistant.js?v=2"></script>
 <script src="/static/activity.js?v=3"></script>
-<script src="/static/business.js?v=1"></script>
-<script src="/static/taxes.js?v=1"></script>
+<script src="/static/business.js?v=2"></script>
+<script src="/static/taxes.js?v=2"></script>
 <script src="/static/notifications.js?v=1"></script>
 <script src="/static/compliance.js?v=1"></script>
 <script src="/static/company.js?v=3"></script>
 <script src="/static/team.js?v=1"></script>
 <script src="/static/payroll.js?v=2"></script>
-<script src="/static/cases.js?v=5"></script>
+<script src="/static/cases.js?v=6"></script>
 <script src="/static/sales.js?v=2"></script>
 <script src="/static/outbox.js?v=3"></script>
 <script src="/static/timesheet.js?v=3"></script>
 <script src="/static/automations.js?v=4"></script>
-<script src="/static/shell.js?v=3"></script>
+<script src="/static/shell.js?v=4"></script>
 </body>
 </html>

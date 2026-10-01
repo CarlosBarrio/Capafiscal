@@ -271,6 +271,38 @@
     IGNORED: ["Ignorado", "status-neutral"],
   };
 
+  // Estado de conciliación (app/reconciliation.py): explica por qué un movimiento no está conciliado.
+  const RECON_LABELS = {
+    CONCILIADO: ["Conciliado", "status-success"],
+    POSIBLE: ["Posible coincidencia", "status-info"],
+    IMPORTE_DISTINTO: ["Importe distinto", "status-danger"],
+    DUPLICADO: ["Posible duplicado", "status-danger"],
+    SIN_FACTURA: ["Sin factura", "status-warning"],
+  };
+  const SUMMARY_STATES = [
+    ["CONCILIADO", "conciliados"],
+    ["POSIBLE", "posibles"],
+    ["SIN_FACTURA", "sin factura"],
+    ["IMPORTE_DISTINTO", "importe distinto"],
+    ["DUPLICADO", "duplicados"],
+    ["FACTURA_SIN_PAGO", "facturas aprobadas sin pago"],
+  ];
+  let reconciliation = {};
+
+  function renderBankSummary(data) {
+    const container = document.getElementById("bankSummary");
+    if (!container) return;
+    if (!data?.total) {
+      container.innerHTML = "";
+      return;
+    }
+    const counts = { ...data.counts, CONCILIADO: (data.counts.CONCILIADO || 0) };
+    container.innerHTML = `
+      <div><dt>movimientos</dt><dd>${data.total}</dd></div>
+      ${SUMMARY_STATES.map(([key, label]) => `<div class="${counts[key] && ["IMPORTE_DISTINTO", "DUPLICADO"].includes(key) ? "is-risk" : ""}"><dt>${label}</dt><dd>${counts[key] || 0}</dd></div>`).join("")}
+    `;
+  }
+
   async function loadBank() {
     const params = new URLSearchParams();
     if (bankStatus) params.set("status", bankStatus);
@@ -280,6 +312,13 @@
         window.apiRequest(`/bank/transactions?${params.toString()}`),
         window.apiRequest("/bank/imports"),
       ]);
+      try {
+        const data = await window.apiRequest("/bank/reconciliation");
+        reconciliation = Object.fromEntries((data.movements || []).map((item) => [item.transaction_id, item]));
+        renderBankSummary(data);
+      } catch {
+        reconciliation = {};
+      }
       renderBank(transactions);
 
       const sub = document.getElementById("bankSub");
@@ -305,7 +344,14 @@
       const invoice = transaction.invoice;
       const candidates = transaction.candidates || [];
 
-      let invoiceCell = `<span class="status-pill ${className}">${esc(label)}</span>`;
+      const recon = ["MATCHED", "IGNORED"].includes(transaction.match_status) ? null : reconciliation[transaction.id];
+      const [reconLabel, reconClass] = (recon && RECON_LABELS[recon.state]) || [label, className];
+      let invoiceCell = `<span class="status-pill ${reconClass}">${esc(reconLabel)}</span>`;
+      if (recon?.state === "IMPORTE_DISTINTO") {
+        invoiceCell += `<small class="muted block">${esc(recon.invoice_label || "Factura")} · diferencia ${money(recon.difference)}</small>`;
+      } else if (recon?.state === "DUPLICADO") {
+        invoiceCell += `<small class="muted block">${esc(recon.evidence?.[0] || "Mismo concepto e importe que otro movimiento")}</small>`;
+      }
 
       if (invoice) {
         invoiceCell += `
@@ -347,7 +393,7 @@
             ${esc(transaction.description)}
             ${transaction.account_label ? `<small class="muted block">${esc(transaction.account_label)}</small>` : ""}
           </td>
-          <td class="num ${transaction.amount < 0 ? "value-negative" : "value-positive"}">${money(transaction.amount)}</td>
+          <td class="num ${transaction.amount < 0 ? "" : "value-positive"}">${money(transaction.amount)}</td>
           <td>${invoiceCell}</td>
           <td class="actions-cell">${actions}</td>
         </tr>

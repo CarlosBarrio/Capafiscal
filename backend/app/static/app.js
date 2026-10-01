@@ -631,39 +631,18 @@ function renderOpenRisks(documents) {
 }
 
 async function loadPanelSummary() {
-  const year = new Date().getFullYear();
-  const quarter = currentQuarter();
-
-  const [taxResult, healthResult, paymentsResult, dashboardResult, agendaResult, activityResult] = await Promise.allSettled([
-    apiRequest(`/taxes/models/303?year=${year}&quarter=${quarter}`),
-    apiRequest(`/business-health?year=${year}&quarter=${quarter}`),
+  // Lo fiscal, el banco y la actividad del día los pinta el Director (cases.js).
+  const [paymentsResult, dashboardResult, agendaResult] = await Promise.allSettled([
     apiRequest("/payments"),
     apiRequest("/dashboard/today"),
     apiRequest("/agenda?horizon=30"),
-    apiRequest("/activity?limit=300"),
   ]);
 
   const hour = new Date().getHours();
   const greeting = hour < 14 ? "Buenos días" : hour < 21 ? "Buenas tardes" : "Buenas noches";
+  const today = new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
   setText("greetingLine", greeting);
-  setText("panelPeriodNote", `Esto es lo que tu administrativo digital ha preparado · trimestre en curso ${quarter}T ${year}.`);
-
-  if (taxResult.status === "fulfilled") {
-    const tax = taxResult.value;
-    setText("mIva", formatMoney(tax.result));
-    setText("mIvaLabel", `IVA ${tax.result < 0 ? "a compensar" : "a ingresar"} estimado ${tax.period_label} (303)`);
-  }
-
-  if (healthResult.status === "fulfilled") {
-    const health = healthResult.value;
-    setText("mSpend", formatMoney(health.result));
-    setText(
-      "mSpendLabel",
-      health.income
-        ? `resultado ${health.period} · margen ${String(health.margin ?? 0).replace(".", ",")} %`
-        : `resultado ${health.period} (sube tus facturas emitidas)`
-    );
-  }
+  setText("panelPeriodNote", `${today.charAt(0).toUpperCase()}${today.slice(1)} · qué ha pasado, qué ha hecho CapaFiscal y qué te toca a ti.`);
 
   if (paymentsResult.status === "fulfilled") {
     renderPayments(paymentsResult.value);
@@ -678,10 +657,6 @@ async function loadPanelSummary() {
 
   if (agendaResult.status === "fulfilled") {
     renderAgenda(agendaResult.value);
-  }
-
-  if (activityResult.status === "fulfilled") {
-    renderAgentWork(activityResult.value);
   }
 }
 
@@ -739,58 +714,6 @@ function renderAgenda(agenda) {
       </button>
     `;
   }).join("");
-}
-
-const AGENT_WORK_GROUPS = [
-  ["document.uploaded", "inbox", "documentos recibidos"],
-  ["document.processing.completed", "eye", "documentos leídos"],
-  ["notification.detected", "landmark", "notificaciones detectadas"],
-  ["bank.reconciled", "link", "pagos conciliados"],
-  ["invoice.approved", "check", "facturas aprobadas"],
-  ["supplier_rule.learned", "brain", "categorías aprendidas"],
-  ["payroll.approved", "wallet", "nóminas aprobadas"],
-  ["sales_invoice.issued", "invoice", "facturas emitidas"],
-  ["outbox.sent", "send", "mensajes enviados"],
-  ["automation.dunning", "coins", "revisiones de cobros"],
-  ["automation.recurring_invoices", "repeat", "revisiones de recurrentes"],
-];
-
-function renderAgentWork(events) {
-  const container = document.getElementById("agentWork");
-  if (!container) return;
-
-  const since = Date.now() - 24 * 60 * 60 * 1000;
-  const recent = events.filter((event) => new Date(event.created_at).getTime() >= since);
-
-  const tiles = AGENT_WORK_GROUPS
-    .map(([action, icon, label]) => {
-      const count = recent.filter((event) => event.action === action || event.action === `${action}_with_warnings`).length;
-      return { icon, label, count };
-    })
-    .filter((tile) => tile.count > 0);
-
-  if (!tiles.length) {
-    container.innerHTML = `
-      <div class="agent-work-empty">
-        ${icon("moon")}
-        Sin actividad en las últimas 24 horas. Sube documentos, importa el banco o conecta Outlook y el agente empezará a trabajar.
-      </div>
-    `;
-    return;
-  }
-
-  container.innerHTML = `
-    <p class="agent-work-title">Trabajo del agente en las últimas 24 horas</p>
-    <div class="agent-work-tiles">
-      ${tiles.map((tile) => `
-        <div class="agent-work-tile">
-          <span class="agent-work-icon">${icon(tile.icon)}</span>
-          <strong>${tile.count}</strong>
-          <small>${escapeHtml(tile.label)}</small>
-        </div>
-      `).join("")}
-    </div>
-  `;
 }
 
 function renderRecommendation(recommendation) {
