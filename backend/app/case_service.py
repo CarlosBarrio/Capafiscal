@@ -430,6 +430,21 @@ def portal_info(database: Session, request: DocumentRequest) -> dict[str, Any]:
     }
 
 
+def recalculate(database: Session, case: Case) -> None:
+    """Con la documentación completa, los agentes vuelven a trabajar el expediente (escrito, impacto, plazos)."""
+    from app.agents.orchestrator import rerun_case
+
+    savepoint = database.begin_nested()
+    try:
+        rerun_case(database, case)
+        savepoint.commit()
+    except Exception as error:  # el recálculo no debe perder el documento recibido
+        savepoint.rollback()
+        event(database, case, f"Perseguidor · No se pudo recalcular el expediente: {str(error)[:150]}", kind="agent", actor="perseguidor")
+        return
+    event(database, case, "Perseguidor · Expediente recalculado con la documentación recibida", kind="agent", actor="perseguidor")
+
+
 def receive_upload(database: Session, request: DocumentRequest, *, filename: str, content: bytes, content_type: str | None) -> dict[str, Any]:
     from app.agents.director import prioritize
 
@@ -452,9 +467,10 @@ def receive_upload(database: Session, request: DocumentRequest, *, filename: str
         data={"attachment_id": attachment.id, "verification": attachment.verification},
     )
 
-    if not any(item.status == "PENDING" for item in case.requests) and case.status == "WAITING_DOCS":
+    if not any(item.status == "PENDING" for item in case.requests) and case.status in ("WAITING_DOCS", "WAITING_HUMAN"):
         case.status = "WAITING_HUMAN"
         event(database, case, "Perseguidor · Documentación completa: el expediente vuelve a ti para revisar y aprobar", kind="agent", actor="perseguidor")
+        recalculate(database, case)
     prioritize(database, case, date.today())
     add_audit_event(database, action="case.document_received", entity_type="case", entity_id=case.id, actor="portal", event_data={"request_id": request.id, "filename": attachment.filename})
     return {"received": True, "verification": attachment.verification}

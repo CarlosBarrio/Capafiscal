@@ -575,18 +575,21 @@ def memory_profiles(database: DatabaseDependency, party: str | None = Query(defa
     """Memoria financiera: cómo se comporta normalmente cada proveedor y cliente."""
     from sqlalchemy import select
 
-    from app.financial_memory import refresh_profiles
+    from app.financial_memory import compute_profiles
     from app.financial_memory import serialize
     from app.models import CounterpartyProfile
 
+    def ranked(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return sorted(rows, key=lambda item: -(item.get("amount") or {}).get("total_12m", 0))
+
     if refresh or database.scalar(select(CounterpartyProfile.id).limit(1)) is None:
-        refresh_profiles(database)
-        database.commit()
+        # Calculado al vuelo, sin guardar: una lectura no escribe (los guarda el Detector en su barrido).
+        return ranked([{"party": kind, "key": key, "name": name, **profile, "updated_at": None}
+                       for kind, key, name, profile in compute_profiles(database) if not party or kind == party])
     statement = select(CounterpartyProfile)
     if party:
         statement = statement.where(CounterpartyProfile.party == party)
-    records = database.scalars(statement).all()
-    return sorted((serialize(item) for item in records), key=lambda item: -(item.get("amount") or {}).get("total_12m", 0))
+    return ranked([serialize(item) for item in database.scalars(statement).all()])
 
 
 @router.get("/memory/profiles/{party}/{key}", tags=["Agentes"])
@@ -660,3 +663,15 @@ def portal_page(token: str) -> HTMLResponse:
 
     page = Path(__file__).resolve().parent / "static" / "portal.html"
     return HTMLResponse(page.read_text(encoding="utf-8"))
+
+
+@router.get("/invoices/{invoice_id}/memory", tags=["Agentes"])
+def invoice_memory(invoice_id: int, database: DatabaseDependency) -> dict[str, Any]:
+    """«Esto es raro para ti»: la factura comparada con lo que ese proveedor o cliente hace normalmente contigo."""
+    from app.business_memory import unusual
+    from app.models import Invoice
+
+    invoice = database.get(Invoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Factura no encontrada.")
+    return unusual(database, invoice)

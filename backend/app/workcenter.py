@@ -27,6 +27,7 @@ from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents.perseguidor import CHASE
 from app.models import AuditEvent
 from app.models import Case
 from app.models import DocumentRequest
@@ -106,14 +107,21 @@ def decisions(database: Session, today: date, cases: list[Any]) -> list[dict[str
         rows.append(item("accion", "event", event.id, f"No se pudo procesar una entrada ({event.source})", (event.error or "Error al procesar")[:140],
                          action={"label": "Ver entrada", "tab": "expedientes", "view": "agents"}, score=95))
 
+    from app.business_memory import unusual
+
     pending = database.scalars(select(Invoice).where(Invoice.review_status == "PENDING").order_by(Invoice.id.desc()).limit(50)).all()
+    pool = list(database.scalars(select(Invoice).where(Invoice.invoice_date.is_not(None), Invoice.total.is_not(None))).all()) if pending else []
     for invoice in pending:
-        problems = [row for row in invoice_checks(invoice) if not row["ok"]]
+        memory = unusual(database, invoice, today=today, pool=pool)["signals"]
+        problems = [row for row in invoice_checks(invoice) if not row["ok"]] + [
+            {"label": signal["text"], "ok": False if signal["severity"] in ("high", "medium") else None} for signal in memory]
         party = invoice.customer_name if invoice.direction == "ISSUED" else invoice.supplier_name
-        why = "; ".join(row["label"].lower() for row in problems) if problems else "Todo cuadra: falta tu visto bueno"
+        rare = next((signal["text"] for signal in memory if signal["severity"] == "high"), None)
+        why = rare or ("; ".join(row["label"].lower() for row in problems[:3]) if problems else "Todo cuadra: falta tu visto bueno")
         rows.append(item("accion", "invoice", invoice.id, f"Factura {invoice.invoice_number or 's/n'} · {party or 'sin identificar'}", why,
-                         action={"label": "Revisar factura", "document_id": invoice.document_id}, checked=invoice_checks(invoice),
-                         amount=float(invoice.total) if invoice.total is not None else None, score=40 + 10 * len(problems),
+                         action={"label": "Revisar factura", "document_id": invoice.document_id},
+                         checked=invoice_checks(invoice) + [{"label": signal["text"], "ok": False if signal["severity"] != "info" else None} for signal in memory],
+                         amount=float(invoice.total) if invoice.total is not None else None, score=40 + 10 * len(problems) + (25 if rare else 0),
                          when=invoice.invoice_date.isoformat() if invoice.invoice_date else None)
                     | {"simulate": {"type": "approve_invoice", "invoice_id": invoice.id}, "simulate_label": "¿Qué cambia si la apruebo?"})
 
@@ -205,8 +213,9 @@ def working(database: Session, today: date, cases: list[Any]) -> list[dict[str, 
             next_at = min((request.next_reminder_at for request in items if request.next_reminder_at), default=None)
             reminders = max(request.reminders_sent for request in items)
             rows.append(item("haciendo", "chase", case_id, f"Esperando documentación · {case.title}",
-                             f"Pedido: {labels}. " + (f"{reminders} recordatorio(s) enviados. " if reminders else "")
-                             + (f"Próximo recordatorio el {next_at:%d/%m}." if next_at else "El Perseguidor vuelve a insistir si no llega."),
+                             f"Pedido: {labels}. " + (f"{min(reminders, 2)} recordatorio(s) enviados. " if reminders else "")
+                             + (f"Siguiente paso: {CHASE[reminders][1]} el {next_at:%d/%m}." if next_at and reminders < len(CHASE)
+                                else "Ya se avisó al gestor: conviene llamar." if reminders >= len(CHASE) else "El Perseguidor vuelve a insistir si no llega."),
                              action={"label": "Ver expediente", "case_id": case_id}, when=next_at.isoformat() if next_at else None) | {"code": case.code})
         # Sin enviar: es la petición redactada que espera visto bueno («Enviar: …» en Requiere tu decisión).
     for case in cases:
@@ -277,6 +286,20 @@ def overnight(database: Session, since: datetime) -> dict[str, Any]:
     return {"since": since.isoformat(), "total": sum(line["count"] for line in lines), "items": [line for line in lines if line["count"]]}
 
 
+def learning(database: Session) -> dict[str, Any]:
+    """«CapaFiscal ha aprendido N reglas»: lo aprendido de tus correcciones, aprobado por una persona y versionado."""
+    rules = database.scalars(select(LearningRule)).all()
+    approved = [rule for rule in rules if rule.status == "APROBADA"]
+    version = max((rule.version or 0 for rule in approved), default=0)
+    proposals = sum(1 for rule in rules if rule.status == "PROPUESTA")
+    if not rules:
+        text = "Aún no ha aprendido reglas: aprende de tus correcciones y te las propone."
+    else:
+        text = (f"CapaFiscal ha aprendido {len(approved)} regla(s)" + (f" (versión {version})" if version else "")
+                + (f" · {proposals} propuesta(s) esperan tu decisión" if proposals else ""))
+    return {"approved": len(approved), "version": version, "proposals": proposals, "text": text}
+
+
 def work_center(database: Session, *, today: date | None = None, now: datetime | None = None, user_name: str | None = None) -> dict[str, Any]:
     from app.agents.director import assessed_open_cases
     from app.agents.director import operational_board
@@ -316,4 +339,5 @@ def work_center(database: Session, *, today: date | None = None, now: datetime |
                    for key, label in GROUPS],
         "counts": {key: len(groups[key]) for key, _ in GROUPS if key != "resuelto"},
         "time_saved": board["time_saved"],
+        "learning": learning(database),
     }

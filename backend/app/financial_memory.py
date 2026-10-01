@@ -125,6 +125,23 @@ def describe(profile: dict[str, Any], party: str) -> str:
 
 def refresh_profiles(database: Session, *, today: date | None = None) -> int:
     """Recalcula y guarda los perfiles de proveedores y clientes."""
+    from app.tenancy import TenantError
+    from app.tenancy import current_tenant
+    from app.tenancy import strict
+
+    tenant = current_tenant(database)
+    if tenant is None and strict():
+        raise TenantError("No se pueden guardar perfiles sin cliente elegido.")  # la sentencia directa no pasa por before_flush
+    tenant = tenant or 0
+    profiles = compute_profiles(database, today=today)
+    for party, key, name, profile in profiles:
+        upsert_profile(database, tenant=tenant, party=party, key=key, name=name, profile=profile)
+    database.expire_all()
+    return len(profiles)
+
+
+def compute_profiles(database: Session, *, today: date | None = None) -> list[tuple[str, str, str, dict[str, Any]]]:
+    """Los perfiles calculados en memoria (solo lee): (parte, clave, nombre, perfil)."""
     today = today or date.today()
     invoices = database.scalars(
         select(Invoice).where(Invoice.invoice_date.is_not(None), Invoice.total.is_not(None), Invoice.review_status != "REJECTED")
@@ -147,23 +164,15 @@ def refresh_profiles(database: Session, *, today: date | None = None) -> int:
             decisions[key] = {"code": case.code, "decision": "descartada" if case.status == "DISMISSED" else "resuelta", "note": case.resolution[:200],
                               "date": (case.resolved_at or case.updated_at).date().isoformat() if (case.resolved_at or case.updated_at) else None}
 
-    from app.tenancy import TenantError
-    from app.tenancy import current_tenant
-    from app.tenancy import strict
-
-    tenant = current_tenant(database)
-    if tenant is None and strict():
-        raise TenantError("No se pueden guardar perfiles sin cliente elegido.")  # la sentencia directa no pasa por before_flush
-    tenant = tenant or 0
+    result = []
     for (party, key), items in groups.items():
         profile = build_profile(items, party, today)
         case = anomalies.get(key)
         profile["last_anomaly"] = {"code": case.code, "type": case.procedure, "title": case.title, "status": case.status} if case else None
         profile["last_decision"] = decisions.get(key)
         name = (items[-1].supplier_name if party == "supplier" else items[-1].customer_name) or key
-        upsert_profile(database, tenant=tenant, party=party, key=key, name=name, profile=profile)
-    database.expire_all()
-    return len(groups)
+        result.append((party, key, name, profile))
+    return result
 
 
 def upsert_profile(database: Session, *, tenant: int, party: str, key: str, name: str, profile: dict[str, Any]) -> None:

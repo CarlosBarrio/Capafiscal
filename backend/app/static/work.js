@@ -91,6 +91,7 @@
         <span class="board-pulse ${pulse.healthy ? "is-ok" : "is-late"}" title="${esc((pulse.triggers || []).map((item) => `${item.label}: ${item.events_today} hoy`).join(" · "))}"><span class="pulse-dot"></span>${esc(pulse.label || "")}</span>
       </div>
       <p class="work-night">${work}</p>
+      ${data.learning ? `<p class="work-night">${esc(data.learning.text)}</p>` : ""}
       ${close ? `
         <button type="button" class="work-close" data-go="cierre">
           <span class="work-close-text"><strong>${esc(close.headline)}</strong><span class="muted">Ir al cierre ${window.icon("chevron")}</span></span>

@@ -20,7 +20,6 @@ from app.agents.base import Agent
 from app.agents.base import AgentContext
 from app.agents.base import StepResult
 from app.agents.base import evidence
-from app.calendar_es import add_business_days
 from app.config import settings
 from app.models import Case
 from app.models import CaseEvent
@@ -28,8 +27,7 @@ from app.models import CompanyProfile
 from app.models import DocumentRequest
 from app.models import OutboxMessage
 
-REMINDER_BUSINESS_DAYS = 3
-MAX_REMINDERS = 3
+MAX_REMINDERS = 2  # el segundo recordatorio ya es urgente; después se avisa al gestor
 
 
 def portal_url(token: str) -> str:
@@ -190,8 +188,19 @@ class Perseguidor(Agent):
         )
 
 
+# Cadencia (días naturales desde la primera petición enviada): recordatorio, segundo recordatorio y aviso al gestor.
+CHASE = ((2, "recordatorio"), (5, "segundo recordatorio"), (8, "aviso al gestor"))
+
+
+def chase_plan(first_sent: date, level: int) -> date | None:
+    """Cuándo toca el siguiente paso del Perseguidor (None: ya se avisó al gestor)."""
+    from datetime import timedelta
+
+    return first_sent + timedelta(days=CHASE[level][0]) if level < len(CHASE) else None
+
+
 def follow_up(database: Session, today: date | None = None) -> dict[str, Any]:
-    """Recordatorios de las peticiones enviadas que siguen sin respuesta."""
+    """Persigue lo pedido sin respuesta: a las 48 h recuerda, a los 5 días insiste y a los 8 avisa al gestor."""
     from app.outbox_service import create_message
 
     today = today or date.today()
@@ -206,53 +215,53 @@ def follow_up(database: Session, today: date | None = None) -> dict[str, Any]:
         messages = database.scalars(
             select(OutboxMessage)
             .where(OutboxMessage.entity_type == "case_request", OutboxMessage.entity_id == case.id)
-            .order_by(OutboxMessage.id.desc())
+            .order_by(OutboxMessage.id)
         ).all()
         if not messages or any(item.status == "DRAFT" for item in messages):
             continue  # aún no se ha enviado, o ya hay un recordatorio esperando visto bueno
-        last_sent = next((item for item in messages if item.status == "SENT"), None)
-        if last_sent is None or last_sent.sent_at is None:
+        first_sent = next((item for item in messages if item.status == "SENT" and item.sent_at), None)
+        if first_sent is None:
             continue
 
-        due = add_business_days(last_sent.sent_at.date(), REMINDER_BUSINESS_DAYS)
+        level = max(item.reminders_sent for item in pending)
+        due = chase_plan(first_sent.sent_at.date(), level)
+        if due is None:
+            continue  # ya se avisó al gestor: ahora lo decide una persona
         if today < due:
             for item in pending:
                 item.next_reminder_at = due
             continue
 
-        level = max(item.reminders_sent for item in pending) + 1
-        subject, body = request_message_body(case, pending, reminder=level)
-        create_message(
-            database,
-            kind="REQUEST",
-            subject=subject,
-            body=body,
-            to_email=pending[0].to_email,
-            to_name=pending[0].to_name,
-            entity_type="case_request",
-            entity_id=case.id,
-            level=level,
-            created_by="agent",
-        )
+        level += 1
         for item in pending:
             item.reminders_sent = level
             item.last_contact_at = datetime.now(timezone.utc)
-            item.next_reminder_at = add_business_days(today, REMINDER_BUSINESS_DAYS)
-        reminders += 1
-        database.add(
-            CaseEvent(case_id=case.id, kind="agent", actor="perseguidor", title=f"Perseguidor · Recordatorio {level} preparado ({len(pending)} documento(s) sin recibir)", data={})
-        )
-        if level >= MAX_REMINDERS:
-            case.priority = min(100, case.priority + 15)
-            escalated += 1
-            database.add(
-                CaseEvent(
-                    case_id=case.id,
-                    kind="agent",
-                    actor="perseguidor",
-                    title="Perseguidor · Sin respuesta tras varios recordatorios: conviene llamar por teléfono",
-                    data={},
-                )
-            )
+            item.next_reminder_at = chase_plan(first_sent.sent_at.date(), level)
+        if level < len(CHASE):
+            subject, body = request_message_body(case, pending, reminder=level)
+            create_message(database, kind="REQUEST", subject=subject, body=body, to_email=pending[0].to_email, to_name=pending[0].to_name,
+                           entity_type="case_request", entity_id=case.id, level=level, created_by="agent")
+            reminders += 1
+            database.add(CaseEvent(case_id=case.id, kind="agent", actor="perseguidor",
+                                   title=f"Perseguidor · {CHASE[level - 1][1].capitalize()} preparado ({len(pending)} documento(s) sin recibir)", data={}))
+            continue
+
+        # 8 días sin respuesta: deja de insistir por correo y lo pone delante de una persona.
+        days = (today - first_sent.sent_at.date()).days
+        case.priority = min(100, (case.priority or 0) + 15)
+        if case.status == "WAITING_DOCS":
+            case.status = "WAITING_HUMAN"
+        case.facts = {**(case.facts or {}), "chase_escalated": {"date": today.isoformat(), "days": days, "pending": [item.label for item in pending]}}
+        escalated += 1
+        database.add(CaseEvent(case_id=case.id, kind="agent", actor="perseguidor",
+                               title=f"Perseguidor · {days} días sin respuesta tras dos recordatorios: aviso al gestor (conviene llamar)",
+                               data={"pending": [item.label for item in pending]}))
+        company = database.scalar(select(CompanyProfile).limit(1))
+        if company is not None and company.advisor_email:
+            create_message(database, kind="NOTICE", subject=f"Sin respuesta en {days} días · {case.title}",
+                           body=(f"Hola,\n\nSeguimos sin recibir esta documentación para {case.title.lower()} tras dos recordatorios:\n\n"
+                                 + "\n".join(f"  • {item.label}" for item in pending)
+                                 + "\n\nConviene llamar al cliente.\n\nCapaFiscal"),
+                           to_email=company.advisor_email, to_name="Gestoría", entity_type="case_escalation", entity_id=case.id, level=level, created_by="agent")
 
     return {"reminders": reminders, "escalated": escalated}
