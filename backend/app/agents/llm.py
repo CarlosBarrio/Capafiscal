@@ -173,8 +173,15 @@ def _call(*, system: str, prompt: str, effort: str, max_tokens: int, output_form
 
 INVOICE_FIELDS = (
     "supplier_name", "supplier_tax_id", "customer_name", "customer_tax_id", "invoice_number",
-    "invoice_date", "due_date", "subtotal", "tax_total", "withholding_total", "total", "tax_rate", "concept",
+    "invoice_date", "due_date", "subtotal", "tax_total", "withholding_total", "total", "tax_rate", "concept", "category",
 )
+
+
+def expense_categories() -> list[str]:
+    from app.extractor import DEFAULT_CATEGORY
+    from app.extractor import EXPENSE_CATEGORIES
+
+    return [name for name, _account, _keywords, _suppliers in EXPENSE_CATEGORIES] + [DEFAULT_CATEGORY]
 
 INVOICE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -192,6 +199,7 @@ INVOICE_SCHEMA: dict[str, Any] = {
         "total": {"type": "string", "description": "Total de la factura, con punto decimal."},
         "tax_rate": {"type": "string", "description": "Tipo de IVA principal (21, 10, 4, 0), o cadena vacía."},
         "concept": {"type": "string", "description": "Concepto breve (máx. 12 palabras)."},
+        "category": {"type": "string", "enum": expense_categories(), "description": "Categoría contable del gasto."},
     },
     "required": list(INVOICE_FIELDS),
     "additionalProperties": False,

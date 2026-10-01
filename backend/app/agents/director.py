@@ -201,3 +201,129 @@ def daily_briefing(database: Session, today: date | None = None, limit: int = 8)
     else:
         headline = f"Hoy deberías revisar {len(top)} cosas" + (f", {urgent_top} urgentes" if urgent_top > 1 else ", 1 urgente" if urgent_top else "")
     return {"date": today.isoformat(), "headline": headline, "counts": counts, "items": top, "total": len(items)}
+
+
+# ---------------------------------------------------------------------
+# Centro operativo: la razón para abrir CapaFiscal por la mañana
+# ---------------------------------------------------------------------
+
+AUTO_RESOLVED_PREFIX = "Resuelta automáticamente"
+
+
+def attention_reason(case: Case, today: date) -> str:
+    """Una línea con el porqué: plazo, dato del hallazgo o bloqueo."""
+    facts = case.facts or {}
+    processing = facts.get("processing")
+    if processing:
+        return f"el agente {processing.get('agent_name') or processing.get('failed_agent')} no pudo terminar"
+    def until(value: date) -> str:
+        days = (value - today).days
+        return "vencido" if days < 0 else "hoy" if days == 0 else "mañana" if days == 1 else f"en {days} días"
+
+    if case.deadline:
+        text = f"vence {until(case.deadline)}" if case.deadline >= today else "plazo vencido"
+        if case.internal_deadline and case.internal_deadline < case.deadline and case.internal_deadline >= today:
+            text += f" (objetivo interno: {until(case.internal_deadline)})"
+        return text
+    for finding in facts.get("findings") or []:
+        data = finding.get("datos") or {}
+        if finding.get("tipo") == "IMPORTE_ATIPICO" and data.get("ratio"):
+            return f"{str(round(data['ratio'], 1)).replace('.', ',')} veces por encima de lo habitual"
+        if finding.get("agente") == "detector":
+            return finding.get("resultado") or ""
+    if facts.get("severity_score"):
+        ratio = facts.get("ratio") or (facts.get("median") and case.amount and float(case.amount) / float(facts["median"]))
+        if ratio:
+            return f"{str(round(float(ratio), 1)).replace('.', ',')} veces por encima de lo habitual"
+    return (case.summary or "")[:120]
+
+
+def operational_board(database: Session, today: date | None = None, *, days: int = 7) -> dict[str, Any]:
+    """Qué requiere atención, qué está pendiente y qué se ha resuelto solo."""
+    from datetime import datetime
+    from datetime import timedelta
+    from datetime import timezone
+
+    from sqlalchemy import func
+
+    from app.models import DocumentRequest
+    from app.models import IngestedEvent
+
+    today = today or date.today()
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    cases = database.scalars(select(Case).where(Case.status.in_(OPEN_STATUSES))).all()
+    for case in cases:
+        prioritize(database, case, today)
+
+    # 🔴 Requiere tu atención: lo urgente o importante que espera a una persona, y lo bloqueado.
+    attention = []
+    for case in sorted(cases, key=lambda item: -item.priority):
+        blocked = bool((case.facts or {}).get("processing"))
+        if case.status == "WAITING_HUMAN" and (case.level in {"critical", "high"} or blocked):
+            attention.append({
+                "case_id": case.id, "code": case.code, "title": case.title, "reason": attention_reason(case, today),
+                "level": "critical" if blocked else case.level, "priority": case.priority, "kind": case.kind, "blocked": blocked,
+            })
+    failed_events = database.scalars(select(IngestedEvent).where(IngestedEvent.status == "FAILED").order_by(IngestedEvent.id.desc())).all()
+    for event in failed_events[:5]:
+        attention.append({
+            "case_id": None, "event_id": event.id, "code": None, "title": f"No se pudo procesar una entrada ({event.source})",
+            "reason": (event.error or "")[:120], "level": "critical", "priority": 100, "kind": "EVENT", "blocked": True,
+        })
+
+    # 🟠 Pendiente: avanza, pero no hoy necesariamente.
+    requested = database.scalar(
+        select(func.count()).select_from(DocumentRequest).join(Case, Case.id == DocumentRequest.case_id).where(DocumentRequest.status == "PENDING", Case.status.in_(OPEN_STATUSES))
+    ) or 0
+    blocked_cases = sum(1 for case in cases if (case.facts or {}).get("processing"))
+    soon = today + timedelta(days=15)
+    upcoming = sum(1 for case in cases if case.deadline and today <= case.deadline <= soon and case.level not in {"critical", "high"})
+    to_review = sum(1 for case in cases if case.status == "WAITING_HUMAN" and case.level in {"normal", "low"} and not (case.facts or {}).get("processing"))
+    ready = sum(1 for case in cases if case.status == "READY_TO_FILE")
+    pending_items = [
+        {"key": "requested", "count": requested, "label": "documento(s) solicitados sin recibir"},
+        {"key": "blocked", "count": blocked_cases + len(failed_events), "label": "expediente(s) o entradas bloqueadas"},
+        {"key": "upcoming", "count": upcoming, "label": "plazo(s) en los próximos 15 días"},
+        {"key": "to_review", "count": to_review, "label": "expediente(s) para revisar sin prisa"},
+        {"key": "ready", "count": ready, "label": "listo(s) para presentar"},
+    ]
+
+    # 🟢 Resuelto sin intervención: trabajo que no ha necesitado a nadie.
+    no_case = database.scalar(
+        select(func.count()).select_from(IngestedEvent).where(IngestedEvent.status == "COMPLETED", IngestedEvent.case_id.is_(None), IngestedEvent.updated_at >= since)
+    ) or 0
+    duplicates = database.scalar(select(func.coalesce(func.sum(IngestedEvent.duplicates), 0)).where(IngestedEvent.updated_at >= since)) or 0
+    auto_closed = database.scalar(
+        select(func.count()).select_from(Case).where(Case.status == "RESOLVED", Case.resolution.like(f"{AUTO_RESOLVED_PREFIX}%"), Case.resolved_at >= since)
+    ) or 0
+    received = database.scalar(
+        select(func.count()).select_from(DocumentRequest).where(DocumentRequest.status == "RECEIVED", DocumentRequest.received_at >= since)
+    ) or 0
+    prepared = database.scalar(
+        select(func.count()).select_from(IngestedEvent).where(IngestedEvent.status == "COMPLETED", IngestedEvent.case_id.is_not(None), IngestedEvent.updated_at >= since)
+    ) or 0
+    resolved_items = [
+        {"key": "no_case", "count": no_case, "label": "documento(s) revisados por los agentes sin nada que objetar"},
+        {"key": "prepared", "count": prepared, "label": "expediente(s) preparados de principio a fin"},
+        {"key": "received", "count": received, "label": "documento(s) conseguidos por el Perseguidor"},
+        {"key": "auto_closed", "count": auto_closed, "label": "aviso(s) cerrados solos al desaparecer el problema"},
+        {"key": "duplicates", "count": int(duplicates), "label": "entrada(s) repetidas ignoradas"},
+    ]
+
+    top = attention[:3]
+    if len(top) < 3:
+        extra = [
+            {"case_id": case.id, "code": case.code, "title": case.title, "reason": attention_reason(case, today), "level": case.level, "priority": case.priority, "kind": case.kind, "blocked": False}
+            for case in sorted(cases, key=lambda item: -item.priority)
+            if case.status in {"WAITING_HUMAN", "READY_TO_FILE"} and not any(item.get("case_id") == case.id for item in top)
+        ]
+        top += extra[: 3 - len(top)]
+
+    return {
+        "date": today.isoformat(),
+        "period_days": days,
+        "attention": {"count": len(attention), "items": attention},
+        "pending": {"count": sum(item["count"] for item in pending_items), "items": [item for item in pending_items if item["count"]]},
+        "resolved": {"count": sum(item["count"] for item in resolved_items), "items": [item for item in resolved_items if item["count"]]},
+        "top": top,
+    }

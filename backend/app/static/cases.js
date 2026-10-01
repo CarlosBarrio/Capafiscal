@@ -86,6 +86,48 @@
     `;
   }
 
+  function boardHtml(board, pulse) {
+    if (!board) return "";
+    const attention = board.attention.items;
+    const listItem = (item) => `
+      <button type="button" class="board-item lvl-${esc(item.level)}" ${item.case_id ? `data-open-case="${item.case_id}"` : item.event_id ? `data-go-intake="${item.event_id}"` : ""}>
+        <strong>${esc(item.title)}</strong>
+        <span>${esc(item.reason || "")}</span>
+      </button>`;
+    const countList = (items, empty) => items.length
+      ? `<ul class="board-counts">${items.map((item) => `<li><strong>${item.count}</strong> ${esc(item.label)}</li>`).join("")}</ul>`
+      : `<p class="board-empty">${esc(empty)}</p>`;
+    return `
+      <div class="board-head">
+        <span class="briefing-eyebrow">${window.icon("chart")} Director · ${esc(window.formatDay(board.date))}</span>
+        <span class="board-head-side">
+          ${pulse ? `<span class="board-pulse ${pulse.healthy ? "is-ok" : "is-late"}" title="${esc(pulse.triggers.map((item) => `${item.label}: ${item.events_today} hoy`).join(" · "))}"><span class="pulse-dot"></span>${esc(pulse.label)}</span>` : ""}
+          <button type="button" class="btn-ghost" data-run-pulse>${window.icon("play")} Trabajar ahora</button>
+        </span>
+      </div>
+      <div class="board-grid">
+        <section class="board-col col-red">
+          <h3><span class="board-dot"></span>${attention.length ? `${attention.length} ${attention.length === 1 ? "cosa requiere" : "cosas requieren"} tu atención` : "Nada urgente"}</h3>
+          ${attention.length ? attention.slice(0, 4).map(listItem).join("") + (attention.length > 4 ? `<button type="button" class="link-button" data-go-cases>y ${attention.length - 4} más</button>` : "") : `<p class="board-empty">Ningún plazo encima ni nada bloqueado.</p>`}
+        </section>
+        <section class="board-col col-orange">
+          <h3><span class="board-dot"></span>${board.pending.count} ${board.pending.count === 1 ? "cosa pendiente" : "cosas pendientes"}</h3>
+          ${countList(board.pending.items, "Nada a medias.")}
+        </section>
+        <section class="board-col col-green">
+          <h3><span class="board-dot"></span>${board.resolved.count} resuelta(s) sin intervención</h3>
+          ${countList(board.resolved.items, "Aún no hay trabajo automático esta semana.")}
+          <small class="muted">Últimos ${board.period_days} días</small>
+        </section>
+      </div>
+      ${board.top.length ? `
+        <div class="board-top">
+          <h3>${board.top.length === 1 ? "Esta es la cosa" : `Estas son las ${board.top.length} cosas`} que deberías revisar hoy</h3>
+          <ol>${board.top.map((item, index) => `<li><span class="briefing-rank">${index + 1}</span>${listItem(item)}</li>`).join("")}</ol>
+        </div>` : ""}
+    `;
+  }
+
   let briefingItems = [];
 
   async function loadBriefing() {
@@ -104,8 +146,8 @@
 
     const home = document.getElementById("homeBriefing");
     if (home) {
-      home.innerHTML = briefingHtml(data, true);
-      home.classList.toggle("hidden", !data.items.length);
+      home.innerHTML = data.board ? boardHtml(data.board, data.pulse) : briefingHtml(data, true);
+      home.classList.remove("hidden");
     }
     const card = document.getElementById("briefingCard");
     if (card) card.innerHTML = briefingHtml(data, false);
@@ -722,6 +764,21 @@
       const brief = event.target.closest("[data-brief]");
       if (brief) return openBriefingItem(Number(brief.dataset.brief));
       if (event.target.closest("[data-go-cases]")) return window.activateTab("expedientes");
+      const boardCase = event.target.closest("#homeBriefing [data-open-case]");
+      if (boardCase) return openCase(Number(boardCase.dataset.openCase)).catch((error) => window.showMessage(error.message, "error"));
+      const pulseButton = event.target.closest("[data-run-pulse]");
+      if (pulseButton) {
+        pulseButton.disabled = true;
+        window.jsonRequest("/agents/pulse/run", "POST", {}).then((result) => {
+          window.showMessage(`Ciclo completo: buzón, pendientes, plazos, seguimiento y detector (${result.items} elemento(s) trabajados).`, "success");
+          refreshBackground();
+        }).catch((error) => window.showMessage(error.message, "error")).finally(() => { pulseButton.disabled = false; });
+        return;
+      }
+      if (event.target.closest("#homeBriefing [data-go-intake]")) {
+        window.activateTab("expedientes");
+        return window.setTimeout(() => showView("agents"), 60);
+      }
     });
 
     section.addEventListener("click", (event) => {

@@ -349,11 +349,11 @@ def process_notification(database: Session, notification_id: int, *, trigger: st
     return process_event(database, Event("notification", source=source or trigger, ref_id=notification_id), trigger=trigger, today=today, holder=holder)
 
 
-def process_invoice(database: Session, invoice_id: int, *, trigger: str = "system", today: date | None = None, holder: dict[str, Any] | None = None) -> Case | None:
+def process_invoice(database: Session, invoice_id: int, *, trigger: str = "system", today: date | None = None, holder: dict[str, Any] | None = None, source: str | None = None) -> Case | None:
     invoice = database.get(Invoice, invoice_id)
     if invoice is None or invoice.direction == "ISSUED":
         return None
-    return process_event(database, Event("invoice", source=trigger, ref_id=invoice_id), trigger=trigger, today=today, holder=holder)
+    return process_event(database, Event("invoice", source=source or trigger, ref_id=invoice_id), trigger=trigger, today=today, holder=holder)
 
 
 def process_deadline(database: Session, *, model: str, year: int, quarter: int, due: date, trigger: str = "schedule", today: date | None = None, holder: dict[str, Any] | None = None) -> Case | None:

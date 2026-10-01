@@ -69,7 +69,7 @@ def dispatch(database: Session, event: IngestedEvent, holder: dict[str, Any], *,
         return process_event(database, Event("notification", source=event.source, ref_id=notification_id), trigger=trigger, today=today, holder=holder)
 
     if event.kind == "invoice":
-        return process_invoice(database, int(payload["invoice_id"]), trigger=trigger, today=today, holder=holder)
+        return process_invoice(database, int(payload["invoice_id"]), trigger=trigger, today=today, holder=holder, source=event.source)
 
     if event.kind == "deadline":
         return process_deadline(
@@ -84,7 +84,7 @@ def dispatch(database: Session, event: IngestedEvent, holder: dict[str, Any], *,
             return process_notification(database, notification.id, trigger=trigger, today=today, holder=holder)
         invoice = database.scalar(select(Invoice).where(Invoice.document_id == document_id))
         if invoice is not None and invoice.direction != "ISSUED":
-            return process_invoice(database, invoice.id, trigger=trigger, today=today, holder=holder)
+            return process_invoice(database, invoice.id, trigger=trigger, today=today, holder=holder, source=event.source)
         return None  # documento sin trabajo para los agentes (p. ej. factura emitida)
 
     raise ValueError(f"Tipo de evento desconocido: {event.kind}")

@@ -27,8 +27,22 @@ from typing import Callable
 
 FIELDS = (
     "direction", "supplier_name", "supplier_tax_id", "customer_tax_id", "invoice_number",
-    "invoice_date", "due_date", "subtotal", "tax_total", "total",
+    "invoice_date", "due_date", "subtotal", "tax_total", "total", "category",
 )
+FIELD_LABELS = {
+    "direction": "Sentido (recibida/emitida)",
+    "supplier_name": "Proveedor",
+    "supplier_tax_id": "NIF proveedor",
+    "customer_tax_id": "NIF cliente",
+    "invoice_number": "Nº de factura",
+    "invoice_date": "Fecha",
+    "due_date": "Vencimiento",
+    "subtotal": "Base",
+    "tax_total": "IVA",
+    "total": "Total",
+    "category": "Clasificación",
+}
+SETS = {"A": "desarrollo", "B": "evaluación", "C": "ciego"}
 AMOUNTS = {"subtotal", "tax_total", "total", "withholding_total"}
 LEGAL_WORDS = {"sl", "sa", "slp", "slu", "sau", "sll", "sc", "cb", "sociedad", "limitada", "anonima", "profesional"}
 
@@ -39,6 +53,7 @@ class Case:
     path: Path
     expected: dict[str, Any]
     tags: list[str] = field(default_factory=list)
+    set: str = "A"
 
 
 @dataclass
@@ -52,7 +67,7 @@ class Dataset:
 def load_dataset(folder: Path) -> Dataset:
     labels = json.loads((folder / "labels.json").read_text(encoding="utf-8"))
     cases = [
-        Case(item["id"], folder / item["file"], item["expected"], item.get("tags", []))
+        Case(item["id"], folder / item["file"], item["expected"], item.get("tags", []), item.get("set", "A").upper())
         for item in labels["casos"]
         if (folder / item["file"]).exists()
     ]
@@ -154,11 +169,18 @@ ENGINES: dict[str, Callable[[Case, dict[str, Any], str | None], tuple[dict[str, 
 # ---------------------------------------------------------------------
 
 
-def run(dataset: Dataset, engines: list[str], *, model: str | None = None) -> dict[str, Any]:
-    report: dict[str, Any] = {"dataset": dataset.name, "cases": len(dataset.cases), "engines": {}}
+def run(dataset: Dataset, engines: list[str], *, model: str | None = None, sets: set[str] | None = None) -> dict[str, Any]:
+    cases = [case for case in dataset.cases if sets is None or case.set in sets]
+    report: dict[str, Any] = {
+        "dataset": dataset.name,
+        "cases": len(cases),
+        "sets": {name: sum(1 for case in cases if case.set == name) for name in SETS if any(case.set == name for case in cases)},
+        "model": model,
+        "engines": {},
+    }
     for engine in engines:
         rows = []
-        for case in dataset.cases:
+        for case in cases:
             started = time.perf_counter()
             try:
                 got, meta = ENGINES[engine](case, dataset.company, model)
@@ -168,7 +190,7 @@ def run(dataset: Dataset, engines: list[str], *, model: str | None = None) -> di
             ms = int((time.perf_counter() - started) * 1000)
             checks = {name: same(name, case.expected.get(name), got.get(name)) for name in FIELDS if name in case.expected}
             rows.append({
-                "id": case.id, "tags": case.tags, "ms": ms, "error": error, "meta": meta,
+                "id": case.id, "set": case.set, "tags": case.tags, "ms": ms, "error": error, "meta": meta,
                 "checks": checks, "got": {name: got.get(name) for name in checks}, "expected": {name: case.expected[name] for name in checks},
                 "perfect": all(checks.values()),
             })
@@ -178,7 +200,24 @@ def run(dataset: Dataset, engines: list[str], *, model: str | None = None) -> di
             if values:
                 per_field[name] = {"ok": sum(values), "n": len(values), "rate": round(sum(values) / len(values), 3)}
         total_checks = sum(len(row["checks"]) for row in rows)
+        times = sorted(row["ms"] for row in rows)
+        with_claude = [row for row in rows if row["meta"].get("claude_called") or (engine == "claude" and row["meta"].get("input_tokens"))]
+        reasons: dict[str, int] = {}
+        for row in rows:
+            for reason in row["meta"].get("reasons") or []:
+                reasons[reason] = reasons.get(reason, 0) + 1
+        cost = sum(float(row["meta"].get("cost_usd") or 0) for row in rows)
+        no_key = bool(rows) and all(row["meta"].get("fallback") == "sin ANTHROPIC_API_KEY" for row in rows)
         report["engines"][engine] = {
+            "available": not (no_key and engine == "claude"),
+            "claude_missing": no_key,
+            "docs": len(rows),
+            "ms_p95": times[min(len(times) - 1, int(len(times) * 0.95))] if times else 0,
+            "cost_per_doc_usd": round(cost / len(rows), 5) if rows else 0,
+            "cost_per_1000_docs_usd": round(cost / len(rows) * 1000, 2) if rows else 0,
+            "claude_share": round(len(with_claude) / len(rows), 3) if rows else 0,
+            "fallback_rate": round(sum(1 for row in rows if row["meta"].get("fallback")) / len(rows), 3) if rows else 0,
+            "reasons": reasons,
             "fields": per_field,
             "field_accuracy": round(sum(sum(row["checks"].values()) for row in rows) / total_checks, 3) if total_checks else None,
             "perfect": sum(row["perfect"] for row in rows),
@@ -195,36 +234,110 @@ def run(dataset: Dataset, engines: list[str], *, model: str | None = None) -> di
 
 def to_markdown(report: dict[str, Any]) -> str:
     engines = list(report["engines"])
-    lines = [f"# Evaluación de lectura de facturas · dataset «{report['dataset']}» ({report['cases']} casos)", ""]
-    lines.append("| Métrica | " + " | ".join(engines) + " |")
-    lines.append("|---|" + "---|" * len(engines))
+    sets = ", ".join(f"{name} ({SETS[name]}): {count}" for name, count in report.get("sets", {}).items())
+    lines = [f"# Evaluación de lectura de facturas · «{report['dataset']}»", "", f"{report['cases']} documentos · conjuntos {sets or '–'}" + (f" · modelo {report['model']}" if report.get("model") else ""), ""]
+    if "A" in report.get("sets", {}):
+        lines += ["> Ojo: el conjunto A se usó para ajustar las reglas, así que sus cifras no miden generalización. Las que cuentan son las de B y C.", ""]
 
-    def row(label: str, getter: Callable[[dict[str, Any]], Any]) -> None:
-        lines.append(f"| {label} | " + " | ".join(str(getter(report["engines"][engine])) for engine in engines) + " |")
+    if any(data.get("claude_missing") for data in report["engines"].values()):
+        lines += ["> **Claude no se ha ejecutado** (falta `ANTHROPIC_API_KEY`): la columna CLAUDE queda vacía y el HÍBRIDO se comporta como las reglas.", ""]
 
-    row("Acierto por campo", lambda data: f"{data['field_accuracy']:.0%}" if data["field_accuracy"] is not None else "–")
-    row("Facturas perfectas", lambda data: f"{data['perfect']}/{report['cases']}")
-    row("Tiempo medio", lambda data: f"{data['ms_avg']} ms")
-    row("Llamadas a Claude", lambda data: data["claude_calls"])
-    row("Tokens (entrada/salida)", lambda data: f"{data['input_tokens']}/{data['output_tokens']}")
-    row("Coste", lambda data: f"{data['cost_usd']:.4f} $")
-    row("Vuelta a reglas (fallback)", lambda data: data["fallbacks"])
-    lines += ["", "## Acierto por campo", "", "| Campo | " + " | ".join(engines) + " |", "|---|" + "---|" * len(engines)]
+    def cell(engine: str, text: str) -> str:
+        return text if report["engines"][engine]["available"] else "no ejecutado"
+
+    header = "| Campo | " + " | ".join(engine.upper() for engine in engines) + " |"
+    lines += ["## Acierto por campo", "", header, "|---|" + "---:|" * len(engines)]
     for name in FIELDS:
         cells = []
         for engine in engines:
             item = report["engines"][engine]["fields"].get(name)
-            cells.append(f"{item['ok']}/{item['n']}" if item else "–")
-        lines.append(f"| {name} | " + " | ".join(cells) + " |")
-    lines += ["", "## Fallos por caso", ""]
+            cells.append(cell(engine, f"{item['rate']:.0%} ({item['ok']}/{item['n']})" if item else "–"))
+        if any(report["engines"][engine]["fields"].get(name) for engine in engines):
+            lines.append(f"| {FIELD_LABELS[name]} | " + " | ".join(cells) + " |")
+    lines.append("| **Todos los campos** | " + " | ".join(cell(engine, f"**{report['engines'][engine]['field_accuracy']:.0%}**" if report["engines"][engine]["field_accuracy"] is not None else "–") for engine in engines) + " |")
+    lines.append("| **Documentos perfectos** | " + " | ".join(cell(engine, f"**{report['engines'][engine]['perfect']}/{report['cases']}**") for engine in engines) + " |")
+
+    lines += ["", "## Operación", "", header.replace("| Campo |", "| Métrica |", 1), "|---|" + "---:|" * len(engines)]
+
+    def row(label: str, getter: Callable[[dict[str, Any]], Any]) -> None:
+        lines.append(f"| {label} | " + " | ".join(cell(engine, str(getter(report["engines"][engine]))) for engine in engines) + " |")
+
+    row("Tiempo por documento (media)", lambda data: f"{data['ms_avg']} ms")
+    row("Tiempo por documento (p95)", lambda data: f"{data['ms_p95']} ms")
+    row("Documentos en los que entra Claude", lambda data: f"{data['claude_share']:.0%}")
+    row("Coste por documento", lambda data: f"{data['cost_per_doc_usd']:.4f} $")
+    row("Coste por 1.000 documentos", lambda data: f"{data['cost_per_1000_docs_usd']:.2f} $")
+    row("Tokens (entrada / salida)", lambda data: f"{data['input_tokens']} / {data['output_tokens']}")
+    row("Tasa de fallback (vuelta a reglas)", lambda data: f"{data['fallback_rate']:.0%}")
+
+    hybrid = report["engines"].get("hibrido")
+    if hybrid and hybrid.get("reasons"):
+        lines += ["", "## Por qué entró Claude (híbrido)", ""]
+        for reason, count in sorted(hybrid["reasons"].items(), key=lambda item: -item[1]):
+            lines.append(f"- {reason}: {count} documento(s)")
+
+    lines += ["", "## Fallos por documento", ""]
+    any_failure = False
     for engine in engines:
+        if not report["engines"][engine]["available"]:
+            continue
         for data in report["engines"][engine]["rows"]:
             wrong = [name for name, ok in data["checks"].items() if not ok]
             if data["error"]:
-                lines.append(f"- **{engine} · {data['id']}**: error {data['error']}")
+                any_failure = True
+                lines.append(f"- **{engine} · {data['id']}** ({data['set']}): error {data['error']}")
             elif wrong:
-                detail = "; ".join(f"{name}: esperado `{data['expected'][name]}`, leído `{data['got'][name]}`" for name in wrong)
-                lines.append(f"- **{engine} · {data['id']}**: {detail}")
-            if data["meta"].get("fallback"):
+                any_failure = True
+                detail = "; ".join(f"{FIELD_LABELS.get(name, name)}: esperado `{data['expected'][name]}`, leído `{data['got'][name]}`" for name in wrong)
+                lines.append(f"- **{engine} · {data['id']}** ({data['set']}): {detail}")
+            if data["meta"].get("fallback") and data["meta"]["fallback"] != "sin ANTHROPIC_API_KEY":
                 lines.append(f"  - vuelta a reglas: {data['meta']['fallback']}")
+    if not any_failure:
+        lines.append("Ninguno.")
     return "\n".join(lines) + "\n"
+
+
+def draft_labels(folder: Path, *, company: dict[str, Any] | None = None, prefill: bool = False, set_name: str = "B") -> Path:
+    """Prepara etiquetas para documentos nuevos (los que aún no tienen etiqueta).
+
+    Por defecto deja los valores vacíos: rellenarlos con lo que leen las reglas
+    sesga la etiqueta hacia las reglas. Con prefill=True se rellenan, pero hay
+    que revisar cada valor contra el documento.
+    """
+    labels_path = folder / "labels.json"
+    labels = json.loads(labels_path.read_text(encoding="utf-8")) if labels_path.exists() else {"empresa": company or {"name": "", "tax_id": ""}, "casos": []}
+    known = {item["file"] for item in labels["casos"]}
+    pending = [item for item in sorted(folder.iterdir()) if item.suffix.lower() in {".pdf", ".txt"} and item.name not in known]
+    drafts = []
+    for path in pending:
+        expected = {name: "" for name in FIELDS}
+        if prefill:
+            from app.extractor import extract_invoice
+
+            tax_id = labels["empresa"].get("tax_id")
+            got = flatten(extract_invoice(path, company_tax_id=[tax_id] if tax_id else None, company_name=labels["empresa"].get("name")))
+            expected = {name: (got.get(name) or "") for name in FIELDS}
+        drafts.append({"id": path.stem, "file": path.name, "set": set_name, "tags": [], "revisado": False, "expected": expected})
+    out = folder / "labels.borrador.json"
+    out.write_text(json.dumps({"empresa": labels["empresa"], "casos": drafts}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
+
+
+def merge_reviewed(folder: Path) -> tuple[int, int]:
+    """Pasa a labels.json los casos del borrador marcados como revisados."""
+    labels_path, draft_path = folder / "labels.json", folder / "labels.borrador.json"
+    labels = json.loads(labels_path.read_text(encoding="utf-8")) if labels_path.exists() else {"empresa": {}, "casos": []}
+    draft = json.loads(draft_path.read_text(encoding="utf-8"))
+    labels["empresa"] = labels.get("empresa") or draft.get("empresa", {})
+    moved, left = 0, []
+    for item in draft["casos"]:
+        if item.get("revisado"):
+            item = {key: value for key, value in item.items() if key != "revisado"}
+            item["expected"] = {key: value for key, value in item["expected"].items() if value not in ("", None)}
+            labels["casos"].append(item)
+            moved += 1
+        else:
+            left.append(item)
+    labels_path.write_text(json.dumps(labels, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    draft_path.write_text(json.dumps({**draft, "casos": left}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return moved, len(left)

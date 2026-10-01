@@ -239,10 +239,33 @@ def case_package(case_id: int, database: DatabaseDependency) -> Response:
 @router.get("/briefing", tags=["Agentes"])
 def briefing(database: DatabaseDependency) -> dict[str, Any]:
     from app.agents.director import daily_briefing
+    from app.agents.director import operational_board
+
+    from app.agents.pulse import pulse_status
 
     data = daily_briefing(database)
+    data["board"] = operational_board(database)
+    data["pulse"] = pulse_status(database)
     database.commit()
     return data
+
+
+@router.get("/agents/pulse", tags=["Agentes"])
+def agents_pulse(database: DatabaseDependency) -> dict[str, Any]:
+    from app.agents.pulse import pulse_status
+
+    return pulse_status(database)
+
+
+@router.post("/agents/pulse/run", tags=["Agentes"])
+def agents_pulse_run(database: DatabaseDependency) -> dict[str, Any]:
+    """«Trabajar ahora»: buzón, pendientes, plazos, seguimiento y detector, en orden."""
+    from app.agents.pulse import pulse_status
+    from app.agents.pulse import run_cycle
+
+    result = run_cycle(database)
+    database.commit()
+    return {**result, "pulse": pulse_status(database)}
 
 
 @router.get("/agents", tags=["Agentes"])

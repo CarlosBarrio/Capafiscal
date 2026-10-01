@@ -11,6 +11,7 @@ factura o plazo) y comprueba cada una de las cinco partes.
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import date
 from datetime import timedelta
 from decimal import Decimal
@@ -45,7 +46,7 @@ def add_invoice(database, *, supplier: str, tax_id: str, number: str, total: flo
     from app.models import Invoice
 
     document = Document(
-        original_filename=f"{number}.pdf", stored_filename=f"{number}-{when}.pdf", sha256=f"{abs(hash((supplier, number, str(when), total))):064d}"[:64],
+        original_filename=f"{number}.pdf", stored_filename=f"{uuid.uuid4().hex}.pdf", sha256=f"{abs(hash((supplier, number, str(when), total))):064d}"[:64],
         extension=".pdf", size_bytes=1, status="APPROVED", extraction_status="COMPLETED", kind="INVOICE",
     )
     database.add(document)

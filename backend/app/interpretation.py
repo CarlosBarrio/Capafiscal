@@ -102,6 +102,8 @@ def needs_help(result: dict[str, Any], company_tax_ids: set[str]) -> list[str]:
     supplier = normalize_tax_id(values.get("supplier_tax_id"))
     if supplier and supplier in company_tax_ids and normalize_tax_id(values.get("customer_tax_id")) not in company_tax_ids:
         reasons.append("el emisor detectado es la propia empresa")
+    if (result.get("fields") or {}).get("category", {}).get("value") in {None, "Otros gastos"} and result.get("direction") != "ISSUED":
+        reasons.append("categoría sin determinar")
     number = str(values.get("invoice_number") or "")
     if number and (" " in number.strip() or len(number) > 20 or re.search(r"\d{2}/\d{2}/\d{2,4}", number)):
         reasons.append("número de factura sospechoso")
@@ -140,6 +142,19 @@ def merge(result: dict[str, Any], claude: dict[str, Any], text: str, company_tax
     merged["invoice_number"] = choose("invoice_number", rules.get("invoice_number"), claude.get("invoice_number"), text, decisions, prefer_claude=bad_number)
     for field in ("invoice_date", "due_date"):
         merged[field] = choose(field, rules.get(field), claude.get(field) or None, text, decisions, kind="date")
+
+    # Categoría: no se puede comprobar en el texto; se acepta la de Claude si es una categoría válida
+    # y las reglas no la tenían clara.
+    from app.agents.llm import expense_categories
+
+    rules_category = (result.get("fields") or {}).get("category", {}).get("value")
+    claude_category = claude.get("category")
+    if claude_category in expense_categories() and rules_category in {None, "Otros gastos"}:
+        merged["category"] = claude_category
+        decisions.append({"field": "category", "rules": rules_category, "claude": claude_category, "chosen": claude_category, "why": "las reglas no la determinaron; Claude eligió una categoría válida"})
+    else:
+        merged["category"] = rules_category
+        decisions.append({"field": "category", "rules": rules_category, "claude": claude_category, "chosen": rules_category, "why": "se mantiene la de las reglas"})
 
     # Importes: se elige el trío que cuadra (primero el de las reglas).
     rules_amounts = {key: rules.get(key) for key in AMOUNT_FIELDS}

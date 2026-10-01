@@ -192,11 +192,15 @@ def job_agents(database: Session, now: datetime) -> tuple[int, str]:
 
 def job_anomalies(database: Session, now: datetime) -> tuple[int, str]:
     from app.agents.detector import run_anomaly_scan
+    from app.agents.pulse import escalate_analytic_findings
 
+    # Lo grave sobre una factura lo investiga el orquestador entero; el resto, aviso.
+    escalated = escalate_analytic_findings(database, now.date())
     result = run_anomaly_scan(database, trigger="schedule", today=now.date())
-    if not result["created"] and not result["closed"]:
+    investigated = f" {len(escalated)} investigada(s) a fondo por el orquestador." if escalated else ""
+    if not result["created"] and not result["closed"] and not escalated:
         return 0, f"Todo cuadra ({result['found']} aviso(s) ya conocidos)." if result["found"] else "Todo cuadra: sin anomalías."
-    return result["created"], f"{result['created']} anomalía(s) nuevas y {result['closed']} cerrada(s) solas."
+    return result["created"] + len(escalated), f"{result['created']} anomalía(s) nuevas y {result['closed']} cerrada(s) solas." + investigated
 
 
 def job_deadlines(database: Session, now: datetime) -> tuple[int, str]:

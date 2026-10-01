@@ -77,6 +77,37 @@ contestación, y lo pone el primero de tu lista.
 - **IA opcional**: con `ANTHROPIC_API_KEY`, Claude lee y redacta; sin clave,
   todo funciona con reglas y plantillas.
 
+## El Director: qué hacer hoy
+
+La pantalla *Hoy* abre con el Director:
+
+- 🔴 **Requiere tu atención**: lo urgente o importante que espera a una
+  persona, con el motivo («vence en 7 días (objetivo interno: en 5 días)»,
+  «9,0 veces por encima de lo habitual») y lo que se ha bloqueado.
+- 🟠 **Pendiente**: documentos pedidos sin recibir, plazos de los próximos 15
+  días, expedientes para revisar sin prisa y escritos listos para presentar.
+- 🟢 **Resuelto sin intervención** en los últimos 7 días: documentos que los
+  agentes revisaron sin nada que objetar, expedientes preparados de principio
+  a fin, documentos conseguidos por el Perseguidor, avisos cerrados solos y
+  entradas repetidas ignoradas.
+
+Debajo, «Estas son las 3 cosas que deberías revisar hoy».
+
+## Trabajo continuo
+
+CapaFiscal trabaja aunque nadie suba nada. Tres tipos de disparador acaban
+en la misma entrada única y el mismo orquestador:
+
+| Disparador | Qué lo provoca | Automatización |
+|---|---|---|
+| Externo | Facturas, notificaciones y correos nuevos | Buzón y orquestador (cada 5 min) |
+| Temporal | Se acerca un 303/130/111/115; pasan 3 días hábiles sin documentación | Vigilante de plazos y Perseguidor (diarios) |
+| Analítico | Anomalías, facturas que faltan, cambios de comportamiento | Detector (diario). Lo grave sobre una factura lo investiga el orquestador entero (Memoria, Fiscal, Gestor, Director) |
+
+El Director muestra si la máquina está en marcha («CapaFiscal está
+trabajando · último ciclo hace 3 min»). **Trabajar ahora** lanza un ciclo
+completo de los tres disparadores.
+
 ## Lectura de facturas reales y evaluación
 
 El extractor lee facturas con reglas deterministas. Con facturas reales de
@@ -116,7 +147,12 @@ python -m evaluation                                   # réplicas sintéticas, 
 python -m evaluation --dataset reales                  # tus facturas reales (carpeta local)
 python -m evaluation --engines reglas,claude,hibrido   # comparar motores (necesita ANTHROPIC_API_KEY)
 python -m evaluation --engines claude --model claude-sonnet-5-5
+python -m evaluation preparar reales --conjunto B      # etiquetar documentos nuevos
 ```
+
+Los documentos se separan en conjuntos A (desarrollo), B (evaluación) y C
+(ciego, que solo se evalúa con `--ciego` y queda anotado). El protocolo
+completo está en `backend/evaluation/README.md`.
 
 Mide el acierto por campo, las facturas perfectas, el tiempo, los tokens, el
 coste y cuántas veces se volvió a las reglas, y deja un informe en
