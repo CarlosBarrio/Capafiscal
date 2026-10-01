@@ -364,6 +364,10 @@ from app.work_routes import router as work_router  # noqa: E402
 
 app.include_router(work_router)
 
+from app.accounting_routes import router as accounting_router  # noqa: E402
+
+app.include_router(accounting_router)
+
 
 @app.middleware("http")
 async def identify_request(request, call_next):

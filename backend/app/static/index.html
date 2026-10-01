@@ -15,7 +15,7 @@
   >
   <link
     rel="stylesheet"
-    href="/static/style.css?v=101"
+    href="/static/style.css?v=102"
   >
 </head>
 <body>
@@ -1095,6 +1095,22 @@
       </div>
     </div>
 
+    <div class="card" id="journalCard">
+      <div class="card-head">
+        <h2>Libro diario</h2>
+        <span class="card-sub">Asientos con el Plan General Contable, generados de facturas y banco conciliado</span>
+      </div>
+      <form class="filter-toolbar compact-toolbar" id="journalForm">
+        <label>Desde <input type="date" name="date_from" id="journalFrom"></label>
+        <label>Hasta <input type="date" name="date_to" id="journalTo"></label>
+      </form>
+      <div id="journalSummary"><p class="board-empty">Cargando…</p></div>
+      <div class="card-actions">
+        <a class="btn-ghost" id="journalXlsx"><svg class="icon"><use href="#i-download"/></svg> Descargar Excel</a>
+        <a class="btn-ghost" id="journalCsv"><svg class="icon"><use href="#i-download"/></svg> Descargar CSV</a>
+      </div>
+    </div>
+
     <div class="card filter-card">
       <div class="filter-toolbar report-toolbar">
         <label>
@@ -1937,6 +1953,7 @@
 <script src="/static/intelligence.js?v=1"></script>
 <script src="/static/close.js?v=1"></script>
 <script src="/static/work.js?v=1"></script>
+<script src="/static/accounting.js?v=1"></script>
 <script src="/static/shell.js?v=6"></script>
 </body>
 </html>

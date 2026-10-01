@@ -3012,3 +3012,6 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
     .work-item-side { width: 100%; justify-content: space-between; }
     .work-title > .btn-ghost { width: 100%; justify-content: center; }
 }
+.journal-checks { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 10px; padding: 0; list-style: none; font-size: 13px; color: var(--ink-2); }
+.journal-checks li { display: flex; gap: 8px; align-items: baseline; }
+#journalSummary { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
