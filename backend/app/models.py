@@ -1603,7 +1603,10 @@ class Case(TenantMixin, Base):
     """Expediente: la unidad de trabajo que recorren los agentes."""
 
     __tablename__ = "cases"
-    __table_args__ = (UniqueConstraint("tenant_id", "fingerprint", name="uq_cases_tenant_fingerprint"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "fingerprint", name="uq_cases_tenant_fingerprint"),
+        UniqueConstraint("tenant_id", "code", name="uq_cases_tenant_code"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
@@ -1834,6 +1837,21 @@ class DecisionRecord(TenantMixin, Base):
     engine: Mapped[str | None] = mapped_column(String(30), nullable=True)  # reglas, claude
     subject_key: Mapped[str | None] = mapped_column(String(150), nullable=True, index=True)  # NIF del proveedor/cliente
     context: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class Counter(TenantMixin, Base):
+    """Contadores atómicos por cliente (numeración de expedientes, cerrojo de la cadena de facturación).
+
+    Ver app/sequences.py: se incrementan con un único INSERT … ON CONFLICT DO UPDATE … RETURNING,
+    así que dos procesos a la vez nunca obtienen el mismo número.
+    """
+
+    __tablename__ = "counters"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_counters_tenant_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    value: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
 
 
 class LearningRule(TenantMixin, Base):

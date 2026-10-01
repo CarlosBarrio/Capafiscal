@@ -218,7 +218,7 @@ def observe(*, document_id: int | None = None, event_id: int | None = None, dupl
             from app.models import AuditEvent
 
             audit = database.scalar(
-                select(AuditEvent).where(AuditEvent.action == "document.interpretation", AuditEvent.entity_id == document.id).order_by(AuditEvent.id.desc()).limit(1)
+                select(AuditEvent).where(AuditEvent.action == "document.interpretation", AuditEvent.entity_id == str(document.id)).order_by(AuditEvent.id.desc()).limit(1)
             )
             if audit is not None:
                 data = audit.event_data or {}

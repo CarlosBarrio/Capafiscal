@@ -477,6 +477,11 @@ def issue_invoice(
         raise SalesError("Para facturas de más de 400 € el cliente necesita NIF (factura completa).")
 
     year = issue_day.year
+    # Cerrojo de la cadena de facturación: dos emisiones a la vez se ordenan aquí, así el número
+    # y la huella anterior (previous_hash) se leen ya serializados y la cadena no se bifurca.
+    from app.sequences import next_value
+
+    next_value(database, "sales-chain")
     last_number = database.scalar(
         select(func.max(SalesInvoice.number)).where(SalesInvoice.series == invoice.series, SalesInvoice.year == year)
     )

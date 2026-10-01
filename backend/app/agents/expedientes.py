@@ -58,8 +58,12 @@ OWNER_HINTS = ("obligado tributario", "contribuyente", "destinatario", "deudor",
 
 
 def next_case_code(database, year: int) -> str:
-    count = database.scalar(select(func.count()).select_from(Case).where(Case.code.like(f"EXP-{year}-%"))) or 0
-    return f"EXP-{year}-{count + 1:04d}"
+    """Numeración atómica por cliente y año (antes: contar + 1, que repetía códigos con eventos simultáneos)."""
+    from app.sequences import next_value
+
+    number = next_value(database, f"case:{year}",
+                        seed=lambda: database.scalar(select(func.count()).select_from(Case).where(Case.code.like(f"EXP-{year}-%"))) or 0)
+    return f"EXP-{year}-{number:04d}"
 
 
 def find_tax_ids(text: str, known: dict[str, dict] | None = None) -> list[dict]:
