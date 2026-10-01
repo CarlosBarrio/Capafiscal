@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.config import settings as app_settings
 from app.database import Base, SessionLocal, engine
+from app.models import TenantMixin
 
 
 router = APIRouter(
@@ -49,7 +50,9 @@ if (
 _PENDING_AUTH_FLOWS: dict[str, dict[str, Any]] = {}
 
 
-class OutlookImport(Base):
+class OutlookImport(TenantMixin, Base):
+    """Adjuntos ya importados, por cliente (la tabla filtra y marca tenant_id como las demás)."""
+
     __tablename__ = "outlook_imports"
 
     id = Column(Integer, primary_key=True)
@@ -65,9 +68,10 @@ class OutlookImport(Base):
 
     __table_args__ = (
         UniqueConstraint(
+            "tenant_id",
             "message_id",
             "attachment_id",
-            name="uq_outlook_message_attachment",
+            name="uq_outlook_tenant_message_attachment",
         ),
     )
 
@@ -530,6 +534,7 @@ async def sync_outlook(
     failures: list[dict[str, str]] = []
 
     db = SessionLocal()
+    db.info["tenant_id"] = getattr(request.state, "tenant_id", None)  # el cliente elegido, como en get_db
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as graph_client:

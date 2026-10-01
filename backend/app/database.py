@@ -93,6 +93,24 @@ def create_database_tables() -> None:
 
     Base.metadata.create_all(bind=engine)
     add_missing_columns()
+    migrate_legacy_automation_settings()
+
+
+def migrate_legacy_automation_settings() -> int:
+    """La tabla antigua «automation_settings» no tenía cliente: sus filas pasan al cliente 0 una sola vez."""
+    with engine.begin() as connection:
+        tables = set(inspect(connection).get_table_names())
+        if "automation_settings" not in tables:
+            return 0
+        if connection.execute(text('SELECT COUNT(*) FROM "automation_client_settings"')).scalar():
+            return 0
+        rows = connection.execute(text('SELECT code, enabled, last_run_at, last_status, last_summary FROM "automation_settings"')).mappings().all()
+        for row in rows:
+            connection.execute(text(
+                'INSERT INTO "automation_client_settings" (tenant_id, code, enabled, last_run_at, last_status, last_summary) '
+                "VALUES (0, :code, :enabled, :last_run_at, :last_status, :last_summary)"
+            ), dict(row))
+        return len(rows)
 
 
 logger = logging.getLogger(__name__)

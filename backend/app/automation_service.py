@@ -339,7 +339,9 @@ def local_now() -> datetime:
 
 
 def get_setting(database: Session, code: str) -> AutomationSetting:
-    setting = database.get(AutomationSetting, code)
+    from sqlalchemy import select
+
+    setting = database.scalar(select(AutomationSetting).where(AutomationSetting.code == code))
     if setting is None:
         setting = AutomationSetting(code=code, enabled=BY_CODE[code].default_enabled)
         database.add(setting)
@@ -432,13 +434,13 @@ def run_due_all_clients(now: datetime | None = None) -> dict[int, int]:
 
     now = now or local_now()
     with SessionLocal() as database:
-        due = [automation.code for automation in AUTOMATIONS if is_due(automation, get_setting(database, automation.code), now)]
-        database.commit()
         clients = list(database.scalars(select(Client.id).where(Client.active.is_(True))).all())
     done: dict[int, int] = {}
     for client_id in clients:
         with tenant_session(client_id) as database:
             try:
+                # Cada cliente tiene sus automatizaciones activadas y su propio «última vez».
+                due = [automation.code for automation in AUTOMATIONS if is_due(automation, get_setting(database, automation.code), now)]
                 runs = [run_automation(database, code, trigger="SCHEDULE", now=now) for code in due]
                 database.commit()
                 done[client_id] = len(runs)

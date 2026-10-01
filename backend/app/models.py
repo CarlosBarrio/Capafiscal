@@ -1561,10 +1561,18 @@ class TimeEntry(TenantMixin, Base):
 # ---------------------------------------------------------------------
 
 
-class AutomationSetting(Base):
-    __tablename__ = "automation_settings"
+class AutomationSetting(TenantMixin, Base):
+    """Activación y último estado de cada automatización, por cliente.
 
-    code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    Sustituye a la antigua tabla «automation_settings» (sin cliente: activar algo
+    en un cliente lo activaba en todos). Sus filas pasan al cliente 0 al arrancar.
+    """
+
+    __tablename__ = "automation_client_settings"
+    __table_args__ = (UniqueConstraint("tenant_id", "code", name="uq_automation_settings_tenant_code"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(40), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_status: Mapped[str | None] = mapped_column(String(20), nullable=True)

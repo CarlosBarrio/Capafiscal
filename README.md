@@ -296,6 +296,16 @@ La API admite `Authorization: Bearer` + `X-Client-Id`; el navegador usa una cook
 HttpOnly y las escrituras exigen la cabecera `X-CapaFiscal` (protección CSRF). Sin
 `AUTH_REQUIRED`, todo funciona como siempre, para una sola empresa.
 
+**Prueba de aislamiento sobre toda la API** (`tests/integration/test_cross_tenant.py`):
+llena el cliente B de datos marcados y, como cliente A, llama a **todas** las rutas del
+esquema OpenAPI (una ruta nueva entra sola en la prueba) con identificadores de B. Exige
+que ninguna respuesta contenga datos de B, que ninguna ruta con un identificador de B
+responda 2xx y que las tablas de B queden idénticas. También exige que toda tabla de datos
+lleve `tenant_id`. Al crearla encontró dos tablas sin cliente (activación de
+automatizaciones y adjuntos importados de Outlook) y la sincronización de Outlook sin
+cliente; las tres están corregidas. Pendiente: el conector de Outlook guarda **un único
+buzón por instalación**; en multiempresa, conéctalo solo si el buzón es de un cliente.
+
 Nota para bases de datos ya creadas: las columnas nuevas se añaden solas, pero las
 restricciones de unicidad por cliente solo se crean en bases nuevas; para pasar una
 instalación existente a multiempresa con varios clientes, conviene empezar con una base
