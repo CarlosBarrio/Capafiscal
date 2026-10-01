@@ -360,6 +360,10 @@ from app.close_routes import router as close_router  # noqa: E402
 
 app.include_router(close_router)
 
+from app.work_routes import router as work_router  # noqa: E402
+
+app.include_router(work_router)
+
 
 @app.middleware("http")
 async def identify_request(request, call_next):

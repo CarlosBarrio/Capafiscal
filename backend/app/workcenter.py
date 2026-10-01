@@ -1,0 +1,298 @@
+"""
+Centro de trabajo: una sola lista con todo lo que hay que hacer, en vez de varias bandejas.
+
+El Director mete aquí lo que antes estaba repartido (expedientes, facturas por revisar,
+banco, salida, cierre, reglas aprendidas…) y cada cosa cae en uno de cuatro grupos:
+
+    accion     🔴 Requiere tu decisión: nadie más puede hacerlo
+    falta      🟠 Falta información: CapaFiscal no puede seguir sin un dato o documento
+    haciendo   🟢 CapaFiscal lo está haciendo: no hay que tocar nada (y se dice qué y cuándo)
+    resuelto   ✓  Lo que se ha resuelto solo en los últimos días
+
+Cada elemento dice qué ha comprobado CapaFiscal («checked») y lleva una acción concreta.
+
+SOLO LEE: es lo primero que se abre por la mañana, a la vez en varias pestañas y clientes;
+en SQLite dos lecturas que escriben a la vez acaban en «database is locked».
+"""
+from __future__ import annotations
+
+from datetime import date
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import func
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models import AuditEvent
+from app.models import Case
+from app.models import DocumentRequest
+from app.models import IngestedEvent
+from app.models import Invoice
+from app.models import LearningRule
+from app.models import OutboxMessage
+
+GROUPS = (
+    ("accion", "Requiere tu decisión"),
+    ("falta", "Falta información"),
+    ("haciendo", "CapaFiscal lo está haciendo"),
+    ("resuelto", "Resuelto"),
+)
+MIN_UNJUSTIFIED = Decimal("50")
+STALE_BANK_DAYS = 7  # un extracto con más de una semana sin movimientos se pide
+
+
+def eur(value: Any) -> str:
+    text = f"{Decimal(str(value or 0)):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{text} €"
+
+
+def day(value: date | str | None) -> str:
+    if value is None:
+        return ""
+    value = date.fromisoformat(value[:10]) if isinstance(value, str) else value
+    return f"{value:%d/%m}"
+
+
+def item(group: str, kind: str, key: Any, title: str, why: str, *, action: dict[str, Any] | None = None,
+         checked: list[dict[str, Any]] | None = None, amount: float | None = None, score: int = 0, when: str | None = None) -> dict[str, Any]:
+    return {"id": f"{kind}:{key}", "group": group, "kind": kind, "title": title, "why": why, "checked": checked or [],
+            "action": action, "amount": amount, "score": score, "when": when}
+
+
+def case_checks(case: Any) -> list[dict[str, Any]]:
+    """Lo que los agentes ya han hecho con el expediente, en una línea cada uno."""
+    rows = []
+    for finding in ((case.facts or {}).get("findings") or [])[:4]:
+        text = finding.get("resultado") or finding.get("tipo")
+        if text:
+            rows.append({"label": f"{finding.get('agente', 'agente').capitalize()}: {str(text)[:110]}", "ok": True})
+    return rows
+
+
+def invoice_checks(invoice: Invoice) -> list[dict[str, Any]]:
+    rows = [{"label": "Datos leídos del documento" + (f" ({invoice.confidence} % de confianza)" if invoice.confidence else ""), "ok": (invoice.confidence or 0) >= 80}]
+    rows.append({"label": "NIF del proveedor" if invoice.supplier_tax_id else "Sin NIF del proveedor", "ok": bool(invoice.supplier_tax_id)})
+    rows.append({"label": "Base + IVA = total" if invoice.validation_status == "VALID" else "Los importes no cuadran", "ok": invoice.validation_status == "VALID"})
+    if invoice.duplicate_status not in (None, "NONE"):
+        rows.append({"label": "Posible duplicado de otra factura", "ok": False})
+    return rows
+
+
+def decisions(database: Session, today: date, cases: list[Any]) -> list[dict[str, Any]]:
+    from app.agents.director import attention_reason
+    from app.agents.director import impact
+
+    rows = []
+    for case in cases:
+        if case.status == "WAITING_HUMAN":
+            score = impact(case, today)
+            blocked = bool((case.facts or {}).get("processing"))
+            rows.append(item("accion", "case", case.id, case.title, score["why"] or attention_reason(case, today),
+                             action={"label": "Revisar expediente", "case_id": case.id}, checked=case_checks(case),
+                             amount=score["amount"], score=score["score"] + (30 if blocked else 0),
+                             when=case.deadline.isoformat() if case.deadline else None) | {"code": case.code, "level": case.level})
+        elif case.status == "READY_TO_FILE":
+            score = impact(case, today)
+            rows.append(item("accion", "file", case.id, f"Presentar: {case.title}", "Está preparado: falta que lo revises y lo presentes.",
+                             action={"label": "Revisar y presentar", "case_id": case.id}, checked=case_checks(case),
+                             amount=score["amount"], score=score["score"], when=case.deadline.isoformat() if case.deadline else None) | {"code": case.code})
+
+    for event in database.scalars(select(IngestedEvent).where(IngestedEvent.status == "FAILED").order_by(IngestedEvent.id.desc()).limit(5)).all():
+        rows.append(item("accion", "event", event.id, f"No se pudo procesar una entrada ({event.source})", (event.error or "Error al procesar")[:140],
+                         action={"label": "Ver entrada", "tab": "expedientes", "view": "agents"}, score=95))
+
+    pending = database.scalars(select(Invoice).where(Invoice.review_status == "PENDING").order_by(Invoice.id.desc()).limit(50)).all()
+    for invoice in pending:
+        problems = [row for row in invoice_checks(invoice) if not row["ok"]]
+        party = invoice.customer_name if invoice.direction == "ISSUED" else invoice.supplier_name
+        why = "; ".join(row["label"].lower() for row in problems) if problems else "Todo cuadra: falta tu visto bueno"
+        rows.append(item("accion", "invoice", invoice.id, f"Factura {invoice.invoice_number or 's/n'} · {party or 'sin identificar'}", why,
+                         action={"label": "Revisar factura", "document_id": invoice.document_id}, checked=invoice_checks(invoice),
+                         amount=float(invoice.total) if invoice.total is not None else None, score=40 + 10 * len(problems),
+                         when=invoice.invoice_date.isoformat() if invoice.invoice_date else None))
+
+    drafts = database.scalars(select(OutboxMessage).where(OutboxMessage.status == "DRAFT").order_by(OutboxMessage.id)).all()
+    asked = {}
+    for request in database.scalars(select(DocumentRequest).where(DocumentRequest.status == "PENDING")).all():
+        asked.setdefault(request.case_id, []).append(request.label)
+    for message in drafts:
+        wanted = asked.get(message.entity_id, []) if message.entity_type == "case_request" else []
+        pedido = f"Pide: {', '.join(wanted[:3])}{'…' if len(wanted) > 3 else ''}. " if wanted else ""
+        rows.append(item("accion", "outbox", message.id, f"Enviar: {message.subject}", f"{pedido}Redactado por CapaFiscal para {message.to_name or message.to_email or 'sin destinatario'}: espera tu visto bueno.",
+                         action={"label": "Revisar y enviar", "tab": "salida"},
+                         checked=[{"label": "Destinatario" if message.to_email else "Falta el email del destinatario", "ok": bool(message.to_email)}], score=45))
+
+    for rule in database.scalars(select(LearningRule).where(LearningRule.status == "PROPUESTA")).all():
+        evidence = rule.evidence or {}
+        rows.append(item("accion", "rule", rule.id, f"Regla propuesta: {rule.subject_name or rule.subject_key} · {rule.field}",
+                         f"Aprendida de {evidence.get('corrections', 'varias')} corrección(es) tuyas: se aplica solo si la apruebas.",
+                         action={"label": "Decidir", "tab": "expedientes", "view": "agents", "anchor": "learningRules"}, score=20))
+    return rows
+
+
+def bank_items(database: Session, today: date) -> list[dict[str, Any]]:
+    from app.models import BankTransaction
+    from app.reconciliation import reconcile
+
+    last = database.scalar(select(BankTransaction.booking_date).order_by(BankTransaction.booking_date.desc()).limit(1))
+    rows = []
+    if last is None:
+        return [item("falta", "bank_none", "-", "Sin movimientos del banco", "Sin extracto no se pueden conciliar pagos y cobros ni cerrar el mes.",
+                     action={"label": "Importar extracto", "tab": "negocio", "anchor": "bankCard"}, score=30)]
+    if (today - last).days > STALE_BANK_DAYS:
+        rows.append(item("falta", "bank_gap", last.isoformat(), f"El extracto llega hasta el {last:%d/%m/%Y}",
+                         f"Faltan {(today - last).days} días de movimientos: los pagos y cobros de esos días no se pueden conciliar.",
+                         action={"label": "Importar extracto", "tab": "negocio", "anchor": "bankCard"}, score=35))
+    report = reconcile(database, today=today, auto=False, persist=False)
+    for row in report["movements"]:
+        checked = [{"label": check.get("label", ""), "ok": check.get("ok")} for check in row.get("checks") or []][:5]
+        label = f"{day(row['date'])} · {row['description'][:60]}"
+        if row.get("level") == "CONFLICTO":
+            rows.append(item("accion", "bank_conflict", row["transaction_id"], label, row.get("decision") or "La evidencia se contradice.",
+                             action={"label": "Decidir", "tab": "negocio", "anchor": "bankCard"}, checked=checked, amount=row["amount"], score=50, when=row["date"]))
+        elif row["state"] == "SIN_FACTURA" and abs(Decimal(str(row["amount"]))) >= MIN_UNJUSTIFIED:
+            rows.append(item("falta", "bank_unjustified", row["transaction_id"], label,
+                             f"{'Pago' if row['amount'] < 0 else 'Cobro'} de {eur(abs(row['amount']))} sin factura que lo justifique: falta el documento o decir qué es.",
+                             action={"label": "Investigar", "tab": "negocio", "anchor": "bankCard"}, checked=checked, amount=row["amount"], score=40, when=row["date"]))
+        elif row.get("level") == "PROBABLE" and row["state"] == "POSIBLE":
+            rows.append(item("falta", "bank_probable", row["transaction_id"], label,
+                             f"Probablemente es {row.get('invoice_label') or 'una factura'}, pero la evidencia no basta para conciliarlo solo.",
+                             action={"label": "Confirmar", "tab": "negocio", "anchor": "bankCard"}, checked=checked, amount=row["amount"], score=25, when=row["date"]))
+    for row in report["unpaid_invoices"]:
+        rows.append(item("accion", "unpaid", row["invoice_id"], row["invoice_label"],
+                         f"Venció el {day(row['due'])} y no hay {row['direction']} en el banco: ¿se {'cobró' if row['direction'] == 'cobro' else 'pagó'} por otra vía?",
+                         action={"label": "Ver en el banco", "tab": "negocio", "anchor": "bankCard"}, amount=row["amount"], score=35, when=row["due"]))
+    return rows
+
+
+def missing_documents(database: Session, today: date) -> list[dict[str, Any]]:
+    from app.fiscal_position import missing_recurring
+
+    month_start = today.replace(day=1)
+    previous = (month_start - timedelta(days=1)).replace(day=1)
+    quarter = (previous.month - 1) // 3 + 1
+    rows = []
+    for missing in missing_recurring(database, previous.year, quarter, today):
+        rows.append(item("falta", "recurring", f"{missing['supplier_key']}:{missing['month']}", f"Falta la factura de {missing['label']}",
+                         f"Llega todos los meses (habitual: {eur(missing['usual'])}) y la de ese mes no ha llegado.",
+                         action={"label": "Subir o pedir", "tab": "facturas"},
+                         checked=[{"label": "Proveedor mensual en los 3 meses anteriores", "ok": True}, {"label": "Factura del mes", "ok": False}], score=30))
+    return rows
+
+
+def working(database: Session, today: date, cases: list[Any]) -> list[dict[str, Any]]:
+    rows = []
+    requests = database.scalars(select(DocumentRequest).where(DocumentRequest.status == "PENDING")).all()
+    sent_cases = set(database.scalars(select(OutboxMessage.entity_id).where(OutboxMessage.entity_type == "case_request", OutboxMessage.status == "SENT")).all())
+    by_case: dict[int, list[DocumentRequest]] = {}
+    for request in requests:
+        by_case.setdefault(request.case_id, []).append(request)
+    titles = {case.id: case for case in cases}
+    for case_id, items in by_case.items():
+        case = titles.get(case_id)
+        if case is None:
+            continue
+        labels = ", ".join(request.label for request in items[:3]) + ("…" if len(items) > 3 else "")
+        if case_id in sent_cases:
+            next_at = min((request.next_reminder_at for request in items if request.next_reminder_at), default=None)
+            reminders = max(request.reminders_sent for request in items)
+            rows.append(item("haciendo", "chase", case_id, f"Esperando documentación · {case.title}",
+                             f"Pedido: {labels}. " + (f"{reminders} recordatorio(s) enviados. " if reminders else "")
+                             + (f"Próximo recordatorio el {next_at:%d/%m}." if next_at else "El Perseguidor vuelve a insistir si no llega."),
+                             action={"label": "Ver expediente", "case_id": case_id}, when=next_at.isoformat() if next_at else None) | {"code": case.code})
+        # Sin enviar: es la petición redactada que espera visto bueno («Enviar: …» en Requiere tu decisión).
+    for case in cases:
+        if case.status == "WAITING_DOCS" and case.id not in by_case:
+            rows.append(item("haciendo", "case_docs", case.id, case.title, "Espera documentación de un tercero; CapaFiscal sigue el plazo.",
+                             action={"label": "Ver expediente", "case_id": case.id}) | {"code": case.code})
+    return rows
+
+
+def fiscal_items(database: Session, today: date) -> list[dict[str, Any]]:
+    from app.fiscal_position import positions
+
+    try:
+        report = positions(database, today=today)
+    except Exception:  # la foto fiscal no debe tumbar la lista
+        return []
+    rows = []
+    for model in report["models"]:
+        if model["status"] == "FILED" or model["days_left"] is None or model["days_left"] > 30:
+            continue
+        info = model["information_available"] or 0
+        text = f"{model['headline']} · vence el {day(model['due_date'])} ({model['days_left']} días)"
+        if info < 1:
+            rows.append(item("falta", "tax", f"{model['model']}:{model['period_label']}", f"Modelo {model['model']} · {model['period_label']}",
+                             f"{text} · {model['summary']}",
+                             action={"label": "Ver qué falta", "tab": "impuestos"}, score=20 + (20 if model["days_left"] <= 7 else 0), when=model["due_date"]))
+        else:
+            rows.append(item("haciendo", "tax", f"{model['model']}:{model['period_label']}", f"Modelo {model['model']} · {model['period_label']}",
+                             f"{text}. Con toda la información; el Vigilante de plazos prepara el expediente 15 días antes.",
+                             action={"label": "Ver posición", "tab": "impuestos"}, when=model["due_date"]))
+    return rows
+
+
+def overnight(database: Session, since: datetime) -> dict[str, Any]:
+    """«CapaFiscal ha trabajado durante la noche»: lo hecho desde ayer a esta hora, contado."""
+    def count(statement) -> int:
+        return int(database.scalar(statement) or 0)
+
+    documents = count(select(func.count()).select_from(IngestedEvent).where(IngestedEvent.created_at >= since, IngestedEvent.kind.in_(("document", "invoice"))))
+    reconciled = count(select(func.count()).select_from(AuditEvent).where(AuditEvent.action == "bank.reconciled", AuditEvent.created_at >= since))
+    anomalies = count(select(func.count()).select_from(Case).where(Case.kind == "ANOMALY", Case.created_at >= since))
+    requested = count(select(func.count()).select_from(DocumentRequest).where(DocumentRequest.created_at >= since))
+    prepared = count(select(func.count()).select_from(Case).where(Case.kind != "ANOMALY", Case.created_at >= since))
+    lines = [
+        {"key": "documents", "count": documents, "label": "documento(s) leídos y registrados"},
+        {"key": "reconciled", "count": reconciled, "label": "pago(s) y cobro(s) conciliados"},
+        {"key": "anomalies", "count": anomalies, "label": "anomalía(s) detectadas"},
+        {"key": "requested", "count": requested, "label": "documento(s) pedidos"},
+        {"key": "prepared", "count": prepared, "label": "expediente(s) preparados"},
+    ]
+    return {"since": since.isoformat(), "total": sum(line["count"] for line in lines), "items": [line for line in lines if line["count"]]}
+
+
+def work_center(database: Session, *, today: date | None = None, now: datetime | None = None, user_name: str | None = None) -> dict[str, Any]:
+    from app.agents.director import assessed_open_cases
+    from app.agents.director import operational_board
+    from app.agents.pulse import pulse_status
+    from app.closing import default_period
+    from app.closing import evaluate
+
+    now = now or datetime.now(timezone.utc)
+    today = today or now.date()
+    cases = assessed_open_cases(database, today)
+
+    rows = decisions(database, today, cases) + bank_items(database, today) + missing_documents(database, today) + working(database, today, cases) + fiscal_items(database, today)
+    rows.sort(key=lambda row: (-row["score"], row["when"] or "9999"))
+    groups = {key: [row for row in rows if row["group"] == key] for key, _ in GROUPS}
+
+    board = operational_board(database, today)
+    groups["resuelto"] = [item("resuelto", line["key"], line["key"], f"{line['count']} {line['label']}", "Últimos 7 días, sin que nadie tuviera que intervenir.")
+                          | {"count": line["count"]} for line in board["resolved"]["items"]]
+
+    period = default_period(today)
+    close = evaluate(database, period, today=today)
+    pulse = pulse_status(database, now=now)
+    hour = now.astimezone().hour
+    greeting = "Buenos días" if hour < 14 else "Buenas tardes" if hour < 21 else "Buenas noches"
+    first = (user_name or "").split(" ")[0]
+    decide = len(groups["accion"])
+    headline = ("Nada requiere tu decisión hoy" if not decide else
+                f"{decide} {'cosa necesita' if decide == 1 else 'cosas necesitan'} tu decisión")
+    return {
+        "date": today.isoformat(),
+        "greeting": f"{greeting}{', ' + first if first else ''}",
+        "headline": headline,
+        "overnight": overnight(database, now - timedelta(hours=24)),
+        "pulse": pulse,
+        "close": {"period": period, "label": close["label"], "percent": close["percent"], "blockers": close["blockers"], "headline": close["headline"], "ready": close["ready"]},
+        "groups": [{"key": key, "label": label, "count": len(groups[key]) if key != "resuelto" else sum(row["count"] for row in groups[key]), "items": groups[key]}
+                   for key, label in GROUPS],
+        "counts": {key: len(groups[key]) for key, _ in GROUPS if key != "resuelto"},
+        "time_saved": board["time_saved"],
+    }

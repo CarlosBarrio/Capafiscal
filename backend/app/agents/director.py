@@ -88,6 +88,37 @@ def prioritize(database: Session, case: Case, today: date) -> None:
     case.headline = headline_for(case)
 
 
+class Assessed:
+    """El expediente con la prioridad de HOY calculada en memoria, sin tocar la fila.
+
+    Las pantallas (GET) lo usan para no escribir: en SQLite dos lecturas que escriben a la vez
+    acaban en «database is locked». La prioridad se guarda al trabajar el expediente y cada
+    mañana con el Vigilante de plazos (refresh_priorities).
+    """
+
+    def __init__(self, database: Session, case: Case, today: date):
+        self._case = case
+        self.priority = max(case.priority if case.status == "WAITING_DOCS" else 0, score_case(case, today))
+        self.level = level_for(self.priority)
+        self.status = decide_status(database, case)
+        self.headline = f"{case.subject_name or 'Tu empresa'} — {LEVEL_WORDS[self.level]}"
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._case, name)
+
+
+def assessed_open_cases(database: Session, today: date) -> list[Any]:
+    return [Assessed(database, case, today) for case in database.scalars(select(Case).where(Case.status.in_(OPEN_STATUSES))).all()]
+
+
+def refresh_priorities(database: Session, today: date) -> int:
+    """Guarda la prioridad del día (los plazos se acercan aunque nadie toque el expediente)."""
+    cases = database.scalars(select(Case).where(Case.status.in_(OPEN_STATUSES))).all()
+    for case in cases:
+        prioritize(database, case, today)
+    return len(cases)
+
+
 class Director(Agent):
     code = "director"
     name = "Director de cartera"
@@ -136,9 +167,7 @@ def daily_briefing(database: Session, today: date | None = None, limit: int = 8)
     from app.agenda_service import build_agenda
 
     today = today or date.today()
-    cases = database.scalars(select(Case).where(Case.status.in_(OPEN_STATUSES))).all()
-    for case in cases:
-        prioritize(database, case, today)
+    cases = assessed_open_cases(database, today)
 
     items: list[dict[str, Any]] = []
     for case in cases:
@@ -306,9 +335,7 @@ def operational_board(database: Session, today: date | None = None, *, days: int
 
     today = today or date.today()
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    cases = database.scalars(select(Case).where(Case.status.in_(OPEN_STATUSES))).all()
-    for case in cases:
-        prioritize(database, case, today)
+    cases = assessed_open_cases(database, today)
 
     # 🔴 Requiere tu atención: lo urgente o importante que espera a una persona, y lo bloqueado.
     attention = []

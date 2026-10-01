@@ -246,7 +246,6 @@ def briefing(database: DatabaseDependency) -> dict[str, Any]:
     data = daily_briefing(database)
     data["board"] = operational_board(database)
     data["pulse"] = pulse_status(database)
-    database.commit()
     return data
 
 
@@ -256,7 +255,6 @@ def today_view(database: DatabaseDependency) -> dict[str, Any]:
     from app.agents.director import operational_board
 
     board = operational_board(database)
-    database.commit()
     return {key: board[key] for key in ("date", "attention", "pending", "resolved", "top", "fiscal", "bank", "intervention", "time_saved")}
 
 

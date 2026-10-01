@@ -15,7 +15,7 @@
   >
   <link
     rel="stylesheet"
-    href="/static/style.css?v=100"
+    href="/static/style.css?v=101"
   >
 </head>
 <body>
@@ -184,75 +184,20 @@
     </header>
 
 <main class="page">
-  <!-- PANEL -->
+  <!-- PANEL: CENTRO DE TRABAJO -->
   <section class="tab-panel active" id="tab-panel">
-    <div class="section-title">
-      <h1 id="greetingLine">
-        Hoy
-      </h1>
-      <p id="panelPeriodNote">
-        Qué ha pasado, qué ha hecho CapaFiscal y qué te toca a ti.
-      </p>
+    <div class="section-title work-title">
+      <div>
+        <h1 id="greetingLine">Hoy</h1>
+        <p id="panelPeriodNote">Qué decides tú, qué falta y qué está haciendo CapaFiscal.</p>
+      </div>
+      <button type="button" class="btn-ghost" id="workRun"><svg class="icon"><use href="#i-play"/></svg> Trabajar ahora</button>
     </div>
 
-    <div id="homeBriefing" class="briefing-card hidden"></div>
+    <div class="card work-status" id="workStatus" aria-live="polite"></div>
 
-    <div id="recommendationCard" class="recommendation-card hidden"></div>
-
-    <div class="card">
-      <div class="card-head">
-        <h2>Agenda del agente</h2>
-        <span class="card-sub" id="agendaSub">Próximos 30 días</span>
-      </div>
-      <div id="agendaList" class="agenda-list"></div>
-    </div>
-
-    <div
-      id="openRisksPanel"
-      class="open-risks-card hidden"
-    >
-      <div class="open-risks-header">
-        <span class="open-risks-icon"><svg class="icon"><use href="#i-alert"/></svg></span>
-        <div>
-          <h3>Documentos para revisar</h3>
-          <p id="openRisksText">
-            No hay incidencias abiertas.
-          </p>
-        </div>
-      </div>
-      <div id="openRisksList"></div>
-    </div>
-
-    <div class="panel-grid">
-      <div class="card">
-        <div class="card-head">
-          <h2>Bandeja de revisión</h2>
-          <span class="card-sub" id="reviewInboxSub">
-            Tareas persistentes pendientes
-          </span>
-        </div>
-        <div id="inboxList" class="tasks-list"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <h2>Pagos y vencimientos</h2>
-          <span class="card-sub" id="paymentsSub">
-            Facturas aprobadas sin pagar
-          </span>
-        </div>
-        <div id="paymentsList" class="payments-list"></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <h2>Últimos documentos</h2>
-        <span class="card-sub">
-          Documentos incorporados al sistema
-        </span>
-      </div>
-      <div id="recentDocuments"></div>
+    <div class="work-groups" id="workGroups">
+      <p class="board-empty">Cargando…</p>
     </div>
   </section>
 
@@ -1973,7 +1918,7 @@
 <div id="appMessages" class="app-messages"></div>
 
 <script src="/static/auth.js?v=1"></script>
-<script src="/static/app.js?v=63"></script>
+<script src="/static/app.js?v=64"></script>
 <script src="/static/reports.js?v=3"></script>
 <script src="/static/assistant.js?v=2"></script>
 <script src="/static/activity.js?v=3"></script>
@@ -1991,6 +1936,7 @@
 <script src="/static/automations.js?v=4"></script>
 <script src="/static/intelligence.js?v=1"></script>
 <script src="/static/close.js?v=1"></script>
+<script src="/static/work.js?v=1"></script>
 <script src="/static/shell.js?v=6"></script>
 </body>
 </html>

@@ -211,8 +211,10 @@ def job_anomalies(database: Session, now: datetime) -> tuple[int, str]:
 
 def job_deadlines(database: Session, now: datetime) -> tuple[int, str]:
     from app.agents.orchestrator import DEADLINE_LEAD_DAYS
+    from app.agents.director import refresh_priorities
     from app.agents.orchestrator import watch_deadlines
 
+    refresh_priorities(database, now.date())
     cases = watch_deadlines(database, trigger="schedule", today=now.date())
     if not cases:
         return 0, f"Ningún modelo vence en los próximos {DEADLINE_LEAD_DAYS} días sin expediente."

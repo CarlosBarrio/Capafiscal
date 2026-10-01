@@ -631,7 +631,8 @@ function renderOpenRisks(documents) {
 }
 
 async function loadPanelSummary() {
-  // Lo fiscal, el banco y la actividad del día los pinta el Director (cases.js).
+  // Hoy es el Centro de trabajo (work.js): una sola lista. Esto solo pinta si siguen las tarjetas antiguas.
+  if (!document.getElementById("agendaList")) return;
   const [paymentsResult, dashboardResult, agendaResult] = await Promise.allSettled([
     apiRequest("/payments"),
     apiRequest("/dashboard/today"),
