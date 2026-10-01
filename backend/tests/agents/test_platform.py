@@ -247,3 +247,13 @@ def test_external_source_event_uses_the_same_chain(client):
     assert case["route"]["code"] == "requerimiento" and case["route"]["source"] == "dehu"
     assert [step["agent"] for step in body.json()["run"]["steps"]][:2] == ["vigilante", "expedientes"]
     assert client.post("/api/events", json={"kind": "notification", "notification": {"issuer": "NOPE"}}).status_code == 422
+
+
+def test_scan_endpoint_saves_a_payment_without_invoice(client):
+    """El barrido por la API guarda el expediente aunque el hallazgo lleve fechas (antes daba 500)."""
+    csv = "Fecha;Concepto;Importe\n" + f"{(date.today() - timedelta(days=20)):%d/%m/%Y};TRANSFERENCIA A PROVEEDOR SIN FACTURA;-1800,00\n"
+    client.post("/api/bank/import", files={"uploaded_file": ("extracto.csv", csv.encode(), "text/csv")}).raise_for_status()
+    response = client.post("/api/agents/anomalies/scan")
+    assert response.status_code == 200, response.text
+    anomalies = client.get("/api/cases", params={"view": "anomalies"}).json()
+    assert "PAGO_SIN_FACTURA" in {item["procedure"] for item in anomalies}

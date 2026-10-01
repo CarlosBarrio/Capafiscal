@@ -127,3 +127,71 @@ Sin clave, la columna de Claude aparece como «no ejecutado».
 - **Historial**: cada ejecución añade una línea a `informes/historial.csv`
   (fecha, commit, conjuntos, motor, acierto, resultados y errores conocidos
   pendientes), para ver cómo evoluciona el sistema.
+
+## Banco de expedientes sintéticos (B y C)
+
+Además de facturas sueltas, CapaFiscal se evalúa con **expedientes**:
+grupos de documentos relacionados (requerimiento + facturas + 303
+presentado, embargo + facturas pendientes, correo con original y
+rectificativa…) que entran por las mismas puertas que en producción
+(subida, correo, eventos de plazo, extracto bancario).
+
+Los documentos son **sintéticos pero realistas**: siguen la estructura de
+los procedimientos oficiales (cabecera del organismo, destinatario,
+expediente, órgano, asunto, fundamento, documentación, plazo,
+advertencias, diligencia de notificación, pie con código de verificación y
+paginación), con datos inventados y la marca `SIMULACIÓN — NO OFICIAL`.
+No se usan NIF, IBAN ni datos personales reales: los NIF de empresa llevan
+el prefijo provincial 00, que no existe. Variantes de ruido: texto girado,
+2-3 páginas, tabla partida entre páginas, dígitos separados, errores de
+OCR y escaneo sin texto seleccionable.
+
+```bash
+python -m evaluation generar-b                       # regenera evaluation/datasets/b_sintetico (versionado)
+python -m evaluation casos --dataset b_sintetico     # evalúa (reglas); informe en informes/
+python -m evaluation casos --motor hibrido           # con Claude si hay ANTHROPIC_API_KEY
+
+python -m evaluation generar-c --semilla N           # C ciego: lo genera quien evalúa, con su semilla
+python -m evaluation casos --dataset c_ciego --ciego # una sola vez, al final (queda en ciego.log)
+```
+
+Cada carpeta de caso tiene sus documentos y un `caso.json` con la verdad:
+
+```json
+{
+  "case_id": "B05",
+  "documents": [{"archivo": "embargo_creditos.pdf", "tipo": "embargo"}],
+  "contexto": {"empresa": {...}, "facturas": [{"invoice_number": "SFD-2026-071", "total": "2300.00", "paid_at": null}, ...]},
+  "entradas": [{"tipo": "subida", "archivo": "embargo_creditos.pdf", "expected": {
+    "route": "embargo", "procedure": "EMBARGO_CREDITOS",
+    "affected": {"type": "supplier", "tax_id": "B00200022"},
+    "debt_amount": 2850.00, "credit_amount": 4100.00, "deadline": "2026-10-06",
+    "requires_human": true, "expected_findings": ["credit_exceeds_debt"]}}]
+}
+```
+
+La verdad se escribe a partir del procedimiento (lo que haría un gestor),
+no de lo que hace hoy el sistema, y se versiona **antes** de ejecutar.
+Lo que un caso no dice no se comprueba. Las comprobaciones disponibles y los
+tres hallazgos semánticos (`credit_exceeds_debt`, `successive_payments`,
+`no_pending_payment`) están descritos en `evaluation/casos.py`.
+
+| Bloque | Casos |
+|---|---|
+| AEAT | B01 comprobación limitada · B02 requerimiento que dice «factura» 18 veces · B03 propuesta de liquidación · B04 sin fecha de notificación |
+| Embargos | B05 crédito > deuda · B06 pagos sucesivos · B07 sin pago pendiente · B08 salario |
+| Seguridad Social | B09 requerimiento (CCC) · B10 reclamación de deuda · B11 comunicación laboral sin impacto fiscal |
+| Normales | B12 certificado · B13 justificante 303 · B14 NIF desconocido |
+| Memoria | B15 requerimiento + facturas + 303 · B16 falta la factura 003 · B17 factura duplicada |
+| Facturas | B18 rectificativa · B19 retención · B20 tres páginas |
+| Correo | B21 factura · B22 reenviado · B23 «RE:» con original y rectificativa |
+| Adversariales | ADV01 embargo que enumera facturas · ADV02 «autoliquidación» · ADV03 escaneado · ADV04 texto girado · ADV05 dos páginas · ADV06 NIF ilegible · ADV07 fecha 4/5/26 · ADV08 solo pie legal · ADV09 dígitos separados · ADV10 OCR malo |
+| Apoyo | BANCO01 extracto con descuadres · PLAZOS01 eventos 303/111/115/130 |
+
+C (12 casos: requerimiento, requerimiento ambiguo, embargo a proveedor,
+embargo sin deuda, embargo de salario, factura atípica, normal, duplicada,
+rectificativa, retención, multipágina, plazo 303) usa las mismas familias
+con otras empresas, cifras, fechas y ruido elegidos por la semilla. Se
+guarda fuera de git con un sello (hash) en su `indice.json`.
+
+Resultados versionados y análisis de fallos: [`resultados/`](resultados/README.md).

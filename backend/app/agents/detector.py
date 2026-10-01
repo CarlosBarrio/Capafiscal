@@ -40,6 +40,7 @@ from app.agents.base import Finding
 from app.agents.base import StepResult
 from app.agents.base import eur
 from app.agents.base import evidence
+from app.agents.base import jsonable
 from app.agents.base import run_step
 from app.calendar_es import add_months
 from app.models import AgentRun
@@ -697,10 +698,10 @@ def run_anomaly_scan(database: Session, *, trigger: str = "schedule", today: dat
             amount=Decimal(str(item["amount"])) if item["amount"] is not None else None,
             fingerprint=item["fingerprint"],
             document_id=item["facts"].get("document_id"),
-            facts={
+            facts=jsonable({
                 **item["facts"], "origin": "scan", "severity": item["severity"], "severity_score": SEVERITY[item["severity"]],
                 "evidence": item["evidence"], "findings": [item["finding"]], "finding_types": [item["procedure"]],
-            },
+            }),
             required_documents=[],
             proposed_actions=[{"label": item["finding"]["siguiente"] or "Revisarlo y confirmar si es correcto o un error", "done": False}],
             antecedents=[],

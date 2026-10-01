@@ -212,8 +212,8 @@ def observe(*, document_id: int | None = None, event_id: int | None = None, dupl
             summary = runs[-1].summary or ""
             route = next((code for code, item in ROUTES.items() if summary.startswith(item["label"])), None)
 
-        flags: list[str] = []
-        if document is not None:
+        flags: list[str] = []  # dudas de la lectura de FACTURA: solo cuentan si se tomó por factura
+        if document is not None and invoice is not None:
             extraction = database.scalar(select(ExtractionRun).where(ExtractionRun.document_id == document.id).order_by(ExtractionRun.id.desc()).limit(1))
             if extraction is not None and extraction.result_json:
                 from app.company_service import company_tax_ids
@@ -429,37 +429,16 @@ def run_case(client, folder: Path) -> dict[str, Any]:
     started = time.perf_counter()
     entries = []
     for index, entry in enumerate(case["entradas"]):
-        kind = entry["tipo"]
-        expectations: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
-        if kind == "subida":
-            path = folder / entry["archivo"]
-            response = client.post("/api/upload", files={"uploaded_file": (path.name, path.read_bytes(), "application/pdf")})
-            response.raise_for_status()
-            body = response.json()
-            observed = observe(document_id=body["document"]["id"], duplicate_signal=bool(body.get("duplicate")))
-            expectations.append((entry["archivo"], entry["expected"], observed))
-        elif kind == "correo":
-            path = folder / entry["archivo"]
-            response = client.post("/api/connectors/email/import", files={"uploaded_file": (path.name, path.read_bytes(), "message/rfc822")})
-            response.raise_for_status()
-            attachments = response.json()["attachments"]
-            for position, expected in enumerate(entry["expected_adjuntos"]):
-                item = attachments[position] if position < len(attachments) else None
-                observed = observe(document_id=item["document_id"], duplicate_signal=bool(not item["new_document"] or item["duplicate"])) if item else None
-                expectations.append((f"{entry['archivo']}#{position + 1}", expected, observed))
-        elif kind == "plazo":
-            event = json.loads((folder / entry["archivo"]).read_text(encoding="utf-8"))
-            response = client.post("/api/events", json=event)
-            response.raise_for_status()
-            body = response.json()
-            observed = observe(event_id=body["event"]["id"])
-            expectations.append((entry["archivo"], entry["expected"], observed))
-        elif kind == "banco":
-            path = folder / entry["archivo"]
-            client.post("/api/bank/import", files={"uploaded_file": (path.name, path.read_bytes(), "text/csv")}).raise_for_status()
-        elif kind == "analisis":
-            client.post("/api/agents/anomalies/scan").raise_for_status()
-            expectations.append(("análisis", entry["expected"], observe_scan()))
+        try:
+            expectations = run_entry(client, folder, entry)
+        except Exception as error:  # un fallo del sistema es un resultado, no un fallo del evaluador
+            message = f"{type(error).__name__}: {str(error).splitlines()[0][:200]}"
+            wanted = entry.get("expected") or {key: value for item in entry.get("expected_adjuntos", []) for key, value in item.items()}
+            entries.append({
+                "entrada": entry.get("archivo") or entry["tipo"], "outcome": "error_sistema", "observed": {"error": message}, "invoice": None,
+                "checks": [{"check": name, "ok": False, "observed": f"error del sistema ({message})", "expected": value} for name, value in wanted.items()],
+            })
+            continue
         for label, expected, observed in expectations:
             if observed is None:
                 result = {"checks": [{"check": name, "ok": False, "observed": "no llegó", "expected": value} for name, value in expected.items()], "invoice": None}
@@ -481,6 +460,42 @@ def run_case(client, folder: Path) -> dict[str, Any]:
         "case_id": case["case_id"], "bloque": case["bloque"], "titulo": case["titulo"], "etiquetas": case["etiquetas"],
         "entries": entries, "seconds": round(time.perf_counter() - started, 2),
     }
+
+
+def run_entry(client, folder: Path, entry: dict[str, Any]) -> list[tuple[str, dict[str, Any], dict[str, Any] | None]]:
+    """Mete una entrada por su puerta de producción y devuelve (etiqueta, esperado, observado)."""
+    kind = entry["tipo"]
+    expectations: list[tuple[str, dict[str, Any], dict[str, Any] | None]] = []
+    if kind == "subida":
+        path = folder / entry["archivo"]
+        response = client.post("/api/upload", files={"uploaded_file": (path.name, path.read_bytes(), "application/pdf")})
+        response.raise_for_status()
+        body = response.json()
+        observed = observe(document_id=body["document"]["id"], duplicate_signal=bool(body.get("duplicate")))
+        expectations.append((entry["archivo"], entry["expected"], observed))
+    elif kind == "correo":
+        path = folder / entry["archivo"]
+        response = client.post("/api/connectors/email/import", files={"uploaded_file": (path.name, path.read_bytes(), "message/rfc822")})
+        response.raise_for_status()
+        attachments = response.json()["attachments"]
+        for position, expected in enumerate(entry["expected_adjuntos"]):
+            item = attachments[position] if position < len(attachments) else None
+            observed = observe(document_id=item["document_id"], duplicate_signal=bool(not item["new_document"] or item["duplicate"])) if item else None
+            expectations.append((f"{entry['archivo']}#{position + 1}", expected, observed))
+    elif kind == "plazo":
+        event = json.loads((folder / entry["archivo"]).read_text(encoding="utf-8"))
+        response = client.post("/api/events", json=event)
+        response.raise_for_status()
+        body = response.json()
+        observed = observe(event_id=body["event"]["id"])
+        expectations.append((entry["archivo"], entry["expected"], observed))
+    elif kind == "banco":
+        path = folder / entry["archivo"]
+        client.post("/api/bank/import", files={"uploaded_file": (path.name, path.read_bytes(), "text/csv")}).raise_for_status()
+    elif kind == "analisis":
+        client.post("/api/agents/anomalies/scan").raise_for_status()
+        expectations.append(("análisis", entry["expected"], observe_scan()))
+    return expectations
 
 
 def observe_scan() -> dict[str, Any]:
@@ -519,7 +534,8 @@ def check_memory(client, expected: dict[str, Any]) -> dict[str, Any]:
 
 
 def summarize(observed: dict[str, Any]) -> dict[str, Any]:
-    keep = ("type", "route", "procedure", "issuer", "reference", "affected", "deadline", "debt_amount", "credit_amount", "requires_human", "agents", "findings", "event_status", "case_code", "case_status", "requires_ocr", "duplicate", "invoice", "flags")
+    keep = ("type", "route", "procedure", "issuer", "reference", "affected", "subject", "intake_warnings", "deadline", "deadline_rule", "debt_amount", "credit_amount", "requires_human",
+            "agents", "findings", "event_status", "case_code", "case_status", "requires_ocr", "duplicate", "invoice", "flags", "insights")
     data = {key: observed.get(key) for key in keep}
     data["deadline"] = data["deadline"].isoformat() if data["deadline"] else None
     data["documents"] = [f"{item['code']}:{item['status']}" for item in observed.get("documents") or []]

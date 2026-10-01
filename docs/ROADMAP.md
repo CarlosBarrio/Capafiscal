@@ -42,8 +42,8 @@ expedientes, traza, memoria, contratos, Detector, reanudación).
 | Director: trabajo realizado, % de intervención humana y tiempo ahorrado estimado | ✅ |
 | Prueba de resistencia (100 eventos simultáneos) | ✅ Encontró y corrigió 3 problemas de concurrencia (+1 de fechas que destapó la demo) |
 | Demo «cero intervención» (DEHú y correo) | ✅ `scripts/demo_cero_intervencion.py` |
-| 1. Conjunto B (documentos nuevos, sin ajustar reglas con ellos) | ⏳ Necesita documentos |
-| 2. Línea base de reglas en B y en C | ⏳ |
+| 1. Conjunto B (documentos nuevos, sin ajustar reglas con ellos) | ✅ Banco sintético de 35 expedientes / 50 documentos con verdad (`evaluation/datasets/b_sintetico`). Faltan documentos reales para B |
+| 2. Línea base de reglas en B y en C | 🟡 B: 10/35 expedientes perfectos, 174/221 comprobaciones, 2 errores silenciosos ([análisis](../backend/evaluation/resultados/README.md)). C: generador listo, lo ejecuta quien evalúa con su semilla |
 | 3. Claude real (`ANTHROPIC_API_KEY`) | ⏳ |
 | 4. Híbrido + enrutado (¿cuándo merece la pena Claude?) | ⏳ Medición lista |
 | 5. Conjunto C ciego (examen final) | ⏳ |
@@ -51,4 +51,14 @@ expedientes, traza, memoria, contratos, Detector, reanudación).
 
 Error conocido que se sigue: factura de una tienda de informática
 clasificada como «Servicios profesionales» (conjunto A). No se corrige hasta
-ver en B si es aislado o sistemático.
+ver en B si es aislado o sistemático. El banco sintético B no lleva
+categoría en su verdad: esa pregunta necesita documentos reales en B.
+
+Fallos que B ha destapado (sin corregir, por protocolo): plazos sin leer la
+fecha de notificación, importe de la deuda (toma el principal), propuesta de
+liquidación tomada por liquidación, documentos pedidos sin reconocer,
+retención en embargos cuando el crédito supera la deuda, documentos
+informativos que abren trabajo, NIF desconocido tratado como propio, y dos
+errores silenciosos en facturas (rectificativa en positivo y nº de factura
+con OCR malo). Corregido por ser un fallo y no una regla: el barrido de
+anomalías daba error 500 con un pago sin factura.
