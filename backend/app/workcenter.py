@@ -148,12 +148,37 @@ def bank_items(database: Session, today: date) -> list[dict[str, Any]]:
     from app.models import BankTransaction
     from app.reconciliation import reconcile
 
+    from app.models import BankConnection
+
     last = database.scalar(select(BankTransaction.booking_date).order_by(BankTransaction.booking_date.desc()).limit(1))
     rows = []
+    connections = database.scalars(select(BankConnection).where(BankConnection.status != "REMOVED")).all()
+    linked = [item for item in connections if item.status == "LINKED"]
+    for connection in connections:
+        name = connection.institution_name or "el banco"
+        if connection.status == "EXPIRED":
+            rows.append(item("accion", "bank_consent", connection.id, f"Renueva el acceso a {name}",
+                             "El consentimiento PSD2 caduca cada 90 días: sin renovarlo, los movimientos dejan de llegar solos.",
+                             action={"label": "Renovar", "tab": "negocio", "anchor": "bankConnections"}, score=60))
+        elif connection.status == "PENDING":
+            rows.append(item("falta", "bank_authorize", connection.id, f"Falta autorizar {name}",
+                             "El titular de la cuenta tiene que dar permiso en la web del banco.",
+                             action={"label": "Autorizar", "tab": "negocio", "anchor": "bankConnections"}, score=30))
+        elif connection.status == "LINKED" and connection.last_error:
+            rows.append(item("falta", "bank_sync_error", connection.id, f"No se pudo leer {name}", connection.last_error[:200],
+                             action={"label": "Ver banco", "tab": "negocio", "anchor": "bankConnections"}, score=30))
+    if linked:
+        synced = max((item.last_sync_at for item in linked if item.last_sync_at), default=None)
+        rows.append(item("haciendo", "bank_sync", "linked", f"Banco conectado ({len(linked)})",
+                         "Los movimientos llegan solos cada 6 horas y se concilian al entrar."
+                         + (f" Última lectura: {synced:%d/%m %H:%M}." if synced else ""),
+                         action={"label": "Ver banco", "tab": "negocio", "anchor": "bankConnections"}))
+    if last is None and linked:
+        return rows
     if last is None:
         return [item("falta", "bank_none", "-", "Sin movimientos del banco", "Sin extracto no se pueden conciliar pagos y cobros ni cerrar el mes.",
                      action={"label": "Importar extracto", "tab": "negocio", "anchor": "bankCard"}, score=30)]
-    if (today - last).days > STALE_BANK_DAYS:
+    if (today - last).days > STALE_BANK_DAYS and not linked:
         rows.append(item("falta", "bank_gap", last.isoformat(), f"El extracto llega hasta el {last:%d/%m/%Y}",
                          f"Faltan {(today - last).days} días de movimientos: los pagos y cobros de esos días no se pueden conciliar.",
                          action={"label": "Importar extracto", "tab": "negocio", "anchor": "bankCard"}, score=35))

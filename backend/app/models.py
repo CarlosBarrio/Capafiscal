@@ -1975,6 +1975,29 @@ class BankAllocation(TenantMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+class BankConnection(TenantMixin, Base):
+    """Banco conectado por PSD2 a través de un agregador: el titular autoriza el acceso y CapaFiscal lee los movimientos."""
+
+    __tablename__ = "bank_connections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    institution_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    institution_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reference: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    requisition_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    link: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # PENDING (falta que el titular autorice), LINKED, EXPIRED (renovar consentimiento), ERROR, REMOVED
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    accounts: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    consent_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False, default="persona")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
 class LearningRule(TenantMixin, Base):
     """Una regla aprendida de las correcciones humanas. No actúa hasta que un administrador la aprueba.
 

@@ -3018,3 +3018,11 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 .work-sim-link { width: max-content; font-size: 12.5px; }
 .work-sim ul { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 2px; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
 .work-sim .board-empty { font-size: 12px; }
+.bank-connections { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.bank-connection { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line); }
+.bank-connection:first-child { border-top: none; padding-top: 0; }
+.bank-connect-row { align-items: center; }
+@media (max-width: 640px) {
+    .bank-connection { flex-direction: column; }
+}
+.bank-connect-row select { max-width: 320px; }

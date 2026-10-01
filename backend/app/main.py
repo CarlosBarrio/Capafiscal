@@ -372,6 +372,10 @@ from app.treasury_routes import router as treasury_router  # noqa: E402
 
 app.include_router(treasury_router)
 
+from app.bank_sync_routes import router as bank_sync_router  # noqa: E402
+
+app.include_router(bank_sync_router)
+
 
 @app.middleware("http")
 async def identify_request(request, call_next):

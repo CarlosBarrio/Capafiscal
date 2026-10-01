@@ -38,6 +38,7 @@ TABLE_FOR_PARAM = {
     "absence_id": "absences", "assignment_id": "project_assignments", "attachment_id": "case_attachments", "entry_id": "time_entries",
     "event_id": "ingested_events", "message_id": "outbox_messages", "payslip_id": "payslips", "rule_id": "learning_rules",
     "run_id": "agent_runs", "template_id": "recurring_invoices", "match_id": "intel_matches",
+    "connection_id": "bank_connections",
 }
 
 
@@ -90,6 +91,10 @@ def seed_b(client, headers, tmp_path):
     # Inteligencia: el perfil y las novedades relevantes de B son de B (el BOE es público y común).
     client.put("/api/intelligence/profile", json={"common": {"sector": MARK}, "juridico": {"areas": ["laboral", "mercantil"]}}, headers=headers).raise_for_status()
     client.post("/api/intelligence/refresh", json={"day": "2026-09-29", "back_days": 1}, headers=headers).raise_for_status()
+    # Banco conectado (agregador simulado): la conexión de B es de B.
+    created = client.post("/api/bank/connections", json={"institution_id": "BANCO_SIMULADO_ES", "institution_name": f"{MARK} Banco"}, headers=headers)
+    created.raise_for_status()
+    client.post(f"/api/bank/connections/{created.json()['id']}/confirm", headers=headers).raise_for_status()
 
 
 def concrete_urls(path: str, b_ids: dict[str, list[int]]) -> list[str]:
@@ -102,7 +107,7 @@ def concrete_urls(path: str, b_ids: dict[str, list[int]]) -> list[str]:
             values[name] = [str(item) for item in sorted({i for ids in b_ids.values() for i in ids})][:5] or ["1"]
         else:
             values[name] = {"party": ["supplier"], "key": ["B00400044"], "model": ["303"], "decision": ["aprobar"], "index": ["0"],
-                            "code": ["EXP-2026-0001"], "token": ["x"], "period": ["2026-09"]}.get(name, ["1"])
+                            "code": ["EXP-2026-0001"], "token": ["x"], "period": ["2026-09"], "reference": ["0" * 32]}.get(name, ["1"])
     urls = [path]
     for name in params:
         urls = [url.replace("{" + name + "}", value) for url in urls for value in values[name]]
@@ -123,6 +128,7 @@ def test_client_a_cannot_read_or_change_anything_of_client_b(client, multi, tmp_
     from app.main import app
 
     monkeypatch.setattr(settings, "intel_boe_folder", Path(__file__).resolve().parents[1] / "fixtures" / "boe")
+    monkeypatch.setattr(settings, "bank_data_folder", Path(__file__).resolve().parents[1] / "fixtures" / "bank")
 
     admin, a, b = multi["admin"], multi["a"], multi["b"]
     seed_b(client, as_(admin, b), tmp_path)

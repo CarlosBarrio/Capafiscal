@@ -1,0 +1,18 @@
+{
+  "_nota": "SIMULACIÓN — NO OFICIAL. Formato de la API de GoCardless Bank Account Data; datos inventados.",
+  "transactions": {
+    "booked": [
+      {"transactionId": "sim-0001", "bookingDate": "2026-09-10", "transactionAmount": {"amount": "-1210.00", "currency": "EUR"},
+       "remittanceInformationUnstructured": "TRANSF ACME SUMINISTROS FAC-0901", "creditorName": "ACME SUMINISTROS S.L."},
+      {"transactionId": "sim-0002", "bookingDate": "2026-09-30", "transactionAmount": {"amount": "-363.00", "currency": "EUR"},
+       "remittanceInformationUnstructured": "TRANSFERENCIA TALLERES OTRO T-0902"},
+      {"transactionId": "sim-0003", "bookingDate": "2026-10-02", "transactionAmount": {"amount": "-95.00", "currency": "EUR"},
+       "remittanceInformationUnstructuredArray": ["RECIBO SEGURO LOCAL", "POLIZA 0000"], "creditorName": "ASEGURADORA FICTICIA S.A.",
+       "balanceAfterTransaction": {"balanceAmount": {"amount": "8100.00", "currency": "EUR"}, "balanceType": "closingBooked"}},
+      {"transactionId": "sim-0004", "bookingDate": "2026-10-03", "transactionAmount": {"amount": "-3.00", "currency": "EUR"},
+       "remittanceInformationUnstructured": "COMISION TRANSFERENCIA",
+       "balanceAfterTransaction": {"balanceAmount": {"amount": "8097.00", "currency": "EUR"}, "balanceType": "closingBooked"}}
+    ],
+    "pending": []
+  }
+}

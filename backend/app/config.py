@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     auth_required: bool = False  # multiempresa: usuarios, roles y aislamiento estricto por cliente
     session_hours: int = 12
     dehu_inbox_dir: str = ""  # carpeta con notificaciones descargadas de la DEHú (PDF + .json)
+    # Banco conectado (PSD2) a través de un agregador con licencia (API de GoCardless Bank Account Data).
+    # Sin credenciales no hay conexión real: se sigue importando el extracto CSV/Excel.
+    bank_data_secret_id: str = ""
+    bank_data_secret_key: str = ""
+    bank_data_url: str = "https://bankaccountdata.gocardless.com/api/v2"
+    bank_data_folder: Path | None = None  # respuestas guardadas del agregador (pruebas y demostraciones sin red)
     # Dirección pública para los enlaces de subida de documentos.
     public_base_url: str = "http://127.0.0.1:8000"
 

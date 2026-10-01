@@ -243,6 +243,19 @@ def job_follow_up(database: Session, now: datetime) -> tuple[int, str]:
     return result["reminders"], f"{result['reminders']} recordatorio(s) preparados" + (f"; {result['escalated']} expediente(s) escalados" if result["escalated"] else "") + "."
 
 
+def job_bank_sync(database: Session, now: datetime) -> tuple[int, str]:
+    from app.bank_connect import provider
+    from app.bank_sync import sync_all
+
+    if provider() is None:
+        return 0, "Sin banco conectado: se usa el extracto importado a mano."
+    result = sync_all(database, today=now.date())
+    if not result["connections"]:
+        return 0, "Ningún banco conectado todavía."
+    errors = f" Avisos: {'; '.join(result['errors'])}" if result["errors"] else ""
+    return result["imported"], f"{result['imported']} movimiento(s) nuevos del banco, {result['auto_matched']} conciliado(s) solos.{errors}"
+
+
 def job_intelligence(database: Session, now: datetime) -> tuple[int, str]:
     from app.intelligence.service import run
 
@@ -259,6 +272,7 @@ AUTOMATIONS: tuple[Automation, ...] = (
     Automation("ANOMALY_SCAN", "Detector de anomalías", "Cruza facturas, banco e histórico y abre un expediente cuando algo no cuadra: importes atípicos, duplicados, IVA inusual, facturas que faltan o pagos sin factura.", "Cada día · 06:45", 6, 45, "daily", job_anomalies, 15, "Agente", "expedientes"),
     Automation("DEADLINE_WATCH", "Vigilante de plazos", "15 días antes de cada 303, 130, 111 o 115 abre su expediente: borrador del modelo, facturas sin revisar, anomalías del periodo y pasos hasta presentarlo.", "Cada día · 07:10", 7, 10, "daily", job_deadlines, 10, "Agente", "expedientes"),
     Automation("FOLLOW_UP", "Perseguidor de documentación", "Recuerda a quien debe aportar documentación, con cortesía creciente, hasta que la sube; después la verifica.", "Cada día · 09:30", 9, 30, "daily", job_follow_up, 10, "Agente", "expedientes"),
+    Automation("BANK_SYNC", "Banco conectado", "Trae los movimientos nuevos de los bancos conectados (PSD2), sin duplicar los que ya entraron por extracto, y los concilia.", "Cada 6 horas", 0, 360, "interval", job_bank_sync, 2, "Finanzas", "negocio"),
     Automation("BANK_MATCH", "Conciliación bancaria", "Cruza los movimientos importados con facturas pendientes y propone el cobro o pago.", "Cada día · 06:30", 6, 30, "daily", job_bank, 3, "Finanzas", "negocio"),
     Automation("RECURRING_INVOICES", "Facturas recurrentes", "Genera (y emite si lo indicas) las cuotas, igualas y alquileres que se facturan cada periodo.", "Cada día · 07:00", 7, 0, "daily", job_recurring, 10, "Ventas", "ventas"),
     Automation("DAILY_DIGEST", "Resumen diario", "Prepara un correo con lo urgente del día: plazos, cobros, mensajes y fichajes.", "Cada día · 07:30", 7, 30, "daily", job_digest, 5, "Agente", "panel"),
@@ -491,7 +505,7 @@ def next_run_label(automation: Automation, setting: AutomationSetting, now: date
     if not setting.enabled:
         return "Desactivada"
     if automation.cadence == "interval":
-        return f"Cada {automation.minute} minutos"
+        return f"Cada {automation.minute // 60} horas" if automation.minute >= 120 and automation.minute % 60 == 0 else f"Cada {automation.minute} minutos"
     if is_due(automation, setting, now):
         return "En la próxima comprobación"
     at = f"{automation.hour:02d}:{automation.minute:02d}"

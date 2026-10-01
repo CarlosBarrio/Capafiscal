@@ -18,6 +18,7 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
@@ -248,15 +249,36 @@ def import_bank_file(
     account_label: str | None,
     actor: str,
 ) -> dict[str, Any]:
+    rows, meta = parse_bank_rows(content, filename)
+    return store_rows(database, rows, source=filename, account_label=account_label, actor=actor, columns=meta["columns"], skipped=meta["skipped_rows"])
+
+
+CONNECTED_SOURCE = "Banco conectado"
+
+
+def store_rows(
+    database: Session,
+    rows: list[dict[str, Any]],
+    *,
+    source: str,
+    account_label: str | None,
+    actor: str,
+    columns: dict[str, Any] | None = None,
+    skipped: int = 0,
+    external: bool = False,
+) -> dict[str, Any]:
+    """Guarda movimientos (de un extracto o del banco conectado) sin duplicar, y concilia.
+
+    external=True: filas del banco conectado, con su identificador propio («external_id»). Un
+    movimiento que ya entró por un extracto CSV (misma fecha e importe en esa cuenta) no se repite.
+    """
     from app.invoice_service import add_audit_event
 
-    rows, meta = parse_bank_rows(content, filename)
-
     bank_import = BankImport(
-        filename=filename[:255],
+        filename=source[:255],
         account_label=account_label,
         rows_total=len(rows),
-        column_mapping=meta["columns"],
+        column_mapping=columns or {},
     )
     database.add(bank_import)
     database.flush()
@@ -266,17 +288,27 @@ def import_bank_file(
     duplicated = 0
 
     for row in rows:
-        key = (row["booking_date"], row["amount"], row["description"], row["balance"])
-        occurrences[key] += 1
-        print_hash = fingerprint(row, occurrences[key])
-
-        exists = database.scalar(
-            select(BankTransaction.id).where(BankTransaction.fingerprint == print_hash)
-        )
-
-        if exists:
-            duplicated += 1
-            continue
+        if external:
+            print_hash = hashlib.sha256(f"banco:{row['external_id']}".encode()).hexdigest()
+            same_day = (row["booking_date"], row["amount"])
+            occurrences[same_day] += 1
+            already = database.scalar(select(BankTransaction.id).where(BankTransaction.fingerprint == print_hash))
+            from_statement = database.scalar(
+                select(func.count()).select_from(BankTransaction).join(BankImport, BankImport.id == BankTransaction.import_id).where(
+                    BankTransaction.booking_date == row["booking_date"], BankTransaction.amount == row["amount"],
+                    ~BankImport.filename.like(f"{CONNECTED_SOURCE}%"),
+                )
+            ) or 0
+            if already or occurrences[same_day] <= from_statement:
+                duplicated += 1
+                continue
+        else:
+            key = (row["booking_date"], row["amount"], row["description"], row["balance"])
+            occurrences[key] += 1
+            print_hash = fingerprint(row, occurrences[key])
+            if database.scalar(select(BankTransaction.id).where(BankTransaction.fingerprint == print_hash)):
+                duplicated += 1
+                continue
 
         database.add(
             BankTransaction(
@@ -307,12 +339,12 @@ def import_bank_file(
         entity_id=bank_import.id,
         actor=actor,
         event_data={
-            "filename": filename,
+            "filename": source,
             "rows": len(rows),
             "imported": imported,
             "duplicated": duplicated,
             "suggestions": suggestions,
-            "columns": meta["columns"],
+            "columns": columns or {},
         },
     )
 
@@ -321,11 +353,11 @@ def import_bank_file(
         "rows": len(rows),
         "imported": imported,
         "duplicated": duplicated,
-        "skipped": meta["skipped_rows"],
+        "skipped": skipped,
         "suggestions": suggestions,
         "auto_matched": reconciliation["auto_matched"],
         "reconciliation": reconciliation["counts"],
-        "columns": meta["columns"],
+        "columns": columns or {},
         "message": (
             f"{imported} movimiento(s) importado(s), {duplicated} ya "
             f"existían. {reconciliation['auto_matched']} conciliado(s) automáticamente "
