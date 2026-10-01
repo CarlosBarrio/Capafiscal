@@ -15,6 +15,7 @@ Uso (desde backend/):
     python -m evaluation generar-c --semilla N             # banco C ciego (fuera de git; no se mira)
     python -m evaluation casos --dataset b_sintetico       # evalúa expedientes completos (reglas)
     python -m evaluation casos --dataset c_ciego --ciego   # una sola vez, al final (queda anotado)
+    python -m evaluation comparar --dataset b_sintetico    # reglas vs Claude vs híbrido (ANTHROPIC_API_KEY)
 
 Conjuntos: A = desarrollo (se puede mirar y ajustar reglas con ellos),
 B = evaluación (no se usan para cambiar reglas), C = ciego (no se tocan
@@ -196,8 +197,34 @@ def cases(argv: list[str]) -> int:
     return 0
 
 
+def compare(argv: list[str]) -> int:
+    from evaluation import comparar
+
+    parser = argparse.ArgumentParser(prog="python -m evaluation comparar")
+    parser.add_argument("--dataset", default="b_sintetico")
+    parser.add_argument("--motores", default="reglas,claude,hibrido", help="reglas, claude (siempre) e hibrido (el producto)")
+    parser.add_argument("--ciego", action="store_true")
+    args = parser.parse_args(argv)
+    engines = [item.strip() for item in args.motores.split(",") if item.strip()]
+    unknown = [item for item in engines if item not in comparar.ENGINES]
+    if unknown:
+        print(f"Motores desconocidos: {', '.join(unknown)}")
+        return 1
+    report = comparar.run(args.dataset, engines=engines, blind=args.ciego)
+    path = comparar.save(report)
+    if args.ciego:
+        out = HERE / "informes"
+        with (out / "ciego.log").open("a", encoding="utf-8") as handle:
+            handle.write(f"{datetime.now().isoformat(timespec='seconds')} · comparar {args.dataset} · commit {git_commit()} · {', '.join(engines)}\n")
+    print(path.read_text(encoding="utf-8"))
+    print(f"Informe: {path}")
+    return 0
+
+
 def main() -> int:
     argv = sys.argv[1:]
+    if argv and argv[0] == "comparar":
+        return compare(argv[1:])
     if argv and argv[0] in {"generar-b", "generar-c"}:
         return generate(argv[1:], argv[0][-1])
     if argv and argv[0] == "casos":

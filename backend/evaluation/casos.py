@@ -212,6 +212,18 @@ def observe(*, document_id: int | None = None, event_id: int | None = None, dupl
             summary = runs[-1].summary or ""
             route = next((code for code, item in ROUTES.items() if summary.startswith(item["label"])), None)
 
+        # ¿Entró Claude en este documento? (lo deja anotado interpretation.refine)
+        ai = None
+        if document is not None:
+            from app.models import AuditEvent
+
+            audit = database.scalar(
+                select(AuditEvent).where(AuditEvent.action == "document.interpretation", AuditEvent.entity_id == document.id).order_by(AuditEvent.id.desc()).limit(1)
+            )
+            if audit is not None:
+                data = audit.event_data or {}
+                ai = {key: data.get(key) for key in ("reasons", "changed", "fallback", "model", "input_tokens", "output_tokens", "cost_usd")}
+
         flags: list[str] = []  # dudas de la lectura de FACTURA: solo cuentan si se tomó por factura
         if document is not None and invoice is not None:
             extraction = database.scalar(select(ExtractionRun).where(ExtractionRun.document_id == document.id).order_by(ExtractionRun.id.desc()).limit(1))
@@ -275,6 +287,7 @@ def observe(*, document_id: int | None = None, event_id: int | None = None, dupl
                 "withholding_total": money(invoice.withholding_total), "total": money(invoice.total), "direction": invoice.direction,
             } if invoice is not None else None,
             "flags": flags,
+            "ai": ai,
         }
 
 
@@ -535,7 +548,7 @@ def check_memory(client, expected: dict[str, Any]) -> dict[str, Any]:
 
 def summarize(observed: dict[str, Any]) -> dict[str, Any]:
     keep = ("type", "route", "procedure", "issuer", "reference", "affected", "subject", "intake_warnings", "deadline", "deadline_rule", "debt_amount", "credit_amount", "requires_human",
-            "agents", "findings", "event_status", "case_code", "case_status", "requires_ocr", "duplicate", "invoice", "flags", "insights")
+            "agents", "findings", "event_status", "case_code", "case_status", "requires_ocr", "duplicate", "invoice", "flags", "insights", "ai")
     data = {key: observed.get(key) for key in keep}
     data["deadline"] = data["deadline"].isoformat() if data["deadline"] else None
     data["documents"] = [f"{item['code']}:{item['status']}" for item in observed.get("documents") or []]

@@ -25,6 +25,29 @@ trabajo diario siguen en `evaluation/informes/` (fuera de git).
 | Documentos pedidos | 3/7 | 7/7 |
 | Trámite | 12/15 | 15/15 |
 
+### Métricas de producto (misma definición y mismas 47 entradas en v1 y v2)
+
+La fila «Entradas que van a una persona» de arriba no es una comparación
+limpia: el denominador cambió (46 → 47) y solo contaba expedientes. Con la
+definición de `evaluation/comparar.py` (va a una persona si abre expediente,
+se detiene, está escaneada o es una factura con dudas en revisión), las dos
+versiones se miden sobre las mismas 47 entradas:
+
+| Métrica | B v1 | B v2 |
+|---|---:|---:|
+| Autónomo (bien y sin persona) | 16/47 (34,0 %) | **24/47 (51,1 %)** |
+| Asistido (a persona con el trabajo hecho, y bien) | 5/47 (10,6 %) | **19/47 (40,4 %)** |
+| Humano (no pudo o dudó) | 24/47 (51,1 %) | **4/47 (8,5 %)** |
+| Error silencioso | 2/47 (4,3 %) | **0** |
+| Va a una persona | 60,9 % | 48,9 % |
+| Precisión de la escalada (de lo enviado, cuánto hacía falta) | 96,4 % | 100 % |
+| Cobertura de la escalada (de lo que hacía falta, cuánto se envió) | 93,1 % | 100 % |
+
+Que la mitad vaya a una persona no es ruido: casi todo es «asistido»
+(requerimientos y embargos que una persona debe aprobar, con el escrito y
+los documentos ya preparados). Lo que baja es lo «humano»: el trabajo que el
+sistema no supo hacer.
+
 Orden de la ronda (el que se acordó): errores silenciosos → plazos → importe
 de la deuda → cálculo del embargo → documentos pedidos → taxonomía →
 documentos sin acción. Qué cambió:

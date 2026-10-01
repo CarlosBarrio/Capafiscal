@@ -202,3 +202,60 @@ Cada fallo que destapa B se convierte en una regresión permanente en
 `tests/golden/test_golden.py` (caso → qué fallaba). Si un cambio rompe uno
 de esos expedientes, la batería de tests falla. B v1 y B v2 se conservan en
 `resultados/` para ver la evolución, no solo el resultado final.
+
+
+## Reglas vs Claude vs híbrido (por expedientes)
+
+```bash
+export ANTHROPIC_API_KEY=...                              # o en backend/.env
+python -m evaluation comparar --dataset b_sintetico       # B v2 (motor congelado en v0.4-b-v2)
+python -m evaluation comparar --dataset c_ciego --ciego   # C: una sola vez, al final
+```
+
+Mismo código y misma verdad; solo cambia la configuración, puesta desde el
+evaluador (el sistema no se toca):
+
+| Motor | Qué es |
+|---|---|
+| `reglas` | Sin clave de IA. |
+| `claude` | Claude interpreta **todos** los documentos (`refine(force=True)`); las reglas validan cada valor. |
+| `hibrido` | El producto: Claude solo donde las reglas dudan (`needs_help`) y en notificaciones. |
+
+El informe responde a cuatro preguntas frente a las reglas: **A** qué
+corrige, **B** qué rompe (regresiones introducidas por la IA, campo a
+campo), **C** en qué documentos entró y si mejoró, empató o empeoró, y
+**D** cuánto cuesta (total, por documento, por 1.000 y por comprobación
+corregida). El coste incluye todas las llamadas (facturas, notificaciones y
+escritos): se mide envolviendo `llm._complete` desde el evaluador.
+
+Y dos métricas de producto:
+
+- **Autonomía**: autónomo (bien, sin persona) · asistido (a persona con el
+  trabajo hecho y bien) · humano (no pudo o dudó) · error silencioso.
+- **Calidad de la escalada**: precisión (de lo que se manda a una persona,
+  cuánto hacía falta) y cobertura (de lo que hacía falta, cuánto se mandó).
+
+Reglas de uso: no se cambian reglas ni etiquetas al ver el resultado. Claude
+no es una fuente de etiquetas. Si sale un problema sistemático, se corrige en
+v0.5 y se vuelve a medir B.
+
+El error conocido de categoría (factura real de la tienda de informática)
+se mide a nivel de documento, con las 5 facturas reales:
+
+```bash
+python -m evaluation --dataset reales --conjuntos A --engines reglas,claude,hibrido
+```
+
+## Banco C (examen)
+
+12 casos con las familias acordadas: C01 requerimiento AEAT · C02
+requerimiento ambiguo · C03 propuesta de liquidación · C04 embargo de
+créditos · C05 embargo sin deuda · C06 embargo salarial · C07 factura normal
+· C08 factura con anomalía · C09 rectificativa · C10 retención · C11
+multipágina / OCR difícil (a veces escaneada) · C12 expediente multifuente
+(correo con dos facturas, justificante del 303, extracto y requerimiento
+que pide tres facturas, el 303 y los extractos: falta una factura).
+
+Empresas, cifras, fechas, peticiones y ruido salen de la semilla. Orden:
+motor congelado → generar C con tu semilla → no abrirlo → `comparar --ciego`
+una vez → informe. Nada se corrige después del primer resultado.

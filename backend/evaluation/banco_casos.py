@@ -671,8 +671,22 @@ def world_c(rng: random.Random) -> World:
     )
 
 
+REQUEST_VARIANTS = (
+    "Libro registro de facturas recibidas del periodo.",
+    "Extractos bancarios del trimestre de todas las cuentas de la entidad.",
+    "Contratos de arrendamiento vigentes.",
+    "Facturas recibidas de importe superior a 3.000 euros.",
+    "Justificantes de pago de las facturas recibidas (transferencias o recibos).",
+    "Libro registro de facturas expedidas del periodo.",
+)
+
+
 def build_c(seed: int, root: Path = C_DIR) -> dict:
-    """C01–C12 con variaciones elegidas por la semilla. Quien lo genera no lo mira."""
+    """C01–C12, el examen. Familias acordadas; empresas, cifras, fechas, peticiones y ruido salen de la semilla.
+
+    Quien lo genera elige la semilla y no la comparte; no se abren los documentos
+    ni se ejecuta hasta la evaluación final (una sola vez, con --ciego).
+    """
     rng = random.Random(seed)
     if root.exists():
         shutil.rmtree(root)
@@ -680,124 +694,159 @@ def build_c(seed: int, root: Path = C_DIR) -> dict:
     w = world_c(rng)
     cases: list[dict] = []
     day = lambda low, high: date(2026, 9, rng.randint(low, high))  # noqa: E731
-    noisy = lambda: rng.random() < 0.4  # noqa: E731
+    noise = lambda: Noise(rotated_margin=rng.choice([None, None, "Copia para el interesado", "Ref. interna 2026/SIM"]))  # noqa: E731
+    reference = lambda prefix: f"{prefix}{rng.randint(10**8, 10**9 - 1)}"  # noqa: E731
 
-    # C01 requerimiento (con o sin ruido)
-    c = Case(root, "C01", block="aeat", title="Requerimiento", description="", tags=["limpio"], world=w)
-    acceso = day(14, 25)
-    period = rng.choice([1, 2])
-    c.upload(c.admin("c01.pdf", organism="AEAT", area="Gestión Tributaria", kind="requerimiento", blocks=P.requerimiento_aeat(
-        party=w.company, expediente=f"2026C{rng.randint(10**8, 10**9)}", documento=f"C{rng.randint(10**9, 10**10)}", emitido=acceso - timedelta(days=4), impuesto="Impuesto sobre el Valor Añadido",
-        ejercicio=2026, periodo=f"{period}T", pide=rng.sample(["Libro registro de facturas recibidas del periodo.", "Extractos bancarios del trimestre.", "Contratos de arrendamiento vigentes.", "Facturas recibidas de importe superior a 3.000 euros."], 2),
-        puesta=acceso - timedelta(days=1), acceso=acceso), noise=Noise(rotated_margin="Ref. interna SIM" if noisy() else None)),
-        notification(route="requerimiento", procedure="COMPROBACION_LIMITADA", issuer="AEAT", deadline=business_days_after(acceso, 10).isoformat(), requires_human=True,
-                     tax_reference={"model": "303", "year": 2026, "quarter": period}))
+    # C01 · requerimiento AEAT (limpio, con fecha de notificación)
+    c = Case(root, "C01", block="aeat", title="Requerimiento AEAT", description="", tags=["limpio"], world=w)
+    acceso, period = day(14, 25), rng.choice([1, 2])
+    asks = rng.sample(REQUEST_VARIANTS, 2)
+    codes = {REQUEST_VARIANTS[0]: "LIBRO_RECIBIDAS", REQUEST_VARIANTS[1]: "EXTRACTOS", REQUEST_VARIANTS[2]: "CONTRATOS", REQUEST_VARIANTS[3]: "FACTURAS",
+             REQUEST_VARIANTS[4]: "JUSTIFICANTE_PAGO", REQUEST_VARIANTS[5]: "LIBRO_EMITIDAS"}
+    expediente = reference("2026C")
+    c.upload(c.admin("c01.pdf", organism="AEAT", area="Gestión Tributaria", kind="requerimiento", noise=noise(), blocks=P.requerimiento_aeat(
+        party=w.company, expediente=expediente, documento=reference("C"), emitido=acceso - timedelta(days=4), impuesto="Impuesto sobre el Valor Añadido",
+        ejercicio=2026, periodo=f"{period}T", pide=asks, puesta=acceso - timedelta(days=1), acceso=acceso)),
+        notification(route="requerimiento", procedure="COMPROBACION_LIMITADA", issuer="AEAT", reference=expediente, deadline=business_days_after(acceso, 10).isoformat(),
+                     requires_human=True, tax_reference={"model": "303", "year": 2026, "quarter": period}, requested_documents=[codes[item] for item in asks]))
     cases.append(c.finish())
 
-    # C02 requerimiento ambiguo: verificación de datos sobre autoliquidación, sin notificación
+    # C02 · requerimiento ambiguo: verificación de datos sobre una autoliquidación, sin fecha de notificación
     c = Case(root, "C02", block="aeat", title="Requerimiento ambiguo", description="", tags=["ambiguo"], world=w)
-    c.upload(c.admin("c02.pdf", organism="AEAT", area="Gestión Tributaria", kind="requerimiento", blocks=P.requerimiento_aeat(
-        party=w.company, expediente=f"2026C{rng.randint(10**8, 10**9)}", documento=f"C{rng.randint(10**9, 10**10)}", emitido=day(10, 25), impuesto="IRPF. Retenciones (modelo 111)", ejercicio=2026,
-        periodo=f"{rng.choice([1, 2])}T", procedimiento="verificación de datos", pide=["Aclaración sobre la autoliquidación presentada y las autoliquidaciones complementarias."], puesta=None, acceso=None)),
-        notification(route="requerimiento", procedure="VERIFICACION_DATOS", procedure_not=["LIQUIDACION"], deadline_pending_confirmation=True, requires_human=True))
+    c.upload(c.admin("c02.pdf", organism="AEAT", area="Gestión Tributaria", kind="requerimiento", noise=noise(), blocks=P.requerimiento_aeat(
+        party=w.company, expediente=reference("2026C"), documento=reference("C"), emitido=day(10, 25), impuesto=rng.choice(["IRPF. Retenciones (modelo 111)", "Retenciones de arrendamientos (modelo 115)"]),
+        ejercicio=2026, periodo=f"{rng.choice([1, 2])}T", procedimiento="verificación de datos",
+        pide=["Aclaración sobre la autoliquidación presentada y, en su caso, las autoliquidaciones complementarias."], puesta=None, acceso=None)),
+        notification(route="requerimiento", procedure="VERIFICACION_DATOS", procedure_not=["LIQUIDACION", "PROPUESTA_LIQUIDACION"], deadline_pending_confirmation=True, requires_human=True))
     cases.append(c.finish())
 
-    # C03 embargo a proveedor (con crédito, mayor o menor que la deuda)
-    c = Case(root, "C03", block="embargos", title="Embargo de créditos a proveedor", description="", tags=["limpio"], world=w)
+    # C03 · propuesta de liquidación
+    c = Case(root, "C03", block="aeat", title="Propuesta de liquidación", description="", tags=["limpio"], world=w)
+    acceso = day(15, 28)
+    declared = D(rng.randint(500, 4000)) + D("0.40")
+    checked = declared + D(rng.randint(300, 2500))
+    interest = (checked - declared) * D("0.031")
+    interest = interest.quantize(D("0.01"))
+    quarter = rng.choice([1, 2])
+    c.upload(c.admin("c03.pdf", organism="AEAT", area="Gestión Tributaria", kind="propuesta_liquidacion", noise=noise(), blocks=P.propuesta_liquidacion(
+        party=w.company, expediente=reference("2026C"), documento=reference("C"), emitido=acceso - timedelta(days=3), ejercicio=2026, periodo=f"{quarter}T",
+        declarado=declared, comprobado=checked, intereses=interest, puesta=acceso - timedelta(days=2), acceso=acceso)),
+        notification(route="requerimiento", procedure="PROPUESTA_LIQUIDACION", procedure_not=["LIQUIDACION", "REQUERIMIENTO"], debt_amount=float(checked - declared + interest),
+                     deadline=business_days_after(acceso, 10).isoformat(), requires_human=True, tax_reference={"model": "303", "year": 2026, "quarter": quarter}))
+    cases.append(c.finish())
+
+    # C04 · embargo de créditos (crédito mayor o menor que la deuda)
+    c = Case(root, "C04", block="embargos", title="Embargo de créditos", description="", tags=["limpio"], world=w)
     bases = [D(rng.randint(600, 2400)) for _ in range(rng.randint(1, 3))]
     credit = sum((base + (base * 21 / 100).quantize(D("0.01")) for base in bases), D(0))
     for index, base in enumerate(bases):
-        c.prior_invoice(w.supplier, f"C3-{index + 1:03d}", date(2026, 8, 3 + index * 9), base)
+        c.prior_invoice(w.supplier, f"C4-{index + 1:03d}", date(2026, 8, 3 + index * 9), base)
     principal = D(rng.randint(800, 4000))
+    surcharge = (principal / 5).quantize(D("0.01"))
+    debt = principal + surcharge
     acceso = day(20, 29)
-    c.upload(c.admin("c03.pdf", organism="AEAT", area="Recaudación", kind="embargo", blocks=P.embargo_creditos(
-        pagador=w.company, deudor=w.supplier, diligencia=f"DE-C-{rng.randint(10000, 99999)}", emitido=acceso - timedelta(days=3), principal=principal, recargo=(principal / 5).quantize(D("0.01")),
+    c.upload(c.admin("c04.pdf", organism="AEAT", area="Recaudación", kind="embargo", noise=noise(), blocks=P.embargo_creditos(
+        pagador=w.company, deudor=w.supplier, diligencia=f"DE-C-{rng.randint(10000, 99999)}", emitido=acceso - timedelta(days=3), principal=principal, recargo=surcharge,
         intereses=D(0), costas=D(0), acceso=acceso)),
-        notification(route="embargo", procedure="EMBARGO_CREDITOS", affected={"type": "supplier", "tax_id": w.supplier.tax_id}, debt_amount=float(principal + (principal / 5).quantize(D("0.01"))),
-                     credit_amount=float(credit), requires_human=True, deadline=business_days_after(acceso, 5).isoformat(),
-                     expected_findings=["credit_exceeds_debt"] if credit > principal * D("1.2") else []))
+        notification(route="embargo", procedure="EMBARGO_CREDITOS", affected={"type": "supplier", "tax_id": w.supplier.tax_id}, debt_amount=float(debt), credit_amount=float(credit),
+                     requires_human=True, deadline=business_days_after(acceso, 5).isoformat(), expected_findings=["credit_exceeds_debt"] if credit > debt else []))
     cases.append(c.finish())
 
-    # C04 embargo sin deuda
-    c = Case(root, "C04", block="embargos", title="Embargo sin pago pendiente", description="", tags=["limpio"], world=w)
-    c.prior_invoice(w.cleaner, "C4-001", date(2026, 8, 20), D(rng.randint(150, 900)), paid=date(2026, 9, 1))
+    # C05 · embargo sin deuda pendiente
+    c = Case(root, "C05", block="embargos", title="Embargo sin pago pendiente", description="", tags=["limpio"], world=w)
+    c.prior_invoice(w.cleaner, "C5-001", date(2026, 8, 20), D(rng.randint(150, 900)), paid=date(2026, 9, 1))
     principal = D(rng.randint(500, 3000))
-    c.upload(c.admin("c04.pdf", organism="AEAT", area="Recaudación", kind="embargo", blocks=P.embargo_creditos(
-        pagador=w.company, deudor=w.cleaner, diligencia=f"DE-C-{rng.randint(10000, 99999)}", emitido=day(15, 25), principal=principal, recargo=(principal / 5).quantize(D("0.01")), intereses=D(0),
-        costas=D(0), acceso=day(26, 29)), noise=Noise(scanned=False, rotated_margin="Copia" if noisy() else None)),
+    c.upload(c.admin("c05.pdf", organism="AEAT", area="Recaudación", kind="embargo", noise=noise(), blocks=P.embargo_creditos(
+        pagador=w.company, deudor=w.cleaner, diligencia=f"DE-C-{rng.randint(10000, 99999)}", emitido=day(15, 25), principal=principal, recargo=(principal / 5).quantize(D("0.01")),
+        intereses=D(0), costas=D(0), acceso=day(26, 29))),
         notification(route="embargo", procedure="EMBARGO_CREDITOS", affected={"type": "supplier", "tax_id": w.cleaner.tax_id}, credit_amount=0.0, requires_human=True,
                      expected_findings=["no_pending_payment"]))
     cases.append(c.finish())
 
-    # C05 embargo de salario
-    c = Case(root, "C05", block="embargos", title="Embargo de salario", description="", tags=["limpio"], world=w)
+    # C06 · embargo salarial
+    c = Case(root, "C06", block="embargos", title="Embargo de salario", description="", tags=["limpio"], world=w)
     c.employee(w.employee)
     total = D(rng.randint(900, 6000)) + D("0.37")
-    c.upload(c.admin("c05.pdf", organism="AEAT", area="Recaudación", kind="embargo", blocks=P.embargo_salarios(
+    c.upload(c.admin("c06.pdf", organism="AEAT", area="Recaudación", kind="embargo", noise=noise(), blocks=P.embargo_salarios(
         pagador=w.company, empleado=w.employee, diligencia=f"DS-C-{rng.randint(10000, 99999)}", emitido=day(15, 25), total=total, acceso=day(26, 29))),
         notification(route="embargo", procedure="EMBARGO_SALARIOS", affected={"type": "employee", "tax_id": w.employee.tax_id}, debt_amount=float(total), requires_human=True,
                      requested_documents_excluded=["RELACION_CREDITOS"]))
     cases.append(c.finish())
 
-    # C06 factura atípica (importe muy por encima del historial)
-    c = Case(root, "C06", block="facturas", title="Factura atípica", description="", tags=["expediente"], world=w)
-    usual = D(rng.randint(200, 500))
-    for month in range(3, 9):
-        c.prior_invoice(w.carrier, f"C6-{month:02d}", date(2026, month, 15), usual + rng.randint(-15, 15), paid=date(2026, month, 28))
-    truth = c.invoice("c06.pdf", supplier=w.carrier, number="C6-09", issued=day(15, 25), lines=[("Servicio mensual", D(1), usual * rng.choice([5, 6, 8]))])
-    c.upload("c06.pdf", {"type": "INVOICE", "invoice": truth, "route": "factura_sospechosa", "expected_findings": ["IMPORTE_ATIPICO"], "requires_human": True})
-    cases.append(c.finish())
-
-    # C07 documento normal
-    c = Case(root, "C07", block="normales", title="Documento normal", description="", tags=["limpio"], world=w)
-    truth = c.invoice("c07.pdf", supplier=w.software, number=f"C7-{rng.randint(100, 999)}", issued=day(1, 28), lines=[("Licencia mensual", D(1), D(rng.randint(40, 300)))])
+    # C07 · factura normal
+    c = Case(root, "C07", block="facturas", title="Factura normal", description="", tags=["limpio"], world=w)
+    truth = c.invoice("c07.pdf", supplier=w.software, number=f"C7-{rng.randint(100, 999)}", issued=day(1, 28), lines=[("Licencia mensual", D(1), D(rng.randint(40, 300)))], noise=noise())
     c.upload("c07.pdf", {"type": "INVOICE", "invoice": truth, "requires_human": False})
     cases.append(c.finish())
 
-    # C08 duplicada
-    c = Case(root, "C08", block="memoria", title="Factura duplicada", description="", tags=["expediente"], world=w)
-    number, issued, amount = f"C8-{rng.randint(100, 999)}", day(1, 25), D(rng.randint(300, 2000))
-    truth = c.invoice("c08a.pdf", supplier=w.cleaner, number=number, issued=issued, lines=[("Servicio", D(1), amount)])
-    c.invoice("c08b.pdf", supplier=w.cleaner, number=number, issued=issued, lines=[("Servicio", D(1), amount)], noise=Noise(rotated_margin="Duplicado"))
-    c.upload("c08a.pdf", {"type": "INVOICE", "invoice": truth, "duplicate": False})
-    c.upload("c08b.pdf", {"type": "INVOICE", "duplicate": True, "expected_findings": ["POSIBLE_DUPLICADO"], "requires_human": True})
+    # C08 · factura con anomalía (importe muy por encima de lo habitual)
+    c = Case(root, "C08", block="facturas", title="Factura con anomalía", description="", tags=["expediente"], world=w)
+    usual = D(rng.randint(200, 500))
+    for month in range(3, 9):
+        c.prior_invoice(w.carrier, f"C8-{month:02d}", date(2026, month, 15), usual + rng.randint(-15, 15), paid=date(2026, month, 28))
+    truth = c.invoice("c08.pdf", supplier=w.carrier, number="C8-09", issued=day(15, 25), lines=[("Servicio mensual", D(1), usual * rng.choice([5, 6, 8]))])
+    c.upload("c08.pdf", {"type": "INVOICE", "invoice": truth, "route": "factura_sospechosa", "expected_findings": ["IMPORTE_ATIPICO"], "requires_human": True})
     cases.append(c.finish())
 
-    # C09 rectificativa
+    # C09 · rectificativa
     c = Case(root, "C09", block="facturas", title="Rectificativa", description="", tags=["limpio"], world=w)
     base = D(rng.randint(500, 3000))
     original = c.invoice("c09a.pdf", supplier=w.software, number=f"C9-{rng.randint(100, 999)}", issued=day(1, 10), lines=[("Proyecto", D(1), base)])
     rect = c.invoice("c09b.pdf", supplier=w.software, number=f"C9-R{rng.randint(10, 99)}", issued=day(12, 28), lines=[("Abono", D(-1), (base / rng.choice([4, 5, 10])).quantize(D("0.01")))],
-                     rectifies=original["invoice_number"])
+                     rectifies=original["invoice_number"], noise=noise())
     c.upload("c09a.pdf", {"type": "INVOICE", "invoice": original})
     c.upload("c09b.pdf", {"type": "INVOICE", "invoice": rect, "duplicate": False, "findings_excluded": ["POSIBLE_DUPLICADO"]})
     cases.append(c.finish())
 
-    # C10 retención
+    # C10 · retención
     c = Case(root, "C10", block="facturas", title="Retención", description="", tags=["limpio"], world=w)
     truth = c.invoice("c10.pdf", supplier=w.advisor, number=f"C10-{rng.randint(10, 99)}", issued=day(1, 28), lines=[("Honorarios", D(1), D(rng.randint(300, 2500)))],
                       irpf_rate=D(rng.choice([7, 15])), legal_footer=False)
     c.upload("c10.pdf", {"type": "INVOICE", "invoice": truth})
     cases.append(c.finish())
 
-    # C11 multipágina (a veces escaneada)
-    c = Case(root, "C11", block="facturas", title="Multipágina", description="", tags=["multipagina"], world=w)
+    # C11 · multipágina con OCR difícil (a veces escaneada: entonces lo correcto es mandarla a una persona)
+    c = Case(root, "C11", block="facturas", title="Multipágina / OCR difícil", description="", tags=["multipagina", "ocr"], world=w)
     lines = [(f"Partida {index}", D(rng.randint(1, 4)), D(rng.randint(10, 90))) for index in range(rng.randint(14, 22))]
-    truth = c.invoice("c11.pdf", supplier=w.supplier, number=f"C11-{rng.randint(100, 999)}", issued=day(1, 28), lines=lines, pages=rng.choice([2, 3]))
-    expected: dict[str, Any] = {"type": "INVOICE", "invoice": truth}
+    garble = rng.choice([{}, {"Base imponible": "Base lmponible", "TOTAL FACTURA": "T0TAL FACTURA"}, {"IVA ": "lVA ", "Nº factura": "N° fact."}])
+    truth = c.invoice("c11.pdf", supplier=w.supplier, number=f"C11-{rng.randint(100, 999)}", issued=day(1, 28), lines=lines, pages=rng.choice([2, 3]),
+                      noise=Noise(replace=garble, spaced_digits=rng.random() < 0.3))
     if rng.random() < 0.3:
-        name = c.scanned("c11.pdf", "c11_escaneada.pdf")
-        expected = {"ocr": True, "requires_human": True}
-        c.data["entradas"].append({"tipo": "subida", "archivo": name, "expected": expected})
+        c.data["entradas"].append({"tipo": "subida", "archivo": c.scanned("c11.pdf", "c11_escaneada.pdf"), "expected": {"ocr": True, "requires_human": True}})
     else:
-        c.upload("c11.pdf", expected)
+        c.upload("c11.pdf", {"type": "INVOICE", "invoice": truth})
     cases.append(c.finish())
 
-    # C12 plazo 303
-    c = Case(root, "C12", block="apoyo", title="Plazo 303", description="", tags=["limpio"], world=w)
-    due = date(2026, 10, 20)
-    c.deadline("303", 2026, 3, due, {"route": "plazo", "requires_human": True, "deadline": due.isoformat(), "tax_reference": {"model": "303", "year": 2026, "quarter": 3}})
-    cases.append(c.finish())
+    # C12 · expediente multifuente: correo con facturas + justificante del 303 + extracto + requerimiento
+    c = Case(root, "C12", block="memoria", title="Expediente multifuente", description="", tags=["expediente", "contradictorio"], world=w)
+    quarter = 2
+    numbers = [f"C12-{rng.randint(100, 499)}", f"C12-{rng.randint(500, 899)}", f"C12-{rng.randint(900, 999)}"]
+    sent = numbers[:2]  # la tercera no llega: hay que pedirla
+    attachments = []
+    for index, number in enumerate(sent):
+        name = f"{number}.pdf"
+        c.invoice(name, supplier=w.supplier, number=number, issued=date(2026, 4 + index, rng.randint(3, 25)), lines=[("Material (lote)", D(1), D(rng.randint(700, 2500)))])
+        attachments.append(name)
+    mail = c.eml("correo_facturas.eml", sender=w.supplier, subject="Facturas del trimestre", body="Adjuntamos las facturas pendientes del segundo trimestre.",
+                 attachments=attachments, message_id=f"c12-{rng.randint(1000, 9999)}@proveedor.test", sent="Mon, 21 Sep 2026 10:00:00 +0200")
+    c.mail(mail, [{"type": "INVOICE"} for _ in attachments])
+    receipt = c.admin("justificante_303.pdf", organism="AEAT", area="Gestión Tributaria", kind="justificante_presentacion", blocks=P.justificante_303(
+        party=w.company, ejercicio=2026, trimestre=quarter, presentado=date(2026, 7, rng.randint(10, 20)), resultado=D(rng.randint(500, 4000)) + D("0.55"), csv=csv_code(f"C12-{seed}")))
+    c.upload(receipt, {"requires_human": False, "not_invoice": True})
+    bank = c.bank("extracto_2T.csv", [(date(2026, 4 + index, 28), f"TRANSFERENCIA A {w.supplier.name.upper()} {number}", -D(rng.randint(700, 2500))) for index, number in enumerate(sent)]
+                  + [(date(2026, 6, 30), "COMISION MANTENIMIENTO", D("-12.00"))])
+    c.bank_import(bank)
+    acceso = day(22, 29)
+    c.upload(c.admin("requerimiento.pdf", organism="AEAT", area="Gestión Tributaria", kind="requerimiento", noise=noise(), blocks=P.requerimiento_aeat(
+        party=w.company, expediente=reference("2026C"), documento=reference("C"), emitido=acceso - timedelta(days=4), impuesto="Impuesto sobre el Valor Añadido", ejercicio=2026,
+        periodo=f"{quarter}T", pide=[f"Facturas recibidas de {w.supplier.name} números {', '.join(numbers[:-1])} y {numbers[-1]}.",
+                                     "Justificante de presentación del modelo 303 del periodo.", "Extractos bancarios del trimestre."],
+        puesta=acceso - timedelta(days=1), acceso=acceso)),
+        notification(route="requerimiento", procedure="COMPROBACION_LIMITADA", deadline=business_days_after(acceso, 10).isoformat(), requires_human=True,
+                     requested_documents=["FACTURAS", "MODELOS", "EXTRACTOS"], document_status={"FACTURAS": ["partial", "missing", "requested"], "EXTRACTOS": ["ready"]},
+                     expected_findings=["PERIODO_PRESENTADO"], insight_contains=[numbers[-1]], tax_reference={"model": "303", "year": 2026, "quarter": quarter}))
+    cases.append(c.finish(filed_period={"model": "303", "year": 2026, "quarter": quarter},
+                          memory={"question": f"¿Tenemos la factura {sent[0]}?", "source_contains": sent[0]}))
 
     digest = hashlib.sha256()
     for path in sorted(root.rglob("*")):

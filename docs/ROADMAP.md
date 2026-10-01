@@ -44,9 +44,9 @@ expedientes, traza, memoria, contratos, Detector, reanudación).
 | Demo «cero intervención» (DEHú y correo) | ✅ `scripts/demo_cero_intervencion.py` |
 | 1. Conjunto B (documentos nuevos, sin ajustar reglas con ellos) | ✅ Banco sintético de 35 expedientes / 50 documentos con verdad (`evaluation/datasets/b_sintetico`). Faltan documentos reales para B |
 | 2. Línea base de reglas en B y en C | ✅ B v1: 10/35 expedientes, 79 % de comprobaciones, 2 errores silenciosos → **B v2: 32/35, 99 %, 0 silenciosos** ([comparativa](../backend/evaluation/resultados/README.md)). 21 casos convertidos en regresiones (`tests/golden/`). C: lo genera quien evalúa con su semilla |
-| 3. Claude real (`ANTHROPIC_API_KEY`) | ⏳ |
+| 3. Claude real (`ANTHROPIC_API_KEY`) | 🟡 Motor congelado en `v0.4-b-v2`. Comparador listo: `python -m evaluation comparar` (reglas / Claude siempre / híbrido; qué corrige, qué rompe, routing, coste por mejora, autonomía, calidad de la escalada). **Falta ejecutarlo con la clave** |
 | 4. Híbrido + enrutado (¿cuándo merece la pena Claude?) | ⏳ Medición lista |
-| 5. Conjunto C ciego (examen final) | ⏳ |
+| 5. Conjunto C ciego (examen final) | 🟡 Generador con los 12 casos acordados (incl. C03 propuesta, C08 anomalía, C12 multifuente). Lo genera quien evalúa con su semilla, después de Claude |
 | 6. DEHú real (adaptador: DEHú → Event → `/api/events`) | ⏳ Pendiente de acceso |
 
 Error conocido que se sigue: factura de una tienda de informática
