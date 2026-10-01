@@ -55,6 +55,7 @@
         "type": "INVOICE",
         "invoice": {
           "direction": "RECEIVED",
+          "supplier_name": "Suministros Ficticios Duero S.L.",
           "supplier_tax_id": "B00200022",
           "customer_tax_id": "B00100016",
           "invoice_number": "SFD-2026-001",
@@ -72,6 +73,7 @@
         "type": "INVOICE",
         "invoice": {
           "direction": "RECEIVED",
+          "supplier_name": "Suministros Ficticios Duero S.L.",
           "supplier_tax_id": "B00200022",
           "customer_tax_id": "B00100016",
           "invoice_number": "SFD-2026-002",
@@ -89,6 +91,7 @@
         "type": "INVOICE",
         "invoice": {
           "direction": "RECEIVED",
+          "supplier_name": "Suministros Ficticios Duero S.L.",
           "supplier_tax_id": "B00200022",
           "customer_tax_id": "B00100016",
           "invoice_number": "SFD-2026-003",

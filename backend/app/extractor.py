@@ -1049,11 +1049,31 @@ def choose_tax_ids_for_issued(
     return supplier, customer
 
 
+STREET_PREFIX = re.compile(
+    r"(?i)^\s*(?:c/|c\.|calle|avda?\.?|avenida|av\.|plaza|pza\.?|pl\.|paseo|p[º°]|ctra\.?|carretera|camino|ronda|traves[ií]a"
+    r"|pol\.?\s*ind|pol[ií]gono|urb\.?|urbanizaci[oó]n|glorieta|rambla|v[ií]a|apartado|apdo\.?)\b"
+)
+POSTAL_CODE = re.compile(r"\b(?:0[1-9]|[1-4]\d|5[0-2])\d{3}\b\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]")
+
+
+def looks_like_address(line: str) -> bool:
+    """«C/ Inventada 12, 47001 Valladolid» es un domicilio, no el nombre de una empresa."""
+    cleaned = line.strip(" :-|·,")
+    if any(suffix in normalize_search_text(cleaned) for suffix in LEGAL_SUFFIXES):
+        return False  # «Plaza Mayor S.L.» sí es una empresa
+    if STREET_PREFIX.match(cleaned) and any(character.isdigit() for character in cleaned):
+        return True
+    return bool(POSTAL_CODE.search(cleaned))
+
+
 def looks_like_company_name(line: str) -> bool:
-    cleaned = line.strip(" :-|")
+    cleaned = line.strip(" :-|·")
     normalized = normalize_search_text(cleaned)
 
     if len(cleaned) < 3 or len(cleaned) > 140:
+        return False
+
+    if looks_like_address(cleaned):
         return False
 
     if any(word in normalized for word in NAME_REJECT_WORDS):
@@ -1129,7 +1149,7 @@ def clean_company_name_candidate(
     )
 
     candidate = candidate.strip(
-        " \t:-|,;"
+        " \t:-|,;·"
     )
 
     # Conserva el punto final de abreviaturas societarias (S.A., S.L.U.)

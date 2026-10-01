@@ -133,7 +133,7 @@ class Case:
                                  seed=f"{self.id}/{name}", **options)
         self.data["documents"].append({"archivo": name, "tipo": kind, "nota": note})
         return {
-            "direction": "RECEIVED", "supplier_tax_id": supplier.tax_id, "customer_tax_id": customer.tax_id, "invoice_number": number,
+            "direction": "RECEIVED", "supplier_name": supplier.name, "supplier_tax_id": supplier.tax_id, "customer_tax_id": customer.tax_id, "invoice_number": number,
             "invoice_date": issued.isoformat(), **{key: value for key, value in amounts.items() if value is not None},
         }
 

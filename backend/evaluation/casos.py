@@ -78,7 +78,7 @@ CHECK_LABELS = {
     "memory": "La Memoria lo encuentra",
 }
 
-INVOICE_FIELDS = ("supplier_tax_id", "customer_tax_id", "invoice_number", "invoice_date", "subtotal", "tax_total", "withholding_total", "total", "direction")
+INVOICE_FIELDS = ("supplier_name", "supplier_tax_id", "customer_tax_id", "invoice_number", "invoice_date", "subtotal", "tax_total", "withholding_total", "total", "direction")
 DONE_STATUSES = {"RESOLVED", "DISMISSED", "FILED"}
 
 
@@ -282,7 +282,7 @@ def observe(*, document_id: int | None = None, event_id: int | None = None, dupl
             "document_status": document.status if document is not None else None,
             "duplicate": duplicate_signal or bool(invoice is not None and invoice.duplicate_status not in (None, "NONE")) or "POSIBLE_DUPLICADO" in findings,
             "invoice": {
-                "supplier_tax_id": invoice.supplier_tax_id, "customer_tax_id": invoice.customer_tax_id, "invoice_number": invoice.invoice_number,
+                "supplier_name": invoice.supplier_name, "supplier_tax_id": invoice.supplier_tax_id, "customer_tax_id": invoice.customer_tax_id, "invoice_number": invoice.invoice_number,
                 "invoice_date": invoice.invoice_date.isoformat() if invoice.invoice_date else None, "subtotal": money(invoice.subtotal), "tax_total": money(invoice.tax_total),
                 "withholding_total": money(invoice.withholding_total), "total": money(invoice.total), "direction": invoice.direction,
             } if invoice is not None else None,
@@ -318,6 +318,8 @@ def compare_invoice(expected: dict[str, Any], observed: dict[str, Any] | None, f
         got = (observed or {}).get(name)
         if name in {"subtotal", "tax_total", "withholding_total", "total"}:
             want, got = money(want), money(got)
+        elif name == "supplier_name":  # v0.5: sin mayúsculas, tildes ni puntuación final
+            want, got = (norm(want).strip(" .·,") or None) if want else None, (norm(got).strip(" .·,") or None) if got else None
         elif name.endswith("tax_id"):
             want, got = (want or "").upper() or None, (got or "").upper() or None
         fields[name] = {"expected": want, "observed": got, "ok": want == got}

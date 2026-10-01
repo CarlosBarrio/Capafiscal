@@ -31,6 +31,7 @@
         "type": "INVOICE",
         "invoice": {
           "direction": "RECEIVED",
+          "supplier_name": "Laura Inventada Martín",
           "supplier_tax_id": "00012345V",
           "customer_tax_id": "B00100016",
           "invoice_number": "A-26-118",

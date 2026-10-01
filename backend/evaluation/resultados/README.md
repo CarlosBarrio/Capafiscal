@@ -191,3 +191,23 @@ B lo ha escrito el mismo autor que las reglas: no es ciego. Sirve para medir
 y priorizar, no como examen. El examen es C (semilla elegida por quien
 evalúa, fuera de git, una sola ejecución) y, mejor aún, documentos reales de
 otra persona.
+
+## v0.5 · El nombre del proveedor entra en la verdad de B
+
+Al revisar la interfaz se vio que 9 de 13 facturas mostraban como «proveedor»
+el domicilio («C/ Inventada 12, 47001 Valladolid»): en la línea
+`<domicilio> · NIF <nif>` el extractor tomaba lo que precede al NIF. B no lo
+detectaba porque **no comprobaba `supplier_name`**.
+
+- Se añade `supplier_name` a la verdad de cada factura de B y al evaluador
+  (comparación sin mayúsculas, tildes ni puntuación final). Esto es un cambio
+  de banco: B v2 sigue congelado en `v0.4-b-v2` para comparar.
+- Medido con el banco nuevo, **antes** del arreglo: `supplier_name` 4/22 (18 %),
+  comprobaciones 201/221. **Después**: `supplier_name` 21/22 (95 %), 218/221.
+  El que falla es `factura_texto_girado.pdf`, que ya se marca para revisión.
+- Arreglo: un domicilio (prefijo de vía con número, o código postal seguido de
+  localidad, sin forma societaria) nunca es nombre de empresa
+  (`looks_like_address`). Pruebas: `tests/unit/test_supplier_names.py`.
+
+Lección: un campo que el banco no mide puede estar mal en el 80 % de los casos
+sin que ninguna métrica se mueva. Informe: `B_reglas_4_v05_nombre_proveedor.md`.

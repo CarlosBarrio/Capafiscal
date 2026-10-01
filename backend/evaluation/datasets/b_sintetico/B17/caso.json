@@ -36,6 +36,7 @@
         "type": "INVOICE",
         "invoice": {
           "direction": "RECEIVED",
+          "supplier_name": "Transportes Simulados Esla S.L.",
           "supplier_tax_id": "B00300038",
           "customer_tax_id": "B00100016",
           "invoice_number": "FAC-2026-145",
@@ -54,6 +55,7 @@
         "type": "INVOICE",
         "invoice": {
           "direction": "RECEIVED",
+          "supplier_name": "Transportes Simulados Esla S.L.",
           "supplier_tax_id": "B00300038",
           "customer_tax_id": "B00100016",
           "invoice_number": "FAC-2026-145",

@@ -31,6 +31,7 @@
         "type": "INVOICE",
         "invoice": {
           "direction": "RECEIVED",
+          "supplier_name": "Programas Ficticios Vena S.L.",
           "supplier_tax_id": "B00500058",
           "customer_tax_id": "B00100016",
           "invoice_number": "2026-0455",

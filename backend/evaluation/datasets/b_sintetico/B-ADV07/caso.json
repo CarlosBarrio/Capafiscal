@@ -32,6 +32,7 @@
         "type": "INVOICE",
         "invoice": {
           "direction": "RECEIVED",
+          "supplier_name": "Limpiezas Imaginarias Ubierna S.L.",
           "supplier_tax_id": "B00400044",
           "customer_tax_id": "B00100016",
           "invoice_number": "LIU-0504",

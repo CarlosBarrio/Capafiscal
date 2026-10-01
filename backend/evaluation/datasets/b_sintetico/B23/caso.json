@@ -43,6 +43,7 @@
           "type": "INVOICE",
           "invoice": {
             "direction": "RECEIVED",
+            "supplier_name": "Transportes Simulados Esla S.L.",
             "supplier_tax_id": "B00300038",
             "customer_tax_id": "B00100016",
             "invoice_number": "TSE-2026-09B",
@@ -57,6 +58,7 @@
           "type": "INVOICE",
           "invoice": {
             "direction": "RECEIVED",
+            "supplier_name": "Transportes Simulados Esla S.L.",
             "supplier_tax_id": "B00300038",
             "customer_tax_id": "B00100016",
             "invoice_number": "TSE-R-2026-004",
