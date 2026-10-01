@@ -349,7 +349,17 @@ def local_now() -> datetime:
     return madrid_now()
 
 
+def read_setting(database: Session, code: str) -> AutomationSetting:
+    """Para mostrar o decidir: la guardada o la de por defecto, SIN guardarla (una lectura no escribe)."""
+    from sqlalchemy import select
+
+    return database.scalar(select(AutomationSetting).where(AutomationSetting.code == code)) or AutomationSetting(
+        code=code, enabled=BY_CODE[code].default_enabled
+    )
+
+
 def get_setting(database: Session, code: str) -> AutomationSetting:
+    """Para cambiarla o anotar una ejecución: la crea si aún no existe."""
     from sqlalchemy import select
 
     setting = database.scalar(select(AutomationSetting).where(AutomationSetting.code == code))
@@ -429,7 +439,7 @@ def run_due(database: Session, now: datetime | None = None) -> list[AutomationRu
     now = now or local_now()
     runs = []
     for automation in AUTOMATIONS:
-        setting = get_setting(database, automation.code)
+        setting = read_setting(database, automation.code)
         if is_due(automation, setting, now):
             runs.append(run_automation(database, automation.code, trigger="SCHEDULE", now=now))
     return runs
@@ -451,7 +461,7 @@ def run_due_all_clients(now: datetime | None = None) -> dict[int, int]:
         with tenant_session(client_id) as database:
             try:
                 # Cada cliente tiene sus automatizaciones activadas y su propio «última vez».
-                due = [automation.code for automation in AUTOMATIONS if is_due(automation, get_setting(database, automation.code), now)]
+                due = [automation.code for automation in AUTOMATIONS if is_due(automation, read_setting(database, automation.code), now)]
                 runs = [run_automation(database, code, trigger="SCHEDULE", now=now) for code in due]
                 database.commit()
                 done[client_id] = len(runs)
@@ -509,7 +519,7 @@ def automations_overview(database: Session, now: datetime | None = None) -> dict
     items = []
     minutes_saved = 0
     for automation in AUTOMATIONS:
-        setting = get_setting(database, automation.code)
+        setting = read_setting(database, automation.code)
         runs, handled = stats.get(automation.code, (0, 0))
         minutes_saved += handled * automation.minutes_per_item
         items.append(

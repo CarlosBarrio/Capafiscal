@@ -172,3 +172,24 @@ def test_import_a_downloaded_summary_when_there_is_no_network(client, monkeypatc
     assert response.json()["fetched"]["new"] == 7
     bad = client.post("/api/intelligence/import", data={"day": DAY.isoformat()}, files={"uploaded_file": ("x.json", b"no es json", "application/json")})
     assert bad.status_code == 422
+
+
+def test_reading_never_writes_so_simultaneous_reads_do_not_lock_sqlite(client):
+    """Regresión: «database is locked» al abrir Inteligencia (dos GET a la vez que creaban las fuentes)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from app.database import SessionLocal
+    from app.models import AutomationSetting
+    from app.models import IntelSource
+    from app.models import LearningRule
+
+    urls = [f"/api/intelligence?radar={radar}" for radar in ("juridico", "arquitectura", "subvenciones")] * 4 + ["/api/learning/rules"] * 4 + ["/api/automations"] * 4
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        codes = list(pool.map(lambda url: client.get(url).status_code, urls))
+    assert codes == [200] * len(urls)
+    with SessionLocal() as database:
+        assert database.query(IntelSource).count() == 0  # las fuentes se crean al descargar, no al mirar
+        assert database.query(LearningRule).count() == 0
+        assert database.query(AutomationSetting).count() == 0  # la lista de automatizaciones tampoco escribe
+    overview = client.get("/api/intelligence").json()
+    assert overview["source"]["status"] == "active" and overview["source"]["last_success"] is None

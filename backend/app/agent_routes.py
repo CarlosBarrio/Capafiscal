@@ -275,13 +275,11 @@ class RuleDecision(BaseModel):
 @router.get("/learning/rules", tags=["Agentes"])
 def learning_rules(database: DatabaseDependency) -> dict[str, Any]:
     """Reglas aprendidas de las correcciones: propuestas (con evidencia y simulación), aprobadas, rechazadas y retiradas."""
-    from app.learning import propose_rules
     from app.learning import ruleset_version
     from app.learning import serialize_rule
     from app.models import LearningRule
 
-    propose_rules(database)
-    database.commit()
+    # Solo lee: las propuestas se crean al registrar la corrección (invoice_service.update_invoice).
     rules = database.scalars(select(LearningRule).order_by(LearningRule.id.desc())).all()
     return {
         "version": ruleset_version(database),

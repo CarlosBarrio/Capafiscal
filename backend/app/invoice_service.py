@@ -1126,7 +1126,11 @@ def update_invoice(
 
     from app.learning import record_invoice_corrections
 
-    record_invoice_corrections(database, invoice, before, after, actor)
+    if record_invoice_corrections(database, invoice, before, after, actor):
+        from app.learning import propose_rules
+
+        database.flush()
+        propose_rules(database)  # el patrón se convierte en propuesta aquí, no al consultar la lista
 
     if before.get("category") != after.get("category"):
         learn_supplier_rule(database, invoice, actor)

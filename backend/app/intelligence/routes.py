@@ -30,12 +30,12 @@ class RefreshPayload(BaseModel):
 
 @router.get("")
 def intelligence_overview(database: DatabaseDependency, radar: str = "juridico", include_dismissed: bool = False) -> dict[str, Any]:
-    """Lo relevante que CapaFiscal ha encontrado fuera de la empresa, para un radar."""
-    from app.intelligence.service import ensure_sources
+    """Lo relevante que CapaFiscal ha encontrado fuera de la empresa, para un radar.
+
+    Solo lee: las fuentes se crean al descargar. Una lectura que escribe choca en SQLite
+    cuando llegan dos a la vez («database is locked»)."""
     from app.intelligence.service import overview
 
-    ensure_sources(database)
-    database.commit()
     try:
         return overview(database, radar, include_dismissed=include_dismissed)
     except ValueError as error:
