@@ -1,0 +1,54 @@
+{
+  "case_id": "B21",
+  "conjunto": "B",
+  "bloque": "correo",
+  "titulo": "Correo con factura",
+  "descripcion": "Un correo de proveedor con la factura en PDF.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "LIU-0930.pdf",
+      "tipo": "factura",
+      "nota": ""
+    },
+    {
+      "archivo": "factura_septiembre.eml",
+      "tipo": "correo",
+      "nota": "Adjuntos: LIU-0930.pdf"
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "correo",
+      "archivo": "factura_septiembre.eml",
+      "expected_adjuntos": [
+        {
+          "type": "INVOICE",
+          "invoice": {
+            "direction": "RECEIVED",
+            "supplier_tax_id": "B00400044",
+            "customer_tax_id": "B00100016",
+            "invoice_number": "LIU-0930",
+            "invoice_date": "2026-09-30",
+            "subtotal": "400.00",
+            "tax_total": "84.00",
+            "total": "484.00"
+          },
+          "duplicate": false
+        }
+      ]
+    }
+  ],
+  "expected": {}
+}

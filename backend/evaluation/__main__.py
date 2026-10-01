@@ -11,6 +11,11 @@ Uso (desde backend/):
     python -m evaluation preparar reales [--conjunto B] [--prerrellenar]   # etiquetas para documentos nuevos
     python -m evaluation incorporar reales                 # pasa a labels.json los casos revisados
 
+    python -m evaluation generar-b                         # banco B de expedientes sintéticos (se versiona)
+    python -m evaluation generar-c --semilla N             # banco C ciego (fuera de git; no se mira)
+    python -m evaluation casos --dataset b_sintetico       # evalúa expedientes completos (reglas)
+    python -m evaluation casos --dataset c_ciego --ciego   # una sola vez, al final (queda anotado)
+
 Conjuntos: A = desarrollo (se puede mirar y ajustar reglas con ellos),
 B = evaluación (no se usan para cambiar reglas), C = ciego (no se tocan
 hasta el final; cada uso queda anotado en informes/ciego.log).
@@ -146,8 +151,57 @@ def evaluate(argv: list[str]) -> int:
     return 0
 
 
+def generate(argv: list[str], which: str) -> int:
+    from evaluation.banco_casos import build_b
+    from evaluation.banco_casos import build_c
+
+    parser = argparse.ArgumentParser(prog=f"python -m evaluation generar-{which}")
+    if which == "c":
+        parser.add_argument("--semilla", type=int, required=True, help="Elígela tú y no la compartas: decide las variantes de C")
+    args = parser.parse_args(argv)
+    index = build_b() if which == "b" else build_c(args.semilla)
+    print(f"Banco {index['conjunto']}: {index['total_casos']} expedientes, {index['total_documentos']} documentos.")
+    if which == "c":
+        print(f"Sello: {index['sello']}. No abras los documentos ni ejecutes C hasta la evaluación final.")
+    return 0
+
+
+def cases(argv: list[str]) -> int:
+    from evaluation import casos
+
+    parser = argparse.ArgumentParser(prog="python -m evaluation casos")
+    parser.add_argument("--dataset", default="b_sintetico")
+    parser.add_argument("--motor", default="reglas", choices=["reglas", "hibrido"], help="«hibrido» usa Claude si hay ANTHROPIC_API_KEY")
+    parser.add_argument("--ciego", action="store_true")
+    args = parser.parse_args(argv)
+    report = casos.run(args.dataset, engine=args.motor, blind=args.ciego)
+    json_path, md_path = casos.save(report)
+    summary = report["summary"]
+    out = HERE / "informes"
+    import csv
+
+    history = out / "historial_casos.csv"
+    new = not history.exists()
+    with history.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        if new:
+            writer.writerow(["fecha", "commit", "banco", "motor", "expedientes", "expedientes_ok", "comprobaciones", "comprobaciones_ok", "error_silencioso"])
+        writer.writerow([datetime.now().isoformat(timespec="seconds"), git_commit(), args.dataset, args.motor, summary["cases"], summary["cases_ok"], summary["checks"],
+                         summary["checks_ok"], summary["outcomes"].get("error_silencioso", 0)])
+    if args.ciego:
+        with (out / "ciego.log").open("a", encoding="utf-8") as handle:
+            handle.write(f"{datetime.now().isoformat(timespec='seconds')} · casos {args.dataset} · commit {git_commit()} · {summary['checks_ok']}/{summary['checks']}\n")
+    print(md_path.read_text(encoding="utf-8"))
+    print(f"Informe: {md_path} · datos: {json_path}")
+    return 0
+
+
 def main() -> int:
     argv = sys.argv[1:]
+    if argv and argv[0] in {"generar-b", "generar-c"}:
+        return generate(argv[1:], argv[0][-1])
+    if argv and argv[0] == "casos":
+        return cases(argv[1:])
     if argv and argv[0] == "preparar":
         return prepare(argv[1:])
     if argv and argv[0] == "incorporar":

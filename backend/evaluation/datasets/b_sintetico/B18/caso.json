@@ -1,0 +1,72 @@
+{
+  "case_id": "B18",
+  "conjunto": "B",
+  "bloque": "facturas",
+  "titulo": "Factura rectificativa",
+  "descripcion": "Una factura y su rectificativa (abono parcial). La rectificativa no es un duplicado y su importe es negativo.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "factura_2026-0412.pdf",
+      "tipo": "factura",
+      "nota": ""
+    },
+    {
+      "archivo": "rectificativa_R-2026-0031.pdf",
+      "tipo": "factura_rectificativa",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "factura_2026-0412.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_tax_id": "B00500058",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "2026-0412",
+          "invoice_date": "2026-09-02",
+          "subtotal": "1000.00",
+          "tax_total": "210.00",
+          "total": "1210.00"
+        }
+      }
+    },
+    {
+      "tipo": "subida",
+      "archivo": "rectificativa_R-2026-0031.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_tax_id": "B00500058",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "R-2026-0031",
+          "invoice_date": "2026-09-16",
+          "subtotal": "-200.00",
+          "tax_total": "-42.00",
+          "total": "-242.00"
+        },
+        "duplicate": false,
+        "findings_excluded": [
+          "POSIBLE_DUPLICADO"
+        ]
+      }
+    }
+  ],
+  "expected": {}
+}

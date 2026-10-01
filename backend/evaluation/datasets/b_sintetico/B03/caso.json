@@ -1,0 +1,54 @@
+{
+  "case_id": "B03",
+  "conjunto": "B",
+  "bloque": "aeat",
+  "titulo": "Propuesta de liquidación provisional",
+  "descripcion": "Trámite de alegaciones con importes declarado/comprobado/diferencia. No es un requerimiento ni una liquidación (y menciona la autoliquidación).",
+  "etiquetas": [
+    "limpio",
+    "ambiguo"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "propuesta_liquidacion.pdf",
+      "tipo": "propuesta_liquidacion",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "propuesta_liquidacion.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "requerimiento",
+        "procedure": "PROPUESTA_LIQUIDACION",
+        "procedure_not": [
+          "REQUERIMIENTO",
+          "LIQUIDACION",
+          "COMPROBACION_LIMITADA"
+        ],
+        "issuer": "AEAT",
+        "reference": "202609SIM0003456C",
+        "deadline": "2026-10-06",
+        "debt_amount": 1324.02,
+        "requires_human": true,
+        "tax_reference": {
+          "model": "303",
+          "year": 2026,
+          "quarter": 1
+        }
+      }
+    }
+  ],
+  "expected": {}
+}

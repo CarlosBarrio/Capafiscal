@@ -20,4 +20,5 @@ msal>=1.31
 cryptography>=43.0
 
 openpyxl>=3.1
-reportlab>=4.2anthropic>=1.0  # opcional: agentes con Claude si hay ANTHROPIC_API_KEY
+reportlab>=4.2
+anthropic>=1.0  # opcional: agentes con Claude si hay ANTHROPIC_API_KEY

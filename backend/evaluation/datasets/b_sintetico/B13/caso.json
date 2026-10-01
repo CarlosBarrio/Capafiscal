@@ -1,0 +1,48 @@
+{
+  "case_id": "B13",
+  "conjunto": "B",
+  "bloque": "normales",
+  "titulo": "Justificante de presentación del 303",
+  "descripcion": "Tras subirlo, la memoria debe poder responder «¿está presentado el 303 del 2T?» y el periodo debería constar presentado.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "justificante_303_2T.pdf",
+      "tipo": "justificante_presentacion",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "justificante_303_2T.pdf",
+      "expected": {
+        "requires_human": false,
+        "deadline": null,
+        "not_invoice": true
+      }
+    }
+  ],
+  "expected": {
+    "filed_period": {
+      "model": "303",
+      "year": 2026,
+      "quarter": 2
+    },
+    "memory": {
+      "question": "¿Está presentado el modelo 303 del segundo trimestre de 2026?",
+      "source_contains": "303"
+    }
+  }
+}

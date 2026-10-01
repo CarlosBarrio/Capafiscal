@@ -1,0 +1,46 @@
+{
+  "case_id": "B-ADV08",
+  "conjunto": "B",
+  "bloque": "adversarial",
+  "titulo": "Proveedor solo en el pie legal",
+  "descripcion": "La cabecera es una marca comercial; quién emite la factura solo se sabe por el pie del Registro Mercantil.",
+  "etiquetas": [
+    "adversarial"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "factura_marca_comercial.pdf",
+      "tipo": "factura",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "factura_marca_comercial.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_tax_id": "B00300038",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "TSE-2026-140",
+          "invoice_date": "2026-09-26",
+          "subtotal": "290.00",
+          "tax_total": "60.90",
+          "total": "350.90"
+        }
+      }
+    }
+  ],
+  "expected": {}
+}

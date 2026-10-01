@@ -1,0 +1,47 @@
+{
+  "case_id": "B-ADV05",
+  "conjunto": "B",
+  "bloque": "adversarial",
+  "titulo": "Factura en dos páginas",
+  "descripcion": "La tabla de conceptos en la primera página y el resumen fiscal en la segunda.",
+  "etiquetas": [
+    "adversarial",
+    "multipagina"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "factura_dos_paginas.pdf",
+      "tipo": "factura",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "factura_dos_paginas.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_tax_id": "B00300038",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "TSE-2026-133",
+          "invoice_date": "2026-09-21",
+          "subtotal": "1645.00",
+          "tax_total": "345.45",
+          "total": "1990.45"
+        }
+      }
+    }
+  ],
+  "expected": {}
+}

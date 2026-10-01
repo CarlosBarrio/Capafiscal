@@ -1,0 +1,39 @@
+{
+  "case_id": "B-ADV03",
+  "conjunto": "B",
+  "bloque": "adversarial",
+  "titulo": "Requerimiento escaneado",
+  "descripcion": "Sin texto seleccionable. Sin OCR no se puede leer: debe ir a una persona, nunca darse por bueno ni tomarse por factura.",
+  "etiquetas": [
+    "adversarial",
+    "ocr"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "requerimiento_escaneado.pdf",
+      "tipo": "requerimiento",
+      "nota": "Escaneado: sin texto seleccionable."
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "requerimiento_escaneado.pdf",
+      "expected": {
+        "ocr": true,
+        "requires_human": true,
+        "not_invoice": true
+      }
+    }
+  ],
+  "expected": {}
+}

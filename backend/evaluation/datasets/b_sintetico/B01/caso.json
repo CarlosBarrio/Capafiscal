@@ -1,0 +1,59 @@
+{
+  "case_id": "B01",
+  "conjunto": "B",
+  "bloque": "aeat",
+  "titulo": "Comprobación limitada IVA 2T 2026",
+  "descripcion": "Requerimiento limpio: expediente, NIF, impuesto, periodo, documentación, 10 días hábiles, órgano y CSV ficticio.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "requerimiento_iva_2T.pdf",
+      "tipo": "requerimiento",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "requerimiento_iva_2T.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "requerimiento",
+        "procedure": "COMPROBACION_LIMITADA",
+        "issuer": "AEAT",
+        "reference": "202609SIM0001234A",
+        "deadline": "2026-10-13",
+        "requires_human": true,
+        "expected_agents": [
+          "vigilante",
+          "expedientes",
+          "fiscal",
+          "gestor",
+          "director"
+        ],
+        "tax_reference": {
+          "model": "303",
+          "year": 2026,
+          "quarter": 2
+        },
+        "requested_documents": [
+          "LIBRO_RECIBIDAS",
+          "FACTURAS",
+          "JUSTIFICANTE_PAGO"
+        ]
+      }
+    }
+  ],
+  "expected": {}
+}

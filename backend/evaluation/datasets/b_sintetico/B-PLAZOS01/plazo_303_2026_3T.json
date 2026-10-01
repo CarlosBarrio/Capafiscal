@@ -1,0 +1,9 @@
+{
+  "kind": "deadline",
+  "source": "calendario-simulado",
+  "external_id": "B-PLAZOS01:303:2026-3",
+  "model": "303",
+  "year": 2026,
+  "quarter": 3,
+  "due": "2026-10-20"
+}

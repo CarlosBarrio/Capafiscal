@@ -38,3 +38,6 @@ proyecto_completo.txt
 # Documentos reales para evaluar: nunca al repositorio (datos personales y bancarios)
 backend/evaluation/datasets/reales/
 backend/evaluation/informes/
+
+# Banco ciego C: se genera con una semilla y no se versiona
+backend/evaluation/datasets/c_ciego/

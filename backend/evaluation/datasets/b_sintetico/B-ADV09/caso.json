@@ -1,0 +1,46 @@
+{
+  "case_id": "B-ADV09",
+  "conjunto": "B",
+  "bloque": "adversarial",
+  "titulo": "Importes con dígitos separados",
+  "descripcion": "El IVA aparece como «1 7 4,72 €», como sale de algunas maquetas.",
+  "etiquetas": [
+    "adversarial"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "factura_digitos_separados.pdf",
+      "tipo": "factura",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "factura_digitos_separados.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_tax_id": "B00500058",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "2026-0455",
+          "invoice_date": "2026-09-23",
+          "subtotal": "832.00",
+          "tax_total": "174.72",
+          "total": "1006.72"
+        }
+      }
+    }
+  ],
+  "expected": {}
+}
