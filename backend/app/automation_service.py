@@ -422,6 +422,32 @@ def run_due(database: Session, now: datetime | None = None) -> list[AutomationRu
     return runs
 
 
+def run_due_all_clients(now: datetime | None = None) -> dict[int, int]:
+    """Multiempresa: lo que toca se decide una vez y se ejecuta en la sesión aislada de cada cliente."""
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models import Client
+    from app.tenancy import tenant_session
+
+    now = now or local_now()
+    with SessionLocal() as database:
+        due = [automation.code for automation in AUTOMATIONS if is_due(automation, get_setting(database, automation.code), now)]
+        database.commit()
+        clients = list(database.scalars(select(Client.id).where(Client.active.is_(True))).all())
+    done: dict[int, int] = {}
+    for client_id in clients:
+        with tenant_session(client_id) as database:
+            try:
+                runs = [run_automation(database, code, trigger="SCHEDULE", now=now) for code in due]
+                database.commit()
+                done[client_id] = len(runs)
+            except Exception:
+                database.rollback()
+                logger.exception("Error en las automatizaciones del cliente %s", client_id)
+    return done
+
+
 def serialize_run(run: AutomationRun) -> dict[str, Any]:
     automation = BY_CODE.get(run.code)
     return {
@@ -544,8 +570,13 @@ class Scheduler:
         }
 
     def tick(self) -> None:
+        from app.config import settings
         from app.database import SessionLocal
 
+        if settings.auth_required:
+            run_due_all_clients()
+            self.last_tick = datetime.now(timezone.utc)
+            return
         database = SessionLocal()
         try:
             run_due(database)

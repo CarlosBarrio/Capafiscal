@@ -410,7 +410,11 @@ def attachment_path(attachment: CaseAttachment) -> Path:
 
 
 def request_by_token(database: Session, token: str) -> DocumentRequest | None:
-    return database.scalar(select(DocumentRequest).where(DocumentRequest.token == token))
+    """El portal es público: el enlace se busca en todos los clientes y la sesión pasa a trabajar SOLO para el suyo."""
+    request = database.scalar(select(DocumentRequest).where(DocumentRequest.token == token).execution_options(all_tenants=True))
+    if request is not None:
+        database.info["tenant_id"] = request.tenant_id
+    return request
 
 
 def portal_info(database: Session, request: DocumentRequest) -> dict[str, Any]:

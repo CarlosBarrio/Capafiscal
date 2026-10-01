@@ -64,3 +64,20 @@ independiente: la medida que vale ahora es C.
 Siguiente: Claude real sobre B v2 (reglas → Claude → híbrido: qué corrige,
 qué empeora, cuándo merece la pena y cuánto cuesta), después C ciego y la
 prueba final; DEHú al final.
+
+## Fase 4 · producto útil para una gestoría (orden acordado)
+
+| # | Paso | Estado |
+|---|---|---|
+| 1 | Proactividad: documentos que faltan, movimientos sin justificar, obligaciones incompletas | ✅ |
+| 2 | Conciliación banco ↔ facturas (6 estados, conciliación automática solo si es inequívoca) | ✅ |
+| 3 | Fiscal continuo: posición de 303/130/111/115 con % de información y lo que falta | ✅ |
+| 4 | Memoria financiera: perfil por proveedor y cliente | ✅ |
+| 5 | Detector de cambios: gasto anormal, caída de facturación, cliente que deja de pagar | ✅ |
+| 6 | Director por impacto, con el porqué (`/api/today`) | ✅ |
+| 7 | Aprendizaje de decisiones humanas (`decision_records`, `/api/learning`) | ✅ |
+| 8 | Routing de Claude basado en datos (política por tipo de duda) | 🟡 Mecanismo listo; falta medir con la clave |
+| 9 | DEHú: adaptador y transporte por carpeta | 🟡 Conexión directa pendiente de alta, certificado y apoderamientos |
+| 10 | Multiempresa y permisos (5 roles, aislamiento en la sesión) | ✅ |
+
+Siguiente: piloto real. Sin nóminas, altas, agentes nuevos ni pantallas nuevas antes.

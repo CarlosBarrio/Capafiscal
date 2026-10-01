@@ -218,6 +218,76 @@ git: el repositorio es público y las facturas llevan IBAN y datos personales.
 Las réplicas de `evaluation/datasets/sinteticas/` reproducen las mismas
 maquetas con datos inventados y sí son parte de los tests.
 
+## Proactividad: trabajo que nadie ha pedido
+
+CapaFiscal no solo procesa lo que le llega; en cada barrido busca problemas:
+
+- **Documentos que faltan**: un proveedor que factura cada mes y este mes no lo ha hecho.
+- **Movimientos sin justificar**: pagos y cobros del banco sin factura.
+- **Obligaciones incompletas**: «Faltan 2 facturas para cerrar el 303» cuando el plazo
+  vence en menos de 25 días. El aviso se actualiza mientras se completa y se cierra solo.
+
+**Conciliación banco ↔ facturas** (`GET /api/bank/reconciliation`): cada movimiento queda
+✅ conciliado, ⚠️ posible coincidencia, 🔴 importe diferente, 🔴 pago duplicado o 🔴 sin
+factura, y cada factura vencida sin movimiento, 🔴 factura sin pago. Se concilia sin
+persona solo con evidencia inequívoca (importe exacto y nº de factura, o el nombre y una
+única factura posible). Las excepciones las investiga el Detector.
+
+**Impuestos continuos** (`GET /api/taxes/position`): cómo va hoy cada modelo
+(303/130/111/115): «303 estimado: 2.340 € a ingresar · 97 % de información disponible ·
+faltan 2 facturas · 1 discrepancia con el banco».
+
+**Memoria financiera** (`GET /api/memory/profiles`): perfil de cada proveedor y cliente
+(rango de importe, frecuencia, IVA, forma y plazo de pago, última anomalía y última
+decisión humana). El Detector explica cada aviso contra ese perfil y detecta cambios:
+gasto anormal (y quién lo explica), caída de facturación y clientes que dejan de pagar.
+
+**Hoy** (`GET /api/today`): lo que requiere atención ordenado por impacto (urgencia +
+dinero en juego + tipo de asunto), con el porqué en una línea, más el trimestre y el banco.
+
+**Aprendizaje** (`GET /api/learning`): cada corrección, aprobación, rechazo o descarte
+queda registrado (predicción, decisión, tipo de error, motor). Sirve para medir la
+precisión real, para que lo que las personas corrigen a menudo en un proveedor deje de
+darse por bueno solo con reglas, y como etiquetas reales para evaluar.
+
+**Routing de Claude** (`GET /api/agents/routing`): Claude solo entra en las dudas donde
+los datos dicen que mejora (`python -m evaluation politica --informe …`).
+
+**DEHú**: `POST /api/connectors/dehu/import` (metadatos + PDF) o una carpeta con lo
+descargado (`DEHU_INBOX_DIR`, `POST /api/connectors/dehu/poll`). Las fechas de la DEHú
+son las oficiales: el plazo deja de ser estimado. La conexión directa necesita alta,
+certificado y apoderamientos; entrará como otro transporte, sin tocar el resto.
+
+## Multiempresa (gestoría → clientes) y permisos
+
+Con `AUTH_REQUIRED=true`:
+
+1. `POST /api/auth/setup` crea la gestoría, el primer cliente y el administrador (y, si
+   vienes de una instalación de una sola empresa, le pasa sus datos).
+2. El administrador crea clientes (`/api/admin/clients`) y usuarios (`/api/admin/users`)
+   con su rol y los clientes a los que accede.
+3. En la web aparece el acceso y, si hay varios clientes, el selector.
+
+| Rol | Puede |
+|---|---|
+| Admin | Todo, en todos los clientes; gestiona clientes y usuarios |
+| Gestor | Todo en sus clientes, salvo administrar usuarios |
+| Revisor | Ver y decidir (aprobar, rechazar, corregir, resolver); no configura ni borra |
+| Cliente | Ver su empresa y aportar documentos |
+| Solo lectura | Ver |
+
+**Aislamiento**: todas las tablas llevan `tenant_id` y la sesión de base de datos filtra
+y marca cada consulta e inserción por el cliente activo (`app/tenancy.py`). Ninguna
+consulta puede olvidarse del filtro, y sin cliente elegido no se ve nada (falla cerrado).
+La API admite `Authorization: Bearer` + `X-Client-Id`; el navegador usa una cookie
+HttpOnly y las escrituras exigen la cabecera `X-CapaFiscal` (protección CSRF). Sin
+`AUTH_REQUIRED`, todo funciona como siempre, para una sola empresa.
+
+Nota para bases de datos ya creadas: las columnas nuevas se añaden solas, pero las
+restricciones de unicidad por cliente solo se crean en bases nuevas; para pasar una
+instalación existente a multiempresa con varios clientes, conviene empezar con una base
+nueva (o migrar con Alembic).
+
 ## Qué hace
 
 | Área | Funcionalidad |

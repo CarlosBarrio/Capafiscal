@@ -29,7 +29,16 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class Document(Base):
+class TenantMixin:
+    """Dato de una empresa cliente. La sesión filtra y marca tenant_id sola (ver app/tenancy.py).
+
+    0 = instalación de una sola empresa (sin multiempresa).
+    """
+
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0", index=True)
+
+
+class Document(TenantMixin, Base):
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(
@@ -51,7 +60,6 @@ class Document(Base):
     sha256: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
-        unique=True,
         index=True,
     )
 
@@ -167,10 +175,11 @@ class Document(Base):
             "source",
             "external_id",
         ),
+        UniqueConstraint("tenant_id", "sha256", name="uq_documents_tenant_sha256"),
     )
 
 
-class Invoice(Base):
+class Invoice(TenantMixin, Base):
     __tablename__ = "invoices"
 
     id: Mapped[int] = mapped_column(
@@ -379,7 +388,7 @@ class Invoice(Base):
     )
 
 
-class InvoiceTaxLine(Base):
+class InvoiceTaxLine(TenantMixin, Base):
     __tablename__ = "invoice_tax_lines"
 
     id: Mapped[int] = mapped_column(
@@ -431,7 +440,7 @@ class InvoiceTaxLine(Base):
     )
 
 
-class ExtractionRun(Base):
+class ExtractionRun(TenantMixin, Base):
     __tablename__ = "extraction_runs"
 
     id: Mapped[int] = mapped_column(
@@ -493,7 +502,7 @@ class ExtractionRun(Base):
     )
 
 
-class AuditEvent(Base):
+class AuditEvent(TenantMixin, Base):
     __tablename__ = "audit_events"
 
     id: Mapped[int] = mapped_column(
@@ -547,7 +556,7 @@ class AuditEvent(Base):
     )
 
 
-class Task(Base):
+class Task(TenantMixin, Base):
     __tablename__ = "tasks"
 
     id: Mapped[int] = mapped_column(
@@ -669,7 +678,7 @@ class Task(Base):
     )
 
 
-class TaskEvent(Base):
+class TaskEvent(TenantMixin, Base):
     __tablename__ = "task_events"
 
     id: Mapped[int] = mapped_column(
@@ -722,7 +731,7 @@ class TaskEvent(Base):
 # Empresa
 # -------------------------------------------------------------------
 
-class CompanyProfile(Base):
+class CompanyProfile(TenantMixin, Base):
     """Datos de la empresa usuaria (una sola fila)."""
 
     __tablename__ = "company_profile"
@@ -771,16 +780,16 @@ class CompanyProfile(Base):
     )
 
 
-class SupplierRule(Base):
+class SupplierRule(TenantMixin, Base):
     """Memoria del agente: categoría aprendida por NIF de contraparte."""
 
     __tablename__ = "supplier_rules"
+    __table_args__ = (UniqueConstraint("tenant_id", "tax_id", name="uq_supplier_rules_tenant_tax_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tax_id: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
-        unique=True,
         index=True,
     )
     category: Mapped[str] = mapped_column(String(150), nullable=False)
@@ -805,7 +814,7 @@ class SupplierRule(Base):
 # Impuestos
 # -------------------------------------------------------------------
 
-class TaxFiling(Base):
+class TaxFiling(TenantMixin, Base):
     """Registro de un modelo tributario presentado."""
 
     __tablename__ = "tax_filings"
@@ -830,6 +839,7 @@ class TaxFiling(Base):
 
     __table_args__ = (
         UniqueConstraint(
+            "tenant_id",
             "model",
             "year",
             "period",
@@ -842,7 +852,7 @@ class TaxFiling(Base):
 # Notificaciones administrativas
 # -------------------------------------------------------------------
 
-class FiscalNotification(Base):
+class FiscalNotification(TenantMixin, Base):
     __tablename__ = "fiscal_notifications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -927,7 +937,7 @@ class FiscalNotification(Base):
 # Banco
 # -------------------------------------------------------------------
 
-class BankImport(Base):
+class BankImport(TenantMixin, Base):
     __tablename__ = "bank_imports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -959,8 +969,9 @@ class BankImport(Base):
     )
 
 
-class BankTransaction(Base):
+class BankTransaction(TenantMixin, Base):
     __tablename__ = "bank_transactions"
+    __table_args__ = (UniqueConstraint("tenant_id", "fingerprint", name="uq_bank_transactions_tenant_fingerprint"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     import_id: Mapped[int | None] = mapped_column(
@@ -987,7 +998,6 @@ class BankTransaction(Base):
     fingerprint: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
-        unique=True,
         index=True,
     )
 
@@ -1018,14 +1028,14 @@ class BankTransaction(Base):
 # Cumplimiento
 # -------------------------------------------------------------------
 
-class ComplianceItem(Base):
+class ComplianceItem(TenantMixin, Base):
     __tablename__ = "compliance_items"
+    __table_args__ = (UniqueConstraint("tenant_id", "code", name="uq_compliance_items_tenant_code"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        unique=True,
     )
     # OK, PENDING, WARNING, NOT_APPLICABLE
     status: Mapped[str] = mapped_column(
@@ -1052,7 +1062,7 @@ class ComplianceItem(Base):
 # Equipo
 # -------------------------------------------------------------------
 
-class Employee(Base):
+class Employee(TenantMixin, Base):
     __tablename__ = "employees"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1163,7 +1173,7 @@ class Employee(Base):
     )
 
 
-class EmployeeDocument(Base):
+class EmployeeDocument(TenantMixin, Base):
     __tablename__ = "employee_documents"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1196,7 +1206,7 @@ class EmployeeDocument(Base):
     )
 
 
-class Project(Base):
+class Project(TenantMixin, Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1224,7 +1234,7 @@ class Project(Base):
     )
 
 
-class ProjectAssignment(Base):
+class ProjectAssignment(TenantMixin, Base):
     __tablename__ = "project_assignments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1257,7 +1267,7 @@ class ProjectAssignment(Base):
     )
 
 
-class Absence(Base):
+class Absence(TenantMixin, Base):
     __tablename__ = "absences"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1284,7 +1294,7 @@ class Absence(Base):
 # Nóminas
 # -------------------------------------------------------------------
 
-class PayrollRun(Base):
+class PayrollRun(TenantMixin, Base):
     __tablename__ = "payroll_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1315,11 +1325,11 @@ class PayrollRun(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("year", "month", name="uq_payroll_run_period"),
+        UniqueConstraint("tenant_id", "year", "month", name="uq_payroll_run_period"),
     )
 
 
-class Payslip(Base):
+class Payslip(TenantMixin, Base):
     __tablename__ = "payslips"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1365,7 +1375,7 @@ class Payslip(Base):
 # ---------------------------------------------------------------------
 
 
-class Customer(Base):
+class Customer(TenantMixin, Base):
     __tablename__ = "customers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1387,12 +1397,12 @@ class Customer(Base):
     )
 
 
-class SalesInvoice(Base):
+class SalesInvoice(TenantMixin, Base):
     """Factura emitida desde CapaFiscal (borrador hasta que se emite)."""
 
     __tablename__ = "sales_invoices"
     __table_args__ = (
-        UniqueConstraint("series", "year", "number", name="uq_sales_invoice_number"),
+        UniqueConstraint("tenant_id", "series", "year", "number", name="uq_sales_invoice_number"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1457,7 +1467,7 @@ class SalesInvoice(Base):
     invoice: Mapped[Invoice | None] = relationship()
 
 
-class RecurringInvoice(Base):
+class RecurringInvoice(TenantMixin, Base):
     """Plantilla que el agente convierte en factura cada periodo."""
 
     __tablename__ = "recurring_invoices"
@@ -1490,7 +1500,7 @@ class RecurringInvoice(Base):
 # ---------------------------------------------------------------------
 
 
-class OutboxMessage(Base):
+class OutboxMessage(TenantMixin, Base):
     __tablename__ = "outbox_messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1521,7 +1531,7 @@ class OutboxMessage(Base):
 # ---------------------------------------------------------------------
 
 
-class TimeEntry(Base):
+class TimeEntry(TenantMixin, Base):
     __tablename__ = "time_entries"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1561,7 +1571,7 @@ class AutomationSetting(Base):
     last_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class AutomationRun(Base):
+class AutomationRun(TenantMixin, Base):
     __tablename__ = "automation_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1581,10 +1591,11 @@ class AutomationRun(Base):
 # ---------------------------------------------------------------------
 
 
-class Case(Base):
+class Case(TenantMixin, Base):
     """Expediente: la unidad de trabajo que recorren los agentes."""
 
     __tablename__ = "cases"
+    __table_args__ = (UniqueConstraint("tenant_id", "fingerprint", name="uq_cases_tenant_fingerprint"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
@@ -1627,7 +1638,7 @@ class Case(Base):
         ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
     )
     # Clave para no duplicar anomalías de la misma condición.
-    fingerprint: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
+    fingerprint: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)  # único por cliente (ver __table_args__)
 
     filed_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     filing_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -1649,7 +1660,7 @@ class Case(Base):
     )
 
 
-class CaseEvent(Base):
+class CaseEvent(TenantMixin, Base):
     """Línea de tiempo del expediente: pasos de agentes y acciones humanas."""
 
     __tablename__ = "case_events"
@@ -1667,7 +1678,7 @@ class CaseEvent(Base):
     case: Mapped[Case] = relationship(back_populates="events")
 
 
-class CaseAttachment(Base):
+class CaseAttachment(TenantMixin, Base):
     __tablename__ = "case_attachments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1685,7 +1696,7 @@ class CaseAttachment(Base):
     case: Mapped[Case] = relationship(back_populates="attachments")
 
 
-class DocumentRequest(Base):
+class DocumentRequest(TenantMixin, Base):
     """Petición de documentación que persigue el agente hasta recibirla."""
 
     __tablename__ = "document_requests"
@@ -1711,7 +1722,7 @@ class DocumentRequest(Base):
     case: Mapped[Case] = relationship(back_populates="requests")
 
 
-class AgentRun(Base):
+class AgentRun(TenantMixin, Base):
     """Una ejecución del orquestador (un recorrido completo de agentes)."""
 
     __tablename__ = "agent_runs"
@@ -1731,7 +1742,7 @@ class AgentRun(Base):
     )
 
 
-class AgentStep(Base):
+class AgentStep(TenantMixin, Base):
     __tablename__ = "agent_steps"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1751,7 +1762,7 @@ class AgentStep(Base):
     run: Mapped[AgentRun] = relationship(back_populates="steps")
 
 
-class IngestedEvent(Base):
+class IngestedEvent(TenantMixin, Base):
     """Registro de todo lo que entra al sistema (idempotencia y estado).
 
     Una misma fuente no puede entregar dos veces el mismo evento: la pareja
@@ -1761,7 +1772,7 @@ class IngestedEvent(Base):
     """
 
     __tablename__ = "ingested_events"
-    __table_args__ = (UniqueConstraint("source", "external_id", name="uq_ingested_event_source_external"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "source", "external_id", name="uq_ingested_event_source_external"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
@@ -1782,11 +1793,11 @@ class IngestedEvent(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class CounterpartyProfile(Base):
+class CounterpartyProfile(TenantMixin, Base):
     """Memoria financiera: cómo se comporta normalmente cada proveedor y cliente."""
 
     __tablename__ = "counterparty_profiles"
-    __table_args__ = (UniqueConstraint("party", "key", name="uq_counterparty_profile"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "party", "key", name="uq_counterparty_profile"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     party: Mapped[str] = mapped_column(String(20), nullable=False)  # supplier, customer
@@ -1796,7 +1807,7 @@ class CounterpartyProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
 
 
-class DecisionRecord(Base):
+class DecisionRecord(TenantMixin, Base):
     """Lo que propuso el sistema y lo que decidió una persona: datos propios para aprender y evaluar."""
 
     __tablename__ = "decision_records"
@@ -1816,3 +1827,70 @@ class DecisionRecord(Base):
     subject_key: Mapped[str | None] = mapped_column(String(150), nullable=True, index=True)  # NIF del proveedor/cliente
     context: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
+
+
+# -------------------------------------------------------------------
+# Multiempresa: gestoría → clientes, usuarios y sesiones (tablas comunes)
+# -------------------------------------------------------------------
+
+
+class Organization(Base):
+    """La gestoría (o la empresa, si la usa una sola)."""
+
+    __tablename__ = "organizations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class Client(Base):
+    """Empresa cliente. Su id es el tenant_id de todos sus datos."""
+
+    __tablename__ = "clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    tax_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # ADMIN, GESTOR, REVISOR, CLIENTE, LECTURA
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="LECTURA")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
+class UserClient(Base):
+    """A qué clientes accede un usuario (el ADMIN accede a todos los de su gestoría)."""
+
+    __tablename__ = "user_clients"
+    __table_args__ = (UniqueConstraint("user_id", "client_id", name="uq_user_client"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+
+
+class ApiSession(Base):
+    __tablename__ = "api_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# Registra el aislamiento por cliente en todas las sesiones.
+from app import tenancy  # noqa: E402,F401

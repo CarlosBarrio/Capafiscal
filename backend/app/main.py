@@ -299,16 +299,27 @@ async def lifespan(application: FastAPI):
 
     create_database_tables()
 
-    database = SessionLocal()
+    from sqlalchemy import select as _select
 
-    try:
-        synchronize_all_review_tasks(database)
-        database.commit()
-    except Exception:
-        database.rollback()
-        raise
-    finally:
-        database.close()
+    from app.models import Client
+    from app.tenancy import set_tenant
+
+    if settings.auth_required:
+        with SessionLocal() as database:
+            tenants = list(database.scalars(_select(Client.id)).all())
+    else:
+        tenants = [None]
+    for tenant in tenants:
+        database = SessionLocal()
+        set_tenant(database, tenant)
+        try:
+            synchronize_all_review_tasks(database)
+            database.commit()
+        except Exception:
+            database.rollback()
+            raise
+        finally:
+            database.close()
 
     from app.automation_service import SCHEDULER
 
@@ -337,6 +348,49 @@ app.include_router(team_router)
 app.include_router(ops_router)
 app.include_router(agent_router)
 app.include_router(portal_router)
+from app.auth_routes import router as auth_router  # noqa: E402
+
+app.include_router(auth_router)
+
+
+@app.middleware("http")
+async def identify_request(request, call_next):
+    """Quién llama y para qué cliente. Sin AUTH_REQUIRED, empresa única (o X-Client-Id para pruebas)."""
+    from fastapi.concurrency import run_in_threadpool
+    from fastapi.responses import JSONResponse
+
+    from app.auth import is_public
+    from app.auth import resolve_request
+
+    request.state.tenant_id = None
+    request.state.user = None
+    if not settings.auth_required:
+        header = request.headers.get("x-client-id")
+        request.state.tenant_id = int(header) if header and header.isdigit() else None
+        return await call_next(request)
+    if is_public(request.url.path) or request.method == "OPTIONS":
+        return await call_next(request)
+
+    from app.auth import CLIENT_COOKIE
+    from app.auth import CSRF_HEADER
+    from app.auth import SESSION_COOKIE
+
+    def resolve():
+        with SessionLocal() as database:
+            result = resolve_request(database, method=request.method, path=request.url.path,
+                                     authorization=request.headers.get("authorization"),
+                                     client_header=request.headers.get("x-client-id") or request.cookies.get(CLIENT_COOKIE),
+                                     cookie_token=request.cookies.get(SESSION_COOKIE), csrf=request.headers.get(CSRF_HEADER))
+            if "user" in result:
+                database.expunge(result["user"])
+            return result
+
+    result = await run_in_threadpool(resolve)
+    if "error" in result:
+        code, message = result["error"]
+        return JSONResponse(status_code=code, content={"detail": message})
+    request.state.user, request.state.tenant_id = result["user"], result["tenant_id"]
+    return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,

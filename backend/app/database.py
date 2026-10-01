@@ -2,6 +2,7 @@ from collections.abc import Generator
 
 import logging
 
+from fastapi import Request
 from sqlalchemy import create_engine
 from sqlalchemy import inspect
 from sqlalchemy import text
@@ -69,8 +70,10 @@ SessionLocal = sessionmaker(
 )
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db(request: Request) -> Generator[Session, None, None]:
+    """Sesión de la petición, ya ligada al cliente que eligió el usuario (multiempresa)."""
     database = SessionLocal()
+    database.info["tenant_id"] = getattr(request.state, "tenant_id", None)
 
     try:
         yield database
@@ -121,7 +124,7 @@ def add_missing_columns() -> list[str]:
                 if column.name in existing_columns:
                     continue
 
-                if not column.nullable:
+                if not column.nullable and column.server_default is None:
                     logger.warning(
                         "No se puede añadir automáticamente la columna "
                         "obligatoria %s.%s.",
@@ -134,10 +137,15 @@ def add_missing_columns() -> list[str]:
                     dialect=engine.dialect
                 )
 
+                default = ""
+                if column.server_default is not None:
+                    # p. ej. tenant_id NOT NULL DEFAULT 0: los datos existentes quedan en la empresa única.
+                    default = f" NOT NULL DEFAULT {column.server_default.arg}"
+
                 connection.execute(
                     text(
                         f'ALTER TABLE "{table.name}" '
-                        f'ADD COLUMN "{column.name}" {column_type}'
+                        f'ADD COLUMN "{column.name}" {column_type}{default}'
                     )
                 )
                 added.append(f"{table.name}.{column.name}")

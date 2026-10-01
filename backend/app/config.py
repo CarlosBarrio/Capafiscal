@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     # IA opcional (Claude). Sin clave, los agentes usan reglas y plantillas.
     anthropic_api_key: str = ""
     agent_model: str = "claude-opus-5-5"
+    auth_required: bool = False  # multiempresa: usuarios, roles y aislamiento estricto por cliente
+    session_hours: int = 12
     dehu_inbox_dir: str = ""  # carpeta con notificaciones descargadas de la DEHú (PDF + .json)
     # Dirección pública para los enlaces de subida de documentos.
     public_base_url: str = "http://127.0.0.1:8000"
