@@ -102,7 +102,7 @@ def concrete_urls(path: str, b_ids: dict[str, list[int]]) -> list[str]:
             values[name] = [str(item) for item in sorted({i for ids in b_ids.values() for i in ids})][:5] or ["1"]
         else:
             values[name] = {"party": ["supplier"], "key": ["B00400044"], "model": ["303"], "decision": ["aprobar"], "index": ["0"],
-                            "code": ["EXP-2026-0001"], "token": ["x"]}.get(name, ["1"])
+                            "code": ["EXP-2026-0001"], "token": ["x"], "period": ["2026-09"]}.get(name, ["1"])
     urls = [path]
     for name in params:
         urls = [url.replace("{" + name + "}", value) for url in urls for value in values[name]]

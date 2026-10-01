@@ -1936,6 +1936,23 @@ class IntelMatch(TenantMixin, Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PeriodClose(TenantMixin, Base):
+    """El cierre administrativo de un mes: foto de las comprobaciones, quién lo cerró y con qué salvedades."""
+
+    __tablename__ = "period_closes"
+    __table_args__ = (UniqueConstraint("tenant_id", "period", name="uq_period_closes_tenant_period"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    period: Mapped[str] = mapped_column(String(7), nullable=False)  # AAAA-MM
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="OPEN")  # OPEN, CLOSED
+    percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class LearningRule(TenantMixin, Base):
     """Una regla aprendida de las correcciones humanas. No actúa hasta que un administrador la aprueba.
 

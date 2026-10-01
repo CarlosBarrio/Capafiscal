@@ -7,6 +7,7 @@
 
   const SECTIONS = {
     panel: ["Inicio", "Hoy", "home"],
+    cierre: ["Inicio", "Cierre del mes", "lock"],
     expedientes: ["Inicio", "Expedientes", "archive"],
     inteligencia: ["Inicio", "Inteligencia", "radar"],
     asistente: ["Inicio", "Asistente", "sparkles"],
@@ -31,6 +32,7 @@
   const ACTIONS = [
     { label: "Qué revisar hoy", hint: "Director de cartera · Expedientes", icon: "chart", run: () => window.activateTab("expedientes") },
     { label: "Preguntar a la memoria", hint: "Expedientes · respuestas con evidencia", icon: "brain", run: () => { window.activateTab("expedientes"); window.setTimeout(() => { document.querySelector('#caseViews [data-view="memory"]')?.click(); document.querySelector("#memoryForm input")?.focus(); }, 80); } },
+    { label: "Cerrar el mes", hint: "Cierre · qué bloquea y qué ha hecho CapaFiscal", icon: "lock", run: () => window.activateTab("cierre") },
     { label: "Novedades del BOE para mis áreas", hint: "Inteligencia · radar jurídico", icon: "radar", run: () => window.activateTab("inteligencia") },
     { label: "Buscar anomalías", hint: "Detector · facturas, banco e IVA", icon: "alert", run: () => { window.activateTab("expedientes"); window.setTimeout(() => document.getElementById("scanAnomalies")?.click(), 80); } },
     { label: "Nueva factura", hint: "Ventas · emitir y registrar", icon: "invoice", run: () => window.newSalesInvoice?.() },

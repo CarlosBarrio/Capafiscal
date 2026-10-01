@@ -2935,3 +2935,42 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
     .intel-dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; }
     .intel-dialog .dialog-footer { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
 }
+
+/* =====================================================================
+   CIERRE DEL MES
+===================================================================== */
+.close-title { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-end; }
+.close-nav { display: inline-flex; gap: 4px; align-items: center; color: var(--ink-2); font-weight: 600; font-size: 13.5px; }
+.close-nav span { min-width: 130px; text-align: center; }
+.close-card { display: flex; flex-direction: column; gap: 10px; }
+.close-head { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; align-items: flex-start; }
+.close-state { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 6px; font-size: 12.5px; }
+.close-headline { margin: 0; font: 600 22px/1.3 var(--serif); }
+.close-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.close-meter { height: 6px; }
+.close-formula, .close-work { margin: 0; font-size: 12.5px; }
+.close-summary { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 4px 0 0; padding: 0; list-style: none; color: var(--ink-2); font-size: 13.5px; }
+.close-summary li.is-ok::before { content: "✓ "; color: var(--green); font-weight: 700; }
+.close-summary li.is-warn::before { content: "! "; color: var(--amber); font-weight: 700; }
+.close-checks { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.close-check { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+.close-check:first-child { border-top: none; padding-top: 0; }
+.close-mark { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 12px; font-weight: 700; }
+.is-ok .close-mark { background: var(--green-bg); color: var(--green); }
+.is-warn .close-mark { background: var(--amber-bg); color: var(--amber); }
+.is-block .close-mark { background: var(--red-bg); color: var(--red); }
+.close-check-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13.5px; color: var(--ink-2); }
+.close-check-top { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; align-items: baseline; }
+.close-check-top strong { color: var(--ink); }
+.close-check-top .link-button { font-size: 12.5px; }
+.close-items summary { cursor: pointer; color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.close-items ul { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.close-items li { display: flex; justify-content: space-between; gap: 12px; }
+.close-items .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.close-history { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 13.5px; }
+.close-history li { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+@media (max-width: 640px) {
+    .close-actions { width: 100%; }
+    .close-actions > * { flex: 1; }
+    .close-headline { font-size: 19px; }
+}

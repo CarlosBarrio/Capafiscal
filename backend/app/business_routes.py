@@ -459,7 +459,7 @@ def bank_reconciliation(database: DatabaseDependency) -> dict[str, Any]:
     """Estado de cada movimiento (conciliado, posible, importe distinto, duplicado, sin factura) y facturas sin pago."""
     from app.reconciliation import reconcile
 
-    return reconcile(database, auto=False)
+    return reconcile(database, auto=False, persist=False)  # una lectura no escribe
 
 
 @router.post("/bank/reconcile", tags=["Banco"])

@@ -473,6 +473,6 @@ def bank_snapshot(database: Session, today: date) -> dict[str, Any] | None:
 
     if database.scalar(select(BankTransaction.id).limit(1)) is None:
         return None
-    report = reconcile(database, today=today, auto=False)
+    report = reconcile(database, today=today, auto=False, persist=False)
     return {"counts": report["counts"], "levels": report["levels"], "reconciled_rate": report["reconciled_rate"], "total": report["total"]}
 

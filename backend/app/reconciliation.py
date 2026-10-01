@@ -211,8 +211,12 @@ def classify(options: list[dict[str, Any]]) -> dict[str, Any]:
             "decision": f"Se propone, no se concilia: {missing}."}
 
 
-def reconcile(database: Session, *, today: date | None = None, auto: bool = True, actor: str = "conciliacion-automatica") -> dict[str, Any]:
-    """Clasifica todos los movimientos, concilia solo lo SEGURO y devuelve el estado con su evidencia."""
+def reconcile(database: Session, *, today: date | None = None, auto: bool = True, actor: str = "conciliacion-automatica",
+              persist: bool = True) -> dict[str, Any]:
+    """Clasifica todos los movimientos, concilia solo lo SEGURO y devuelve el estado con su evidencia.
+
+    persist=False: solo lee (pantallas y cierre); no deja propuestas ni concilia."""
+    auto = auto and persist
     from app.bank_service import confirm_match
 
     today = today or date.today()
@@ -267,13 +271,13 @@ def reconcile(database: Session, *, today: date | None = None, auto: bool = True
                 row.update(state="CONCILIADO", automatic=True, decision="Conciliado automáticamente: evidencia suficiente.")
             elif verdict["level"] == "SEGURO" and not auto and best["invoice"].review_status == "APPROVED":
                 row["decision"] = "Evidencia suficiente: se concilia sola en la próxima conciliación."
-                if transaction.match_status == "UNMATCHED":
+                if persist and transaction.match_status == "UNMATCHED":
                     transaction.matched_invoice_id, transaction.match_status, transaction.match_score = best["invoice"].id, "SUGGESTED", verdict["confidence"]
             elif verdict["level"] == "SEGURO" and best["invoice"].review_status != "APPROVED":
                 row["decision"] = "Evidencia suficiente, pero la factura aún no está aprobada: se concilia al aprobarla."
-            elif verdict["state"] == "POSIBLE" and verdict["level"] in {"SEGURO", "PROBABLE"} and transaction.match_status == "UNMATCHED" and best["invoice"].review_status == "APPROVED":
+            elif persist and verdict["state"] == "POSIBLE" and verdict["level"] in {"SEGURO", "PROBABLE"} and transaction.match_status == "UNMATCHED" and best["invoice"].review_status == "APPROVED":
                 transaction.matched_invoice_id, transaction.match_status, transaction.match_score = best["invoice"].id, "SUGGESTED", verdict["confidence"]
-            elif verdict["level"] == "CONFLICTO" and transaction.match_status == "SUGGESTED":
+            elif persist and verdict["level"] == "CONFLICTO" and transaction.match_status == "SUGGESTED":
                 # Una propuesta anterior ya no se sostiene: hay otra factura igual de plausible.
                 transaction.matched_invoice_id, transaction.match_status, transaction.match_score = None, "UNMATCHED", None
         rows.append(row)
@@ -290,7 +294,8 @@ def reconcile(database: Session, *, today: date | None = None, auto: bool = True
             continue
         unpaid.append({"invoice_id": invoice.id, "invoice_label": label(invoice),
                        "amount": float(invoice.total), "due": due.isoformat(), "direction": "cobro" if is_issued(invoice) else "pago", "state": "FACTURA_SIN_PAGO"})
-    database.flush()
+    if persist:
+        database.flush()
     counts = Counter(row["state"] for row in rows)
     counts["FACTURA_SIN_PAGO"] = len(unpaid)
     levels = Counter(row["level"] for row in rows if row.get("level"))
@@ -304,7 +309,7 @@ def reconcile(database: Session, *, today: date | None = None, auto: bool = True
 
 def amount_mismatches(database: Session, date_from: date, date_to: date) -> list[dict[str, Any]]:
     """Movimientos del periodo que se reconocen como de una factura pero no cuadran en importe."""
-    report = reconcile(database, auto=False)
+    report = reconcile(database, auto=False, persist=False)
     result = []
     for row in report["movements"]:
         if row["state"] != "IMPORTE_DISTINTO" or not (date_from.isoformat() <= row["date"] <= date_to.isoformat()):

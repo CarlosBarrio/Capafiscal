@@ -356,6 +356,10 @@ from app.intelligence.routes import router as intelligence_router  # noqa: E402
 
 app.include_router(intelligence_router)
 
+from app.close_routes import router as close_router  # noqa: E402
+
+app.include_router(close_router)
+
 
 @app.middleware("http")
 async def identify_request(request, call_next):
