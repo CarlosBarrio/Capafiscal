@@ -202,7 +202,7 @@
   ------------------------------------------------------------ */
   async function loadCashflow() {
     try {
-      const forecast = await window.apiRequest("/cashflow?horizon=90");
+      const forecast = await window.apiRequest("/treasury?horizon=90");
       renderCashflow(forecast);
     } catch (error) {
       document.getElementById("cashflowWarnings").innerHTML =
@@ -247,6 +247,7 @@
             ${movement.document_id
               ? `<button type="button" class="link-button" onclick="showDetail(${Number(movement.document_id)}, 'payment')">${esc(movement.label)}</button>`
               : esc(movement.label)}
+            ${movement.why ? `<small class="muted block">${esc(movement.why)}</small>` : ""}
           </td>
           <td class="num ${movement.amount < 0 ? "value-negative" : "value-positive"}">${money(movement.amount)}</td>
           <td class="num">${movement.balance_after !== undefined ? money(movement.balance_after) : "—"}</td>

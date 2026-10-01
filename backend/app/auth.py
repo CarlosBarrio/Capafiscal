@@ -44,10 +44,11 @@ CSRF_HEADER = "x-capafiscal"  # las escrituras autenticadas por cookie deben lle
 NO_CLIENT_PATHS = ("/api/auth/", "/api/admin/")  # no trabajan sobre los datos de un cliente
 CLIENT_WRITES = (
     r"^/api/upload$", r"^/api/connectors/email/import$", r"^/api/bank/import$", r"^/api/cases/\d+/attachments$", r"^/api/auth/logout$",
+    r"^/api/simulate$",  # calcula sin guardar nada
 )
 REVIEW_WRITES = (
     r"^/api/invoices/\d+(/(approve|reject|reopen|payment))?$", r"^/api/cases/\d+(/(approve|resolve|reopen|rerun|file|request-documents))?$",
-    r"^/api/notifications/\d+$", r"^/api/bank/transactions/\d+/(confirm|unmatch)$", r"^/api/bank/(confirm-suggestions|reconcile)$",
+    r"^/api/notifications/\d+$", r"^/api/bank/transactions/\d+/(confirm|unmatch|allocate|accept-proposal)$", r"^/api/bank/(confirm-suggestions|reconcile)$",
     r"^/api/events/\d+/retry$", r"^/api/intelligence/items/\d+/status$",
 )
 ADMIN_WRITES = (r"^/api/learning/rules/\d+/(aprobar|rechazar|retirar)$",)  # cambiar cómo trabaja el sistema es cosa del administrador
@@ -113,7 +114,7 @@ def permitted(role: str, method: str, path: str) -> bool:
     if role in {"ADMIN", "GESTOR"}:
         return True
     if role == "LECTURA":
-        return path == "/api/auth/logout"
+        return path in ("/api/auth/logout", "/api/simulate")
     if method == "DELETE":
         return False
     writes = CLIENT_WRITES + (REVIEW_WRITES if role == "REVISOR" else ())

@@ -47,6 +47,7 @@
             ${item.action ? `<button type="button" class="btn-ghost work-act" ${actionAttrs(item.action)}>${esc(item.action.label)}</button>` : ""}
           </div>
         </div>
+        ${item.simulate ? `<button type="button" class="link-button work-sim-link" data-work-simulate='${esc(JSON.stringify(item.simulate))}'>${esc(item.simulate_label)}</button><div class="work-sim" aria-live="polite"></div>` : ""}
         ${checks.length ? `
           <details class="work-checked">
             <summary>Qué ha comprobado CapaFiscal</summary>
@@ -132,6 +133,20 @@
     }
   }
 
+  async function simulate(button) {
+    const box = button.nextElementSibling;
+    button.disabled = true;
+    box.innerHTML = `<p class="board-empty">Calculando…</p>`;
+    try {
+      const result = await window.jsonRequest("/simulate", "POST", JSON.parse(button.dataset.workSimulate));
+      box.innerHTML = `<ul>${result.effects.map((text) => `<li>${esc(text)}</li>`).join("")}</ul><p class="board-empty">${esc(result.note)}</p>`;
+    } catch (error) {
+      box.innerHTML = `<p class="danger-text">${esc(error.message)}</p>`;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function setup() {
     const section = document.getElementById("tab-panel");
     if (!section || !document.getElementById("workGroups")) return;
@@ -139,6 +154,8 @@
       const run = event.target.closest("#workRun");
       if (run) return runNow(run);
       if (event.target.closest("[data-work-retry]")) return load();
+      const sim = event.target.closest("[data-work-simulate]");
+      if (sim) return simulate(sim);
       const more = event.target.closest("[data-work-more]");
       if (more) { expanded.add(more.dataset.workMore); return render(); }
       const caseButton = event.target.closest("[data-work-case]");

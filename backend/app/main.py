@@ -368,6 +368,10 @@ from app.accounting_routes import router as accounting_router  # noqa: E402
 
 app.include_router(accounting_router)
 
+from app.treasury_routes import router as treasury_router  # noqa: E402
+
+app.include_router(treasury_router)
+
 
 @app.middleware("http")
 async def identify_request(request, call_next):

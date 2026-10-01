@@ -3015,3 +3015,6 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 .journal-checks { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 10px; padding: 0; list-style: none; font-size: 13px; color: var(--ink-2); }
 .journal-checks li { display: flex; gap: 8px; align-items: baseline; }
 #journalSummary { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.work-sim-link { width: max-content; font-size: 12.5px; }
+.work-sim ul { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 2px; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
+.work-sim .board-empty { font-size: 12px; }

@@ -94,7 +94,8 @@ def decisions(database: Session, today: date, cases: list[Any]) -> list[dict[str
             rows.append(item("accion", "case", case.id, case.title, score["why"] or attention_reason(case, today),
                              action={"label": "Revisar expediente", "case_id": case.id}, checked=case_checks(case),
                              amount=score["amount"], score=score["score"] + (30 if blocked else 0),
-                             when=case.deadline.isoformat() if case.deadline else None) | {"code": case.code, "level": case.level})
+                             when=case.deadline.isoformat() if case.deadline else None) | {"code": case.code, "level": case.level}
+                        | ({"simulate": {"type": "dismiss_anomaly", "case_id": case.id}, "simulate_label": "¿Qué cambia si la descarto?"} if case.kind == "ANOMALY" else {}))
         elif case.status == "READY_TO_FILE":
             score = impact(case, today)
             rows.append(item("accion", "file", case.id, f"Presentar: {case.title}", "Está preparado: falta que lo revises y lo presentes.",
@@ -113,7 +114,8 @@ def decisions(database: Session, today: date, cases: list[Any]) -> list[dict[str
         rows.append(item("accion", "invoice", invoice.id, f"Factura {invoice.invoice_number or 's/n'} · {party or 'sin identificar'}", why,
                          action={"label": "Revisar factura", "document_id": invoice.document_id}, checked=invoice_checks(invoice),
                          amount=float(invoice.total) if invoice.total is not None else None, score=40 + 10 * len(problems),
-                         when=invoice.invoice_date.isoformat() if invoice.invoice_date else None))
+                         when=invoice.invoice_date.isoformat() if invoice.invoice_date else None)
+                    | {"simulate": {"type": "approve_invoice", "invoice_id": invoice.id}, "simulate_label": "¿Qué cambia si la apruebo?"})
 
     drafts = database.scalars(select(OutboxMessage).where(OutboxMessage.status == "DRAFT").order_by(OutboxMessage.id)).all()
     asked = {}
@@ -238,6 +240,23 @@ def fiscal_items(database: Session, today: date) -> list[dict[str, Any]]:
     return rows
 
 
+def treasury_items(database: Session, today: date) -> list[dict[str, Any]]:
+    """Control financiero continuo: el riesgo de liquidez entra en la lista con su porqué."""
+    from app.treasury import predict
+
+    try:
+        risk = predict(database, today=today, horizon_days=60)["risk"]
+    except Exception:  # la previsión no debe tumbar la lista
+        return []
+    if risk["level"] not in ("alto", "medio"):
+        return []
+    first = risk["actions"][0] if risk["actions"] else {"label": "Ver la previsión de caja", "tab": "negocio"}
+    return [item("accion", "liquidity", risk.get("date"), risk["headline"], risk["explanation"],
+                 action={"label": "Ver previsión", "tab": "negocio", "anchor": "cashflowCard"},
+                 checked=[{"label": action["label"], "ok": None} for action in risk["actions"]] or [{"label": first["label"], "ok": None}],
+                 score=90 if risk["level"] == "alto" else 45, when=risk.get("date"))]
+
+
 def overnight(database: Session, since: datetime) -> dict[str, Any]:
     """«CapaFiscal ha trabajado durante la noche»: lo hecho desde ayer a esta hora, contado."""
     def count(statement) -> int:
@@ -269,7 +288,7 @@ def work_center(database: Session, *, today: date | None = None, now: datetime |
     today = today or now.date()
     cases = assessed_open_cases(database, today)
 
-    rows = decisions(database, today, cases) + bank_items(database, today) + missing_documents(database, today) + working(database, today, cases) + fiscal_items(database, today)
+    rows = treasury_items(database, today) + decisions(database, today, cases) + bank_items(database, today) + missing_documents(database, today) + working(database, today, cases) + fiscal_items(database, today)
     rows.sort(key=lambda row: (-row["score"], row["when"] or "9999"))
     groups = {key: [row for row in rows if row["group"] == key] for key, _ in GROUPS}
 
