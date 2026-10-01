@@ -350,8 +350,10 @@ def test_bank_import_reconciliation(client, sample_pdfs):
     assert again["imported"] == 0
     assert again["duplicated"] == 3
 
+    # Importe exacto y nombre o número de factura en el concepto: se concilian solos al importar.
+    assert result["auto_matched"] == 2
     confirmed = client.post("/api/bank/confirm-suggestions", json={"min_score": 85}).json()
-    assert confirmed["confirmed"] == 2
+    assert confirmed["confirmed"] == 0
 
     matched = client.get("/api/bank/transactions", params={"status": "MATCHED"}).json()
     assert len(matched) == 2

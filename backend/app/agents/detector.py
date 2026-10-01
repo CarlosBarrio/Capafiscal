@@ -72,6 +72,9 @@ ANOMALY_TYPES: dict[str, dict[str, str]] = {
     "FACTURA_FALTA": {"label": "Factura que falta", "next": "Pídela al proveedor o búscala en el correo: sin ella no puedes deducir el IVA."},
     "PATRON_INTERRUMPIDO": {"label": "Patrón interrumpido", "next": "Confirma si el servicio o la relación se ha dado de baja o si faltan facturas."},
     "IVA_TENDENCIA": {"label": "IVA fuera de tendencia", "next": "Revisa si faltan facturas recibidas o si hay ventas atípicas antes de presentar el 303."},
+    "IMPORTE_DIFERENTE": {"label": "Pago con importe distinto", "next": "Compara el pago con la factura: puede faltar un abono, un recargo o haber un error."},
+    "PAGO_DUPLICADO": {"label": "Pago duplicado", "next": "Comprueba si se ha pagado dos veces y pide la devolución al proveedor."},
+    "OBLIGACION_INCOMPLETA": {"label": "Obligación incompleta", "next": "Completa lo que falta antes del plazo para que el borrador sea fiable."},
 }
 
 
@@ -454,35 +457,72 @@ def check_missing(key: str, items: list[Invoice], today: date, *, party: str = "
 
 
 def bank_findings(database: Session, today: date) -> list[dict[str, Any]]:
-    limit_date = today - timedelta(days=BANK_MIN_AGE_DAYS)
-    transactions = database.scalars(
-        select(BankTransaction).where(
-            BankTransaction.match_status == "UNMATCHED",
-            BankTransaction.booking_date <= limit_date,
-            BankTransaction.booking_date >= today - timedelta(days=120),
-        )
-    ).all()
+    """Excepciones de la conciliación: sin factura, importe distinto y pago duplicado."""
+    from app.reconciliation import reconcile
+
+    report = reconcile(database, today=today, auto=False)
+    transactions = {item.id: item for item in database.scalars(select(BankTransaction).where(BankTransaction.id.in_([row["transaction_id"] for row in report["movements"]]))).all()}
     findings = []
-    for transaction in transactions:
-        amount = float(transaction.amount)
-        if abs(amount) < BANK_MIN_AMOUNT:
+    for row in report["movements"]:
+        transaction = transactions.get(row["transaction_id"])
+        if transaction is None or transaction.booking_date < today - timedelta(days=120):
             continue
+        amount = float(transaction.amount)
         outflow = amount < 0
-        findings.append(
-            anomaly(
-                f"banco:{transaction.id}",
-                "PAGO_SIN_FACTURA" if outflow else "COBRO_SIN_FACTURA",
+        when = f"El {transaction.booking_date:%d/%m/%Y}: «{transaction.description[:90]}». "
+        bank_evidence = [evidence("bank", f"{transaction.booking_date:%d/%m/%Y} · {transaction.description[:60]} · {eur(amount)}", transaction_id=transaction.id)]
+        base_facts = {"transaction_id": transaction.id, "direction": "out" if outflow else "in", "description": transaction.description[:120], "booking_date": transaction.booking_date}
+        if row["state"] == "SIN_FACTURA":
+            if abs(amount) < BANK_MIN_AMOUNT or transaction.booking_date > today - timedelta(days=BANK_MIN_AGE_DAYS):
+                continue
+            findings.append(anomaly(
+                f"banco:{transaction.id}", "PAGO_SIN_FACTURA" if outflow else "COBRO_SIN_FACTURA",
                 f"{'Pago' if outflow else 'Cobro'} de {eur(abs(amount))} sin factura",
-                f"El {transaction.booking_date:%d/%m/%Y}: «{transaction.description[:90]}». "
-                + ("Si es un gasto de la actividad, falta la factura para deducirlo." if outflow else "Si es una venta, falta emitir o registrar la factura."),
-                "medium" if abs(amount) >= 1000 else "low",
-                amount=abs(amount),
-                facts={"transaction_id": transaction.id, "direction": "out" if outflow else "in", "description": transaction.description[:120], "booking_date": transaction.booking_date},
-                evidence_items=[evidence("bank", f"{transaction.booking_date:%d/%m/%Y} · {transaction.description[:60]} · {eur(amount)}", transaction_id=transaction.id)],
-                confidence=0.7,
-                when=transaction.booking_date,
-            )
-        )
+                when + ("Si es un gasto de la actividad, falta la factura para deducirlo." if outflow else "Si es una venta, falta emitir o registrar la factura."),
+                "medium" if abs(amount) >= 1000 else "low", amount=abs(amount), facts=base_facts, evidence_items=bank_evidence, confidence=0.7, when=transaction.booking_date,
+            ))
+        elif row["state"] == "IMPORTE_DISTINTO":
+            difference = abs(row["difference"] or 0)
+            findings.append(anomaly(
+                f"importe:{transaction.id}:{row['invoice_id']}", "IMPORTE_DIFERENTE",
+                f"{'Pago' if outflow else 'Cobro'} de {eur(abs(amount))} que no cuadra con la factura {row['invoice_label']}",
+                when + f"Se reconoce la factura {row['invoice_label']} ({', '.join(row['evidence'])}), pero la diferencia es de {eur(difference)}.",
+                "medium" if difference >= 100 else "low", amount=difference, facts={**base_facts, "invoice_id": row["invoice_id"], "difference": row["difference"]},
+                evidence_items=bank_evidence, confidence=0.75, when=transaction.booking_date,
+            ))
+        elif row["state"] == "DUPLICADO":
+            findings.append(anomaly(
+                f"duplicado:{transaction.id}", "PAGO_DUPLICADO",
+                f"Posible {'pago' if outflow else 'cobro'} duplicado de {eur(abs(amount))}",
+                when + f"Mismo concepto e importe que otro movimiento de pocos días antes (movimiento {row['duplicate_of']}).",
+                "high" if abs(amount) >= 1000 else "medium", amount=abs(amount), facts={**base_facts, "duplicate_of": row["duplicate_of"]},
+                evidence_items=bank_evidence, confidence=0.8, when=transaction.booking_date,
+            ))
+    return findings
+
+
+OBLIGATION_LEAD_DAYS = 25
+
+
+def obligation_findings(database: Session, today: date) -> list[dict[str, Any]]:
+    """Vigilancia proactiva: obligaciones que vencen pronto y a las que les falta información."""
+    from app.fiscal_position import positions
+
+    report = positions(database, today=today)
+    findings = []
+    for item in report["models"]:
+        if item["filed"] or item["status"] == "COMPLETE" or not 0 <= item["days_left"] <= OBLIGATION_LEAD_DAYS:
+            continue
+        missing = [gap["label"] for gap in item["gaps"]] + [gap["label"] for gap in item["discrepancies"]]
+        findings.append(anomaly(
+            f"obligacion:{item['model']}:{item['year']}-{item['quarter']}", "OBLIGACION_INCOMPLETA",
+            f"Faltan {len(missing)} cosa(s) para cerrar el {item['model']} del {item['period_label']}",
+            f"Vence el {date.fromisoformat(item['due_date']):%d/%m/%Y} (en {item['days_left']} días). {item['headline']} · {item['summary']}. Falta: " + "; ".join(missing[:5]) + ("…" if len(missing) > 5 else "."),
+            "high" if item["days_left"] <= 7 else "medium", amount=item["result"],
+            facts={"model": item["model"], "year": item["year"], "quarter": item["quarter"], "gaps": item["gaps"], "discrepancies": item["discrepancies"],
+                   "information_available": item["information_available"], "due": item["due_date"]},
+            confidence=0.9,
+        ))
     return findings
 
 
@@ -529,6 +569,7 @@ def scan(database: Session, today: date) -> list[dict[str, Any]]:
         findings += [item for item in check_missing(key, items, today, party="customer") if item["procedure"] == "PATRON_INTERRUMPIDO"]
 
     findings += bank_findings(database, today)
+    findings += obligation_findings(database, today)
     findings += vat_trend(database, today)
     return apply_feedback(database, findings)
 
@@ -684,6 +725,10 @@ def run_anomaly_scan(database: Session, *, trigger: str = "schedule", today: dat
         fingerprints.add(item["fingerprint"])
         case = database.scalar(select(Case).where(Case.fingerprint == item["fingerprint"]))
         if case is not None:
+            if item["procedure"] == "OBLIGACION_INCOMPLETA" and case.status == "WAITING_HUMAN":
+                # La obligación cambia mientras se completa: el aviso refleja lo que falta HOY.
+                case.title, case.summary = item["title"][:255], item["detail"]
+                case.facts = jsonable({**(case.facts or {}), **item["facts"], "findings": [item["finding"]]})
             continue  # ya avisado (abierto o descartado por una persona)
         invoice_id = item["facts"].get("invoice_id")
         if invoice_id and database.scalar(select(Case.id).where(Case.fingerprint == f"factura:{invoice_id}")):

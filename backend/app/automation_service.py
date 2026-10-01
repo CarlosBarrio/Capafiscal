@@ -98,11 +98,17 @@ def job_dunning(database: Session, now: datetime) -> tuple[int, str]:
 
 def job_bank(database: Session, now: datetime) -> tuple[int, str]:
     from app.bank_service import suggest_matches
+    from app.reconciliation import reconcile
 
-    suggested = suggest_matches(database)
-    if not suggested:
+    suggest_matches(database)
+    report = reconcile(database, actor="conciliacion-automatica")
+    pending = report["counts"].get("POSIBLE", 0)
+    exceptions = sum(report["counts"].get(state, 0) for state in ("IMPORTE_DISTINTO", "DUPLICADO", "SIN_FACTURA", "FACTURA_SIN_PAGO"))
+    if not (report["auto_matched"] or pending or exceptions):
         return 0, "Sin movimientos nuevos que conciliar."
-    return suggested, f"{suggested} propuesta(s) de conciliación banco–factura para confirmar."
+    return report["auto_matched"] + pending, (
+        f"{report['auto_matched']} conciliado(s) automáticamente, {pending} propuesta(s) para confirmar y {exceptions} excepción(es) para el Detector."
+    )
 
 
 def job_payroll(database: Session, now: datetime) -> tuple[int, str]:

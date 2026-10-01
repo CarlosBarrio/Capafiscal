@@ -296,6 +296,9 @@ def import_bank_file(
     database.flush()
 
     suggestions = suggest_matches(database)
+    from app.reconciliation import reconcile
+
+    reconciliation = reconcile(database, actor="conciliacion-automatica")
 
     add_audit_event(
         database,
@@ -320,10 +323,13 @@ def import_bank_file(
         "duplicated": duplicated,
         "skipped": meta["skipped_rows"],
         "suggestions": suggestions,
+        "auto_matched": reconciliation["auto_matched"],
+        "reconciliation": reconciliation["counts"],
         "columns": meta["columns"],
         "message": (
             f"{imported} movimiento(s) importado(s), {duplicated} ya "
-            f"existían. El agente propone {suggestions} conciliación(es)."
+            f"existían. {reconciliation['auto_matched']} conciliado(s) automáticamente "
+            f"y {reconciliation['counts'].get('POSIBLE', 0)} propuesta(s) para confirmar."
         ),
     }
 

@@ -454,6 +454,33 @@ async def bank_import(
     return result
 
 
+@router.get("/bank/reconciliation", tags=["Banco"])
+def bank_reconciliation(database: DatabaseDependency) -> dict[str, Any]:
+    """Estado de cada movimiento (conciliado, posible, importe distinto, duplicado, sin factura) y facturas sin pago."""
+    from app.reconciliation import reconcile
+
+    return reconcile(database, auto=False)
+
+
+@router.post("/bank/reconcile", tags=["Banco"])
+def bank_reconcile(database: DatabaseDependency, actor_header: ActorHeader = None) -> dict[str, Any]:
+    """Concilia lo inequívoco y clasifica el resto."""
+    from app.reconciliation import reconcile
+
+    suggest_matches(database)
+    report = reconcile(database, actor=normalize_actor(actor_header) or "conciliacion-automatica")
+    database.commit()
+    return report
+
+
+@router.get("/taxes/position", tags=["Impuestos"])
+def taxes_position(database: DatabaseDependency, year: int | None = None, quarter: int | None = None) -> dict[str, Any]:
+    """Cómo va cada modelo del trimestre hoy: estimado, % de información, qué falta y discrepancias."""
+    from app.fiscal_position import positions
+
+    return positions(database, year=year, quarter=quarter)
+
+
 @router.get("/bank/imports", tags=["Banco"])
 def bank_imports(database: DatabaseDependency) -> list[dict[str, Any]]:
     imports = database.scalars(
