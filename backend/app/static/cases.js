@@ -95,12 +95,6 @@
     `;
   }
 
-  const BANK_STATES = [
-    ["CONCILIADO", "conciliados"],
-    ["POSIBLE", "posibles"],
-    ["SIN_FACTURA", "sin justificar"],
-  ];
-
   function percent(value) {
     return `${Math.round((value || 0) * 100)} %`;
   }
@@ -127,14 +121,16 @@
   function bankHtml(bank) {
     if (!bank?.total) return `<p class="board-empty">Importa el extracto del banco para conciliar pagos y cobros.</p>`;
     const counts = bank.counts || {};
-    const exceptions = (counts.IMPORTE_DISTINTO || 0) + (counts.DUPLICADO || 0);
+    const levels = bank.levels || {};
     return `
       <dl class="today-stats">
         <div><dt>movimientos</dt><dd>${bank.total}</dd></div>
-        ${BANK_STATES.map(([key, label]) => `<div><dt>${label}</dt><dd>${counts[key] || 0}</dd></div>`).join("")}
+        <div><dt>conciliados</dt><dd>${counts.CONCILIADO || 0}</dd></div>
+        <div><dt>posibles</dt><dd>${levels.PROBABLE || 0}</dd></div>
+        <div><dt>sin justificar</dt><dd>${levels.SIN_MATCH ?? counts.SIN_FACTURA ?? 0}</dd></div>
       </dl>
-      ${exceptions || counts.FACTURA_SIN_PAGO ? `<small class="muted">${[
-        exceptions ? `${exceptions} con importe distinto o duplicado` : "",
+      ${levels.CONFLICTO || counts.FACTURA_SIN_PAGO ? `<small class="muted">${[
+        levels.CONFLICTO ? `${levels.CONFLICTO} en conflicto (varias facturas posibles, importe distinto o duplicado): los decides tú` : "",
         counts.FACTURA_SIN_PAGO ? `${counts.FACTURA_SIN_PAGO} factura(s) aprobadas sin pago en el banco` : "",
       ].filter(Boolean).join(" · ")}</small>` : ""}
     `;

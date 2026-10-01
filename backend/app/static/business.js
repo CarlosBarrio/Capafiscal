@@ -271,21 +271,32 @@
     IGNORED: ["Ignorado", "status-neutral"],
   };
 
-  // Estado de conciliación (app/reconciliation.py): explica por qué un movimiento no está conciliado.
-  const RECON_LABELS = {
-    CONCILIADO: ["Conciliado", "status-success"],
-    POSIBLE: ["Posible coincidencia", "status-info"],
-    IMPORTE_DISTINTO: ["Importe distinto", "status-danger"],
-    DUPLICADO: ["Posible duplicado", "status-danger"],
-    SIN_FACTURA: ["Sin factura", "status-warning"],
+  // Nivel de confianza de la conciliación (app/reconciliation.py): nunca se concilia solo lo que no es SEGURO.
+  const LEVEL_LABELS = {
+    SEGURO: ["Seguro", "status-success"],
+    PROBABLE: ["Probable", "status-info"],
+    CONFLICTO: ["Conflicto", "status-danger"],
+    SIN_MATCH: ["Sin match", "status-warning"],
   };
-  const SUMMARY_STATES = [
-    ["CONCILIADO", "conciliados"],
-    ["POSIBLE", "posibles"],
-    ["SIN_FACTURA", "sin factura"],
-    ["IMPORTE_DISTINTO", "importe distinto"],
-    ["DUPLICADO", "duplicados"],
-    ["FACTURA_SIN_PAGO", "facturas aprobadas sin pago"],
+
+  // ✓ / ✗ / ~ de cada comprobación y, si hay varios, los candidatos considerados.
+  function evidenceHtml(recon) {
+    const mark = (ok) => ok === true ? `<span class="ev-ok" aria-label="sí">✓</span>` : ok === false ? `<span class="ev-no" aria-label="no">✗</span>` : `<span class="ev-mid" aria-label="aproximado">~</span>`;
+    return `
+      <details class="evidence">
+        <summary>Evidencia</summary>
+        ${recon.checks?.length ? `<ul>${recon.checks.map((check) => `<li>${mark(check.ok)} ${esc(check.label)}</li>`).join("")}</ul>` : ""}
+        ${recon.candidates?.length > 1 ? `
+          <p class="evidence-title">Candidatos considerados</p>
+          <ul>${recon.candidates.map((item) => `<li><span>${esc(item.label)}</span> <span class="num">${money(item.amount)} · ${item.score} %</span></li>`).join("")}</ul>` : ""}
+      </details>`;
+  }
+
+  const SUMMARY_LEVELS = [
+    ["SEGURO", "seguros"],
+    ["PROBABLE", "probables"],
+    ["CONFLICTO", "en conflicto"],
+    ["SIN_MATCH", "sin match"],
   ];
   let reconciliation = {};
 
@@ -296,11 +307,14 @@
       container.innerHTML = "";
       return;
     }
-    const counts = { ...data.counts, CONCILIADO: (data.counts.CONCILIADO || 0) };
+    const levels = data.levels || {};
     container.innerHTML = `
       <div><dt>movimientos</dt><dd>${data.total}</dd></div>
-      ${SUMMARY_STATES.map(([key, label]) => `<div class="${counts[key] && ["IMPORTE_DISTINTO", "DUPLICADO"].includes(key) ? "is-risk" : ""}"><dt>${label}</dt><dd>${counts[key] || 0}</dd></div>`).join("")}
+      <div><dt>conciliados</dt><dd>${data.counts.CONCILIADO || 0}</dd></div>
+      ${SUMMARY_LEVELS.map(([key, text]) => `<div class="${key === "CONFLICTO" && levels[key] ? "is-risk" : ""}"><dt>${text}</dt><dd>${levels[key] || 0}</dd></div>`).join("")}
+      <div><dt>facturas sin pago</dt><dd>${data.counts.FACTURA_SIN_PAGO || 0}</dd></div>
     `;
+    container.title = data.rule || "";
   }
 
   async function loadBank() {
@@ -344,15 +358,12 @@
       const invoice = transaction.invoice;
       const candidates = transaction.candidates || [];
 
-      const recon = ["MATCHED", "IGNORED"].includes(transaction.match_status) ? null : reconciliation[transaction.id];
-      const [reconLabel, reconClass] = (recon && RECON_LABELS[recon.state]) || [label, className];
-      let invoiceCell = `<span class="status-pill ${reconClass}">${esc(reconLabel)}</span>`;
-      if (recon?.state === "IMPORTE_DISTINTO") {
-        invoiceCell += `<small class="muted block">${esc(recon.invoice_label || "Factura")} · diferencia ${money(recon.difference)}</small>`;
-      } else if (recon?.state === "DUPLICADO") {
-        invoiceCell += `<small class="muted block">${esc(recon.evidence?.[0] || "Mismo concepto e importe que otro movimiento")}</small>`;
-      }
-
+      const recon = transaction.match_status === "IGNORED" ? null : reconciliation[transaction.id];
+      const [levelLabel, levelClass] = (recon?.level && LEVEL_LABELS[recon.level]) || [label, className];
+      let invoiceCell = `<span class="status-pill ${levelClass}">${esc(levelLabel)}${recon?.confidence && ["SEGURO", "PROBABLE"].includes(recon.level) ? ` · ${recon.confidence} %` : ""}</span>`;
+      if (recon?.decision && transaction.match_status !== "MATCHED") invoiceCell += `<small class="muted block">${esc(recon.decision)}</small>`;
+      if (recon?.state === "DUPLICADO") invoiceCell += `<small class="muted block">${esc(recon.evidence?.[0] || "")}</small>`;
+      if (recon && (recon.checks?.length || recon.candidates?.length > 1)) invoiceCell += evidenceHtml(recon);
       if (invoice) {
         invoiceCell += `
           <button type="button" class="link-button block" onclick="showDetail(${Number(invoice.document_id)})">
@@ -459,8 +470,9 @@
 
     document.getElementById("confirmSafeMatches")?.addEventListener("click", async () => {
       try {
-        const result = await window.jsonRequest("/bank/confirm-suggestions", "POST", { min_score: 85 });
-        window.showMessage(result.message, "success");
+        // Solo concilia lo SEGURO (importe exacto + prueba de identidad + una única factura).
+        const result = await window.jsonRequest("/bank/reconcile", "POST", {});
+        window.showMessage(result.auto_matched ? `${result.auto_matched} movimiento(s) conciliados con evidencia suficiente.` : "Nada con evidencia suficiente para conciliar solo: revisa los probables y los conflictos.", "success");
         await refreshBusiness();
         window.refreshAll();
       } catch (error) {

@@ -227,11 +227,20 @@ CapaFiscal no solo procesa lo que le llega; en cada barrido busca problemas:
 - **Obligaciones incompletas**: «Faltan 2 facturas para cerrar el 303» cuando el plazo
   vence en menos de 25 días. El aviso se actualiza mientras se completa y se cierra solo.
 
-**Conciliación banco ↔ facturas** (`GET /api/bank/reconciliation`): cada movimiento queda
-✅ conciliado, ⚠️ posible coincidencia, 🔴 importe diferente, 🔴 pago duplicado o 🔴 sin
-factura, y cada factura vencida sin movimiento, 🔴 factura sin pago. Se concilia sin
-persona solo con evidencia inequívoca (importe exacto y nº de factura, o el nombre y una
-única factura posible). Las excepciones las investiga el Detector.
+**Conciliación banco ↔ facturas** (`GET /api/bank/reconciliation`): cada movimiento lleva un
+nivel de confianza y la evidencia que lo sostiene:
+
+| Nivel | Cuándo | Qué hace CapaFiscal |
+|---|---|---|
+| SEGURO | importe exacto + una prueba de identidad (nº de factura, NIF, IBAN, o nombre con fecha coherente) + una única factura posible | concilia solo |
+| PROBABLE | encaja una factura, pero solo por importe o con una diferencia dentro de la tolerancia (1 € o 0,5 %) | lo propone; decide una persona |
+| CONFLICTO | dos o más facturas igual de plausibles, importe que no cuadra con la factura identificada, o pago duplicado | nunca concilia solo |
+| SIN MATCH | ninguna factura lo justifica | lo señala |
+
+Cada decisión lista las comprobaciones (✓ importe exacto, ✓ nº de factura, ✗ NIF…) y los
+candidatos considerados. Regla de producto: **CapaFiscal nunca se inventa seguridad**;
+«Confirmar coincidencias seguras» solo confirma lo SEGURO. Las facturas vencidas sin
+movimiento quedan como «factura sin pago» y las excepciones las investiga el Detector.
 
 **Impuestos continuos** (`GET /api/taxes/position`): cómo va hoy cada modelo
 (303/130/111/115): «303 estimado: 2.340 € a ingresar · 97 % de información disponible ·

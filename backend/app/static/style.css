@@ -2847,3 +2847,14 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 }
 #bankCard, #taxDraftCard, #taxPositionCard { scroll-margin-top: calc(var(--topbar) + 16px); }
 @media (max-width: 640px) { .briefing-body strong { white-space: normal; } }
+
+/* Banco: evidencia de cada decisión */
+.evidence { margin-top: 4px; font-size: 12.5px; color: var(--ink-2); }
+.evidence summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+.evidence ul { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 0; padding: 0; list-style: none; }
+.evidence li { display: flex; gap: 6px; align-items: baseline; }
+.evidence .num { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+.evidence-title { margin: 8px 0 0; color: var(--muted); font-weight: 600; }
+.ev-ok { color: var(--green); font-weight: 700; }
+.ev-no { color: var(--faint); font-weight: 700; }
+.ev-mid { color: var(--amber); font-weight: 700; }

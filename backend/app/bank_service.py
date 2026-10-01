@@ -520,6 +520,11 @@ def confirm_all_suggestions(
     min_score: int,
     actor: str,
 ) -> int:
+    from app.reconciliation import reconcile
+
+    # «Confirmar coincidencias seguras» confirma solo lo que la conciliación clasifica como SEGURO,
+    # nunca una propuesta con otra factura igual de plausible, por alta que sea su puntuación.
+    safe = {row["transaction_id"] for row in reconcile(database, auto=False)["movements"] if row.get("level") == "SEGURO" and row["state"] == "POSIBLE"}
     transactions = database.scalars(
         select(BankTransaction).where(
             BankTransaction.match_status == "SUGGESTED",
@@ -530,6 +535,8 @@ def confirm_all_suggestions(
     confirmed = 0
 
     for transaction in transactions:
+        if transaction.id not in safe:
+            continue
         try:
             confirm_match(database, transaction=transaction, invoice_id=None, actor=actor)
             confirmed += 1
