@@ -209,6 +209,19 @@ def job_deadlines(database: Session, now: datetime) -> tuple[int, str]:
     return len(cases), f"{len(cases)} plazo(s) con expediente preparado: " + ", ".join(f"{case.code} ({case.title})" for case in cases) + "."
 
 
+def job_email(database: Session, now: datetime) -> tuple[int, str]:
+    from app.connectors.email.client import imap_configured
+    from app.connectors.email.client import mailbox_folder
+    from app.connectors.email.client import poll
+
+    if not imap_configured() and not mailbox_folder().exists():
+        return 0, "Sin buzón configurado (IMAP o carpeta data/buzon)."
+    result = poll(database)
+    if not result["messages"]:
+        return 0, "Sin correos nuevos."
+    return result["documents"], f"{result['messages']} correo(s), {result['documents']} documento(s)" + (f"; expedientes: {', '.join(result['cases'])}" if result["cases"] else "") + "."
+
+
 def job_follow_up(database: Session, now: datetime) -> tuple[int, str]:
     from app.agents.perseguidor import follow_up
 
@@ -220,6 +233,7 @@ def job_follow_up(database: Session, now: datetime) -> tuple[int, str]:
 
 AUTOMATIONS: tuple[Automation, ...] = (
     Automation("AGENT_PIPELINE", "Orquestador de expedientes", "Cada notificación nueva recorre los agentes de punta a punta: la detecta, la asigna, mira el impacto fiscal, busca antecedentes, reúne la documentación y prepara la respuesta.", "Cada 5 minutos", 0, 5, "interval", job_agents, 45, "Agente", "expedientes"),
+    Automation("EMAIL_INBOX", "Buzón de correo", "Lee los correos nuevos (IMAP o la carpeta data/buzon), guarda sus facturas y notificaciones y las pasa al orquestador como cualquier otra entrada.", "Cada 5 minutos", 0, 5, "interval", job_email, 5, "Agente", "expedientes"),
     Automation("ANOMALY_SCAN", "Detector de anomalías", "Cruza facturas, banco e histórico y abre un expediente cuando algo no cuadra: importes atípicos, duplicados, IVA inusual, facturas que faltan o pagos sin factura.", "Cada día · 06:45", 6, 45, "daily", job_anomalies, 15, "Agente", "expedientes"),
     Automation("DEADLINE_WATCH", "Vigilante de plazos", "15 días antes de cada 303, 130, 111 o 115 abre su expediente: borrador del modelo, facturas sin revisar, anomalías del periodo y pasos hasta presentarlo.", "Cada día · 07:10", 7, 10, "daily", job_deadlines, 10, "Agente", "expedientes"),
     Automation("FOLLOW_UP", "Perseguidor de documentación", "Recuerda a quien debe aportar documentación, con cortesía creciente, hasta que la sube; después la verifica.", "Cada día · 09:30", 9, 30, "daily", job_follow_up, 10, "Agente", "expedientes"),

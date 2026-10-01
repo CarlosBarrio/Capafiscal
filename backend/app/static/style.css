@@ -2645,3 +2645,21 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 @media (max-width: 720px) {
   .route-row { grid-template-columns: 1fr; gap: 6px; }
 }
+
+/* Entradas: registro de eventos con estado y reanudación */
+.intake-list { display: flex; flex-direction: column; }
+.intake-row { display: grid; grid-template-columns: 150px 1fr auto auto; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.intake-row:last-child { border-bottom: none; }
+.intake-row .status-pill.mini { margin-left: 0; justify-self: start; }
+.intake-main, .intake-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.intake-main small { overflow-wrap: anywhere; }
+.intake-meta { align-items: flex-end; }
+.intake-actions { display: flex; gap: 6px; }
+.processing-alert { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; padding: 10px 12px; border: 1px solid #f1cdd2; border-radius: 10px; background: var(--red-bg); color: var(--red); font-size: 13px; }
+.processing-alert .icon { flex-shrink: 0; width: 18px; height: 18px; }
+.processing-alert span { flex: 1; color: var(--ink); }
+.processing-alert strong { color: var(--red); }
+@media (max-width: 720px) {
+  .intake-row { grid-template-columns: 1fr; gap: 6px; }
+  .intake-meta { align-items: flex-start; }
+}

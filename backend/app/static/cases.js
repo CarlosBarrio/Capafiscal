@@ -30,6 +30,9 @@
   const RISK_LABELS = { high: "Riesgo alto", medium: "Riesgo medio", low: "Riesgo bajo" };
   const AGENT_NAMES = { vigilante: "Vigilante", expedientes: "Expedientes", fiscal: "Fiscal", memoria: "Memoria", detector: "Detector", gestor: "Gestor", perseguidor: "Perseguidor", director: "Director" };
   const AGENT_ICONS = { vigilante: "eye", expedientes: "archive", fiscal: "receipt", memoria: "brain", detector: "alert", gestor: "briefcase", perseguidor: "send", director: "chart" };
+  const INTAKE_CLASS = { COMPLETED: "status-success", NEEDS_HUMAN: "status-warning", FAILED: "status-danger", PROCESSING: "status-info", RECEIVED: "status-neutral" };
+  const SOURCE_LABELS = { upload: "Subida", email: "Correo", dehu: "DEHú", api: "API", calendario: "Calendario", pendientes: "Pendientes", test: "Prueba" };
+  const KIND_EVENT_LABELS = { document: "Documento", notification: "Notificación", invoice: "Factura", deadline: "Plazo" };
   const PIPELINE_LABELS = { notification: "Notificación", invoice: "Factura", deadline: "Plazo", anomalies: "Barrido del Detector" };
   const SOURCE_ICONS = { case: "archive", tax: "receipt", collection: "coins", payment: "card", compliance: "shield", team: "users", payroll: "wallet", outbox: "send", timesheet: "clock" };
 
@@ -280,7 +283,15 @@
         ${facts.evidence.map((ev) => `<button type="button" class="antecedent" ${ev.document_id ? `data-open-document="${ev.document_id}"` : ""}><span class="antecedent-kind">Factura</span><span><strong>${esc(ev.label)}</strong><small>${ev.document_id ? "Abrir el documento" : ""}</small></span></button>`).join("")}
       </div>` : "";
 
+    const processing = facts.processing ? `
+      <div class="processing-alert">
+        ${window.icon("alert")}
+        <span><strong>El agente ${esc(facts.processing.agent_name || facts.processing.failed_agent)} no pudo terminar.</strong> ${esc(facts.processing.error || "")} El resto del expediente sí está trabajado.</span>
+        <button type="button" class="act-btn" data-retry-event="${facts.processing.event_id}">${window.icon("repeat")} Reanudar</button>
+      </div>` : "";
+
     document.getElementById("casePaneSummary").innerHTML = `
+      ${processing}
       <p class="case-lead">${esc(item.summary || "")}</p>
       ${insights.length ? `<div class="insight-list">${insights.map((text) => `<div class="report-warning">${window.icon("bulb")}<span>${esc(text)}</span></div>`).join("")}</div>` : ""}
       <div class="case-summary-grid">
@@ -545,7 +556,69 @@
   /* ------------------------------------------------------------
   AGENTES Y MEMORIA
   ------------------------------------------------------------ */
+  async function loadIntake() {
+    const data = await window.apiRequest("/events?limit=15");
+    const counts = data.counts || {};
+    document.getElementById("intakeCounts").textContent = [
+      `${counts.COMPLETED || 0} completadas`,
+      counts.NEEDS_HUMAN ? `${counts.NEEDS_HUMAN} necesitan a una persona` : null,
+      counts.FAILED ? `${counts.FAILED} fallidas` : null,
+    ].filter(Boolean).join(" · ");
+    document.getElementById("intakeList").innerHTML = data.events.length ? data.events.map((event) => `
+      <div class="intake-row">
+        <span class="status-pill mini ${INTAKE_CLASS[event.status] || "status-neutral"}">${esc(event.status_label)}</span>
+        <span class="intake-main">
+          <strong>${esc(SOURCE_LABELS[event.source] || event.source)} · ${esc(KIND_EVENT_LABELS[event.kind] || event.kind)}</strong>
+          <small class="mono">${esc(event.external_id.length > 48 ? `${event.external_id.slice(0, 45)}…` : event.external_id)}</small>
+          ${event.error ? `<small class="value-negative">${event.failed_agent_name ? `${esc(event.failed_agent_name)}: ` : ""}${esc(event.error.slice(0, 160))}</small>` : ""}
+        </span>
+        <span class="intake-meta">
+          ${event.duplicates ? `<small class="muted">${event.duplicates} repetido(s) ignorado(s)</small>` : ""}
+          ${event.attempts > 1 ? `<small class="muted">${event.attempts} intentos</small>` : ""}
+          <small class="muted">${esc(window.formatDate(event.created_at))}</small>
+        </span>
+        <span class="intake-actions">
+          ${event.case_id ? `<button type="button" class="btn-ghost" data-open-case="${event.case_id}">Ver expediente</button>` : ""}
+          ${["FAILED", "NEEDS_HUMAN"].includes(event.status) ? `<button type="button" class="act-btn" data-retry-event="${event.id}">${window.icon("repeat")} Reanudar</button>` : ""}
+        </span>
+      </div>
+    `).join("") : `<p class="empty-inline">Aún no ha entrado nada.</p>`;
+  }
+
+  async function retryEvent(id) {
+    try {
+      const result = await window.jsonRequest(`/events/${id}/retry`, "POST", {});
+      window.showMessage(result.event.status === "COMPLETED" ? "Reanudado: todos los agentes terminaron bien." : `Sigue sin poder terminar: ${result.event.error || result.event.status_label}`, result.event.status === "COMPLETED" ? "success" : "error");
+      if (current && result.case && result.case.id === current.id) {
+        current = result.case;
+        render();
+      }
+      refreshBackground();
+      if (view === "agents") loadIntake();
+    } catch (error) {
+      window.showMessage(error.message, "error");
+    }
+  }
+
+  async function importEml(file) {
+    const form = new FormData();
+    form.append("uploaded_file", file);
+    try {
+      const result = await window.apiRequest("/connectors/email/import", { method: "POST", body: form });
+      const cases = result.attachments.filter((item) => item.case_code).map((item) => item.case_code);
+      window.showMessage(
+        `Correo «${result.subject || "sin asunto"}»: ${result.attachments.length} documento(s)` + (cases.length ? `, expediente ${cases.join(", ")}` : ", sin nada que revisar") + (result.skipped.length ? ` · ignorados: ${result.skipped.join(", ")}` : "") + ".",
+        "success",
+      );
+      refreshBackground();
+      loadIntake();
+    } catch (error) {
+      window.showMessage(error.message, "error");
+    }
+  }
+
   async function loadAgents() {
+    loadIntake().catch((error) => window.showMessage(error.message, "error"));
     const [data, runs] = await Promise.all([window.apiRequest("/agents"), window.apiRequest("/agents/runs?limit=12")]);
     document.getElementById("agentsIntro").innerHTML = `
       <div class="agents-intro-body">
@@ -686,6 +759,26 @@
         window.showMessage(error.message, "error");
       }
     });
+    document.getElementById("importEml").addEventListener("click", () => document.getElementById("emlInput").click());
+    document.getElementById("emlInput").addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      event.target.value = "";
+      if (file) importEml(file);
+    });
+    document.getElementById("pollInbox").addEventListener("click", async () => {
+      try {
+        const result = await window.jsonRequest("/connectors/email/poll", "POST", {});
+        window.showMessage(result.messages ? `${result.messages} correo(s), ${result.documents} documento(s)` + (result.cases.length ? `; expedientes: ${result.cases.join(", ")}` : "") + "." : "Sin correos nuevos (configura IMAP en .env o deja .eml en data/buzon).", "success");
+        refreshBackground();
+        loadIntake();
+      } catch (error) {
+        window.showMessage(error.message, "error");
+      }
+    });
+    document.getElementById("intakeList").addEventListener("click", (event) => {
+      const retryButton = event.target.closest("[data-retry-event]");
+      if (retryButton) retryEvent(Number(retryButton.dataset.retryEvent));
+    });
     document.getElementById("watchDeadlines").addEventListener("click", async () => {
       try {
         const result = await window.jsonRequest("/agents/deadlines/watch", "POST", {});
@@ -721,6 +814,9 @@
     dialog.addEventListener("click", async (event) => {
       const action = event.target.closest("[data-case-action]");
       if (action) return caseAction(action.dataset.caseAction);
+
+      const retryButton = event.target.closest("[data-retry-event]");
+      if (retryButton) return retryEvent(Number(retryButton.dataset.retryEvent));
 
       const toggle = event.target.closest("[data-action-index]");
       if (toggle) return patch({ action_index: Number(toggle.dataset.actionIndex), done: toggle.checked }).catch((error) => window.showMessage(error.message, "error"));

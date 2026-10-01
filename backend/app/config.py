@@ -56,6 +56,16 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     smtp_use_ssl: bool = False
 
+    # Correo entrante (conector de correo): buzón IMAP del que se leen
+    # facturas y notificaciones. Sin IMAP, se puede usar la carpeta
+    # data/buzon (deja ahí los .eml) o importar un .eml desde la pantalla.
+    imap_host: str = ""
+    imap_port: int = 993
+    imap_user: str = ""
+    imap_password: str = ""
+    imap_folder: str = "INBOX"
+    imap_use_ssl: bool = True
+
     # IA opcional (Claude). Sin clave, los agentes usan reglas y plantillas.
     anthropic_api_key: str = ""
     agent_model: str = "claude-opus-5-5"

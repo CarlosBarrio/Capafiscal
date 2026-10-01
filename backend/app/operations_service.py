@@ -1164,11 +1164,11 @@ def assistant_answer(
         keyword in normalized_question
         for keyword in ("beneficio", "negocio", "margen", "cobrar", "cobros", "me deben", "facturado", "ingresos", "tesoreria", "tesorería", "caja")
     ):
-        today = date.today()
+        year, quarter = parse_question_period(normalized_question)
         health = build_business_health(
             database,
-            year=today.year,
-            quarter=(today.month - 1) // 3 + 1,
+            year=year,
+            quarter=quarter,
         )
         answer = (
             f"{health['period']}: ingresos {format_eur(health['income'])}, gastos "

@@ -255,32 +255,27 @@ def get_missing_invoice_fields(
     return missing_fields
 
 
-def run_agents_for_document(database, document_id: int | None) -> None:
-    """Ha llegado algo: el orquestador decide qué agentes lo trabajan.
+def run_agents_for_document(database, document_id: int | None, *, force: bool = False) -> None:
+    """Ha llegado un documento: entra como evento y el orquestador decide qué agentes lo trabajan.
 
     Notificación → su ruta (requerimiento, embargo…). Factura recibida →
-    Detector y, si hay algo raro, expediente de «factura sospechosa».
+    Detector y, si hay algo raro, expediente de «factura sospechosa». El
+    evento queda registrado (idempotencia y estado) en ingested_events.
     """
     if not document_id:
         return
 
-    from sqlalchemy import select as sql_select
-
-    from app.agents.orchestrator import process_invoice
-    from app.agents.orchestrator import process_notification
-    from app.models import FiscalNotification
-    from app.models import Invoice
+    from app.agents.intake import ingest
 
     try:
-        notification = database.scalar(
-            sql_select(FiscalNotification).where(FiscalNotification.document_id == document_id)
+        ingest(
+            database,
+            source="upload",
+            external_id=f"document:{document_id}",
+            kind="document",
+            payload={"document_id": document_id},
+            force=force,
         )
-        if notification is not None:
-            process_notification(database, notification.id, trigger="upload")
-        else:
-            invoice = database.scalar(sql_select(Invoice).where(Invoice.document_id == document_id))
-            if invoice is not None and invoice.direction != "ISSUED":
-                process_invoice(database, invoice.id, trigger="upload")
         database.commit()
     except Exception:
         database.rollback()

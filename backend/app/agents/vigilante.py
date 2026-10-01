@@ -30,6 +30,10 @@ SOURCE_LABELS = {
     "dehu": "buzón DEHú",
     "aeat": "sede de la AEAT",
     "capafiscal_emision": "CapaFiscal",
+    "email": "correo",
+    "api": "API",
+    "upload": "subida manual",
+    "calendario": "calendario fiscal",
 }
 
 
@@ -189,7 +193,11 @@ class Vigilante(Agent):
             filter(None, [notification.title, notification.summary, notification.notes])
         )
 
-        source = SOURCE_LABELS.get(document.source if document else "", "registro manual")
+        event_source = ctx.event.source if ctx.event else None
+        if document is not None:
+            source = SOURCE_LABELS.get(document.source, "registro manual")
+        else:
+            source = SOURCE_LABELS.get(event_source or "", event_source if event_source not in {None, "manual", "system", "pendientes"} else "registro manual")
         issuer_label = ISSUERS.get(notification.issuer, notification.issuer)
         type_label = NOTIFICATION_TYPES.get(notification.notification_type, notification.notification_type)
 

@@ -506,4 +506,4 @@ def test_assistant_business_intents(client, sample_pdfs):
 
     assert "Requerimiento" in ask("¿Qué notificaciones tengo pendientes?")
     assert "105,78 €" in ask("IVA del 3T 2026")
-    assert "ingresos 1.200,00 €" in ask("¿Cómo va el negocio?")
+    assert "ingresos 1.200,00 €" in ask("¿Cómo va el negocio en el 3T 2026?")

@@ -132,7 +132,7 @@ def serialize_case(database: Session, case: Case, *, full: bool = False, today: 
         {
             "facts": {
                 key: facts.get(key)
-                for key in ("insights", "fiscal_notes", "tax_references", "affected", "intake_warnings", "embargo_pending", "source", "document_name", "deadline_rule", "severity", "evidence", "median", "history", "supplier_history", "invoice", "invoice_tax", "period", "recommendation", "human_decision")
+                for key in ("insights", "fiscal_notes", "tax_references", "affected", "intake_warnings", "embargo_pending", "source", "document_name", "deadline_rule", "severity", "evidence", "median", "history", "supplier_history", "invoice", "invoice_tax", "period", "recommendation", "human_decision", "processing")
                 if facts.get(key) not in (None, [], {})
             },
             "documents": [{**item, "status_label": DOC_STATUS_LABELS.get(item.get("status"), item.get("status"))} for item in documents],

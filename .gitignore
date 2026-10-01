@@ -34,3 +34,7 @@ frontend_actual.txt
 proyecto_completo.txt
 
 .DS_Store
+
+# Documentos reales para evaluar: nunca al repositorio (datos personales y bancarios)
+backend/evaluation/datasets/reales/
+backend/evaluation/informes/

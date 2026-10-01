@@ -15,7 +15,7 @@
   >
   <link
     rel="stylesheet"
-    href="/static/style.css?v=91"
+    href="/static/style.css?v=92"
   >
 </head>
 <body>
@@ -666,6 +666,18 @@
 
     <div class="case-view hidden" data-case-view="agents">
       <div class="agents-intro card" id="agentsIntro"></div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Entradas</h2>
+          <span class="card-sub" id="intakeCounts">Todo lo que llega: subidas, correo, plazos y otras fuentes</span>
+          <div class="card-actions">
+            <button type="button" class="btn-ghost" id="pollInbox"><svg class="icon"><use href="#i-mail"/></svg> Revisar buzón</button>
+            <button type="button" class="btn-ghost" id="importEml"><svg class="icon"><use href="#i-upload"/></svg> Importar correo (.eml)</button>
+            <input type="file" id="emlInput" accept=".eml,message/rfc822" hidden>
+          </div>
+        </div>
+        <div class="intake-list" id="intakeList"></div>
+      </div>
       <div class="card">
         <div class="card-head"><h2>Rutas</h2><span class="card-sub">Ha ocurrido algo → expediente → el orquestador decide qué agentes hacen falta</span></div>
         <div class="route-list" id="agentRoutes"></div>
@@ -1918,7 +1930,7 @@
 <script src="/static/company.js?v=3"></script>
 <script src="/static/team.js?v=1"></script>
 <script src="/static/payroll.js?v=2"></script>
-<script src="/static/cases.js?v=2"></script>
+<script src="/static/cases.js?v=3"></script>
 <script src="/static/sales.js?v=2"></script>
 <script src="/static/outbox.js?v=3"></script>
 <script src="/static/timesheet.js?v=3"></script>

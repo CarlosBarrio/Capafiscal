@@ -39,9 +39,20 @@ FUENTES (subida, correo, DEHú*, facturas, plazos)
   atiende (`GET /api/agents/routes`), para reutilizarlo en procesos nuevos.
 - **Hallazgos con evidencia** (`Finding`): qué se detectó, por qué, con qué
   datos, riesgo, confianza, documento de origen, fecha, agente y siguiente paso.
-- **Entrada común** `POST /api/events` (notificación, factura o plazo): así se
-  enganchan nuevas fuentes. *La conexión oficial con DEHú (alta, certificado,
-  apoderamiento) está pendiente; cuando exista, entregará aquí.*
+- **Entrada común con idempotencia y estados**: todo lo que llega (subida,
+  correo, `POST /api/events`, plazos) se registra con su fuente y su
+  identificador externo. La misma notificación o el mismo correo no abren dos
+  expedientes. Cada entrada pasa por RECEIVED → PROCESSING → COMPLETED,
+  NEEDS_HUMAN (un agente no pudo terminar: se muestra cuál y por qué) o FAILED
+  (falló el recorrido entero), y se puede **reanudar** desde *Expedientes →
+  Agentes → Entradas* o desde el propio expediente.
+- **Conector de correo**: lee el buzón por IMAP, una carpeta local
+  (`data/buzon/*.eml`) o un `.eml` importado a mano. Cada adjunto (PDF o
+  texto) se lee como una subida y entra por la entrada común. Los agentes no
+  saben de dónde viene un documento.
+- **DEHú**: la conexión oficial (alta, certificado, apoderamiento) está
+  pendiente. Cuando exista, solo tendrá que entregar cada notificación en
+  `POST /api/events` con `source: "dehu"` y su identificador.
 
 Ejemplo real: llega una diligencia de embargo de créditos contra un proveedor.
 El agente identifica al proveedor por su NIF, encuentra que le debes una
@@ -65,6 +76,55 @@ contestación, y lo pone el primero de tu lista.
   IVA?») y responde con las fuentes.
 - **IA opcional**: con `ANTHROPIC_API_KEY`, Claude lee y redacta; sin clave,
   todo funciona con reglas y plantillas.
+
+## Lectura de facturas reales y evaluación
+
+El extractor lee facturas con reglas deterministas. Con facturas reales de
+proveedores se encontraron patrones que no cubría, y ahora sí:
+
+- totales en tabla (cabecera en una línea, valores debajo);
+- dígitos separados por espacios («8 3 7,69»);
+- un «21 420,00» que no son miles, sino el tipo de IVA y la cuota;
+- texto girado en el margen;
+- el emisor que solo aparece en el pie legal (Registro Mercantil, protección
+  de datos);
+- el número de factura dentro de una fila de cabecera;
+- fechas con el mes en letra;
+- páginas «2 de 2».
+
+Los importes se resuelven con un solver que exige base × tipo de IVA = cuota y
+base + cuota − retención = total.
+
+**Claude como capacidad, no como agente.** Con `ANTHROPIC_API_KEY`, si las
+reglas no bastan (faltan campos, los importes no cuadran, el emisor parece la
+propia empresa…), Claude lee el PDF y propone los campos. Las reglas validan
+cada valor antes de aceptarlo:
+
+- aparece en el documento;
+- el NIF tiene dígito de control válido;
+- los importes cuadran;
+- el sentido de la factura lo deciden los NIF de tu empresa.
+
+Queda registrado qué dijo cada motor, por qué se eligió cada valor, los
+tokens y el coste.
+
+**Banco de evaluación** (`backend/evaluation/`):
+
+```bash
+cd backend
+python -m evaluation                                   # réplicas sintéticas, reglas
+python -m evaluation --dataset reales                  # tus facturas reales (carpeta local)
+python -m evaluation --engines reglas,claude,hibrido   # comparar motores (necesita ANTHROPIC_API_KEY)
+python -m evaluation --engines claude --model claude-sonnet-5-5
+```
+
+Mide el acierto por campo, las facturas perfectas, el tiempo, los tokens, el
+coste y cuántas veces se volvió a las reglas, y deja un informe en
+`evaluation/informes/`. Las facturas reales van en
+`evaluation/datasets/reales/` (PDF + `labels.json`). Esa carpeta está fuera de
+git: el repositorio es público y las facturas llevan IBAN y datos personales.
+Las réplicas de `evaluation/datasets/sinteticas/` reproducen las mismas
+maquetas con datos inventados y sí son parte de los tests.
 
 ## Qué hace
 
@@ -162,6 +222,9 @@ Los tests usan una base de datos temporal y no tocan tus datos. Están en
 última es la batería de evaluación de agentes: cada caso de
 `tests/workflows/scenarios/*.json` describe entrada → agentes ejecutados →
 resultado → evidencias → acción esperada; para añadir un caso basta un JSON.
+`tests/workflows/test_email_inbox.py` es el hito de punta a punta: una
+factura llega por correo, se lee, el Detector ve que es 6 veces lo habitual,
+se abre el expediente de «factura sospechosa» y una persona lo aprueba.
 
 ## Actualizar una instalación existente
 
@@ -201,6 +264,9 @@ backend/
     timesheet_service.py  Registro de jornada, alertas, PDF y Excel
     automation_service.py Automatizaciones programadas y resumen diario
     advisor_service.py    Paquete trimestral para la gestoría
+    extraction_rules.py   Reglas aprendidas de facturas reales (2.ª pasada del extractor)
+    interpretation.py     Híbrido: Claude propone, las reglas validan cada valor
+    connectors/           Fuentes externas → entrada común (correo; DEHú pendiente)
     agents/               Equipo de agentes: vigilante, expedientes, fiscal,
                           memoria, gestor, perseguidor, director, detector,
                           orquestador, conocimiento y capa de IA opcional

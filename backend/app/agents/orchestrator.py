@@ -175,7 +175,7 @@ def backfill_case_events(ctx: AgentContext, run: AgentRun, *, until: int) -> Non
         )
 
 
-def process_event(database: Session, event: Event, *, trigger: str = "system", today: date | None = None) -> Case | None:
+def process_event(database: Session, event: Event, *, trigger: str = "system", today: date | None = None, holder: dict[str, Any] | None = None) -> Case | None:
     now = datetime.now(timezone.utc)
     ctx = AgentContext(database=database, today=today or date.today(), now=now, trigger=trigger, event=event)
     if event.kind == "notification":
@@ -193,6 +193,8 @@ def process_event(database: Session, event: Event, *, trigger: str = "system", t
     run = AgentRun(pipeline=event.kind, trigger=trigger, case_id=ctx.case.id if ctx.case else None, status="RUNNING")
     database.add(run)
     database.flush()
+    if holder is not None:
+        holder["run"] = run
 
     position = 0
     errors = 0
@@ -336,7 +338,7 @@ def open_event_case(ctx: AgentContext, run: AgentRun, *, until: int) -> None:
 # ---------------------------------------------------------------------
 
 
-def process_notification(database: Session, notification_id: int, *, trigger: str = "system", today: date | None = None) -> Case | None:
+def process_notification(database: Session, notification_id: int, *, trigger: str = "system", today: date | None = None, holder: dict[str, Any] | None = None) -> Case | None:
     notification = database.get(FiscalNotification, notification_id)
     if notification is None:
         return None
@@ -344,19 +346,19 @@ def process_notification(database: Session, notification_id: int, *, trigger: st
 
     document = database.get(Document, notification.document_id) if notification.document_id else None
     source = (document.source if document else None) or "manual"
-    return process_event(database, Event("notification", source=source or trigger, ref_id=notification_id), trigger=trigger, today=today)
+    return process_event(database, Event("notification", source=source or trigger, ref_id=notification_id), trigger=trigger, today=today, holder=holder)
 
 
-def process_invoice(database: Session, invoice_id: int, *, trigger: str = "system", today: date | None = None) -> Case | None:
+def process_invoice(database: Session, invoice_id: int, *, trigger: str = "system", today: date | None = None, holder: dict[str, Any] | None = None) -> Case | None:
     invoice = database.get(Invoice, invoice_id)
     if invoice is None or invoice.direction == "ISSUED":
         return None
-    return process_event(database, Event("invoice", source=trigger, ref_id=invoice_id), trigger=trigger, today=today)
+    return process_event(database, Event("invoice", source=trigger, ref_id=invoice_id), trigger=trigger, today=today, holder=holder)
 
 
-def process_deadline(database: Session, *, model: str, year: int, quarter: int, due: date, trigger: str = "schedule", today: date | None = None) -> Case | None:
+def process_deadline(database: Session, *, model: str, year: int, quarter: int, due: date, trigger: str = "schedule", today: date | None = None, holder: dict[str, Any] | None = None) -> Case | None:
     event = Event("deadline", source="calendario", payload={"model": model, "year": year, "quarter": quarter, "due": due.isoformat()})
-    return process_event(database, event, trigger=trigger, today=today)
+    return process_event(database, event, trigger=trigger, today=today, holder=holder)
 
 
 def rerun_case(database: Session, case: Case) -> Case | None:
@@ -392,9 +394,12 @@ def watch_deadlines(database: Session, *, trigger: str = "schedule", today: date
         existing = find_case(database, Event("deadline", payload={"model": entry["model"], "year": entry["period_year"], "quarter": entry["period"]}))
         if existing is not None:
             continue
-        case = process_deadline(
-            database, model=entry["model"], year=entry["period_year"], quarter=entry["period"],
-            due=date.fromisoformat(entry["due_date"]), trigger=trigger, today=today,
+        from app.agents.intake import ingest
+
+        _event, _duplicate, case = ingest(
+            database, source="calendario", external_id=f"{entry['model']}:{entry['period_year']}-{entry['period']}", kind="deadline",
+            payload={"model": entry["model"], "year": entry["period_year"], "quarter": entry["period"], "due": entry["due_date"]},
+            trigger=trigger, today=today,
         )
         if case:
             cases.append(case)
@@ -410,9 +415,14 @@ def process_pending(database: Session, *, trigger: str = "schedule", today: date
             FiscalNotification.id.notin_(handled),
         )
     ).all()
+    from app.agents.intake import ingest
+
     cases = []
     for notification in pending:
-        case = process_notification(database, notification.id, trigger=trigger, today=today)
+        _event, _duplicate, case = ingest(
+            database, source="pendientes", external_id=f"notification:{notification.id}", kind="notification",
+            payload={"notification_id": notification.id}, force=True, trigger=trigger, today=today,
+        )
         if case:
             cases.append(case)
     return cases

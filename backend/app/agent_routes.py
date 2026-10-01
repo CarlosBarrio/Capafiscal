@@ -312,6 +312,7 @@ class EventNotification(BaseModel):
 class EventIn(BaseModel):
     kind: str = Field(pattern="^(notification|invoice|deadline)$")
     source: str = Field(default="api", max_length=40)
+    external_id: str | None = Field(default=None, max_length=255)
     notification: EventNotification | None = None
     invoice_id: int | None = None
     model: str | None = Field(default=None, pattern="^(303|130|111|115)$")
@@ -321,46 +322,120 @@ class EventIn(BaseModel):
 
 
 @router.post("/events", tags=["Agentes"], status_code=201)
-def post_event(payload: EventIn, database: DatabaseDependency, actor_header: ActorHeader = None) -> dict[str, Any]:
+def post_event(payload: EventIn, database: DatabaseDependency, response: Response) -> dict[str, Any]:
     """Entrada común para cualquier fuente (DEHú, correo, banco, plazos…):
-    evento → Vigilante → Expediente → Orquestador → agentes → Director → humano."""
-    from app.agents.base import Event
-    from app.agents.orchestrator import process_deadline
-    from app.agents.orchestrator import process_event
-    from app.agents.orchestrator import process_invoice
+    evento → Vigilante → Expediente → Orquestador → agentes → Director → humano.
+
+    Idempotente: la misma pareja (source, external_id) no se procesa dos veces.
+    """
+    from app.agents.intake import ingest
+    from app.agents.intake import payload_hash
+    from app.agents.intake import serialize_event
+    from app.agents.orchestrator import serialize_run
     from app.case_service import serialize_case
     from app.notification_service import ISSUERS
     from app.notification_service import NOTIFICATION_TYPES
-    from app.notification_service import create_notification
 
-    case = None
     if payload.kind == "notification":
         if payload.notification is None:
             raise HTTPException(status_code=422, detail="Falta la notificación.")
-        data = payload.notification.model_dump()
+        data = payload.notification.model_dump(mode="json")
         if data.get("issuer") and data["issuer"] not in ISSUERS:
             raise HTTPException(status_code=422, detail="Organismo no válido.")
         if data.get("notification_type") and data["notification_type"] not in NOTIFICATION_TYPES:
             raise HTTPException(status_code=422, detail="Tipo de notificación no válido.")
-        notification = create_notification(database, document=None, data=data, actor=normalize_actor(actor_header) or payload.source)
-        database.flush()
-        case = process_event(database, Event("notification", source=payload.source, ref_id=notification.id), trigger=payload.source)
+        body = {"notification": data}
+        external_id = payload.external_id or f"sha256:{payload_hash(body)}"
     elif payload.kind == "invoice":
         if payload.invoice_id is None:
             raise HTTPException(status_code=422, detail="Falta invoice_id.")
-        case = process_invoice(database, payload.invoice_id, trigger=payload.source)
+        body = {"invoice_id": payload.invoice_id}
+        external_id = payload.external_id or f"invoice:{payload.invoice_id}"
     else:
         if not (payload.model and payload.year and payload.quarter):
             raise HTTPException(status_code=422, detail="Faltan modelo, año y trimestre.")
         from app.tax_service import quarterly_due_date
 
         due = payload.due or quarterly_due_date(payload.year, payload.quarter)
-        case = process_deadline(database, model=payload.model, year=payload.year, quarter=payload.quarter, due=due, trigger=payload.source)
-    database.commit()
-    run = database.scalar(select(AgentRun).order_by(AgentRun.id.desc()).limit(1))
-    from app.agents.orchestrator import serialize_run
+        body = {"model": payload.model, "year": payload.year, "quarter": payload.quarter, "due": due.isoformat()}
+        external_id = payload.external_id or f"{payload.model}:{payload.year}-{payload.quarter}"
 
-    return {"case": serialize_case(database, case, full=True) if case else None, "run": serialize_run(run) if run else None}
+    event, duplicate, case = ingest(database, source=payload.source, external_id=external_id, kind=payload.kind, payload=body)
+    database.commit()
+    if duplicate:
+        response.status_code = 200
+    run = database.get(AgentRun, event.run_id) if event.run_id else None
+    return {
+        "event": serialize_event(event),
+        "duplicate": duplicate,
+        "case": serialize_case(database, case, full=True) if case else None,
+        "run": serialize_run(run) if run else None,
+    }
+
+
+@router.get("/events", tags=["Agentes"])
+def list_events(database: DatabaseDependency, status: str | None = Query(default=None, max_length=20), limit: int = Query(default=30, ge=1, le=200)) -> dict[str, Any]:
+    from app.agents.intake import STATUS_LABELS
+    from app.agents.intake import serialize_event
+    from app.models import IngestedEvent
+    from sqlalchemy import func
+
+    statement = select(IngestedEvent).order_by(IngestedEvent.id.desc()).limit(limit)
+    if status:
+        statement = statement.where(IngestedEvent.status == status)
+    counts = dict(database.execute(select(IngestedEvent.status, func.count()).group_by(IngestedEvent.status)).all())
+    return {
+        "events": [serialize_event(item) for item in database.scalars(statement).all()],
+        "counts": {key: counts.get(key, 0) for key in STATUS_LABELS},
+    }
+
+
+@router.post("/events/{event_id}/retry", tags=["Agentes"])
+def retry_event(event_id: int, database: DatabaseDependency) -> dict[str, Any]:
+    from app.agents.intake import retry
+    from app.agents.intake import serialize_event
+    from app.case_service import serialize_case
+
+    try:
+        event, case = retry(database, event_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    database.commit()
+    return {"event": serialize_event(event), "case": serialize_case(database, case, full=True) if case else None}
+
+
+@router.get("/connectors/email", tags=["Conectores"])
+def email_connector_status() -> dict[str, Any]:
+    from app.connectors.email.client import status
+
+    return status()
+
+
+@router.post("/connectors/email/import", tags=["Conectores"], status_code=201)
+async def email_connector_import(database: DatabaseDependency, uploaded_file: UploadFile = File(...)) -> dict[str, Any]:
+    """Importa un correo (.eml): cada adjunto entra por la entrada común."""
+    from app.connectors.email.client import import_eml
+
+    if not (uploaded_file.filename or "").lower().endswith(".eml"):
+        raise HTTPException(status_code=422, detail="Sube un correo en formato .eml.")
+    raw = await uploaded_file.read()
+    if len(raw) > settings.max_upload_size * 3:
+        raise HTTPException(status_code=413, detail="El correo es demasiado grande.")
+    result = import_eml(database, raw)
+    database.commit()
+    return result
+
+
+@router.post("/connectors/email/poll", tags=["Conectores"])
+def email_connector_poll(database: DatabaseDependency) -> dict[str, Any]:
+    from app.connectors.email.client import poll
+
+    try:
+        result = poll(database)
+    except OSError as error:
+        raise HTTPException(status_code=502, detail=f"No se pudo leer el buzón: {error}") from error
+    database.commit()
+    return result
 
 
 @router.get("/memory/search", tags=["Agentes"])

@@ -25,7 +25,7 @@ except ImportError:
 
 
 EXTRACTOR_NAME = "capafiscal.generic_invoice"
-EXTRACTOR_VERSION = "2.3.0"
+EXTRACTOR_VERSION = "2.4.0"
 
 CENT = Decimal("0.01")
 AMOUNT_TOLERANCE = Decimal("0.03")
@@ -726,8 +726,11 @@ def select_primary_pages(page_texts: list[str]) -> tuple[str, list[int]]:
         )
 
         # Si la primera factura ya está completa y la siguiente página
-        # empieza otra factura, se trata como anexo.
-        if first_has_summary and looks_like_new_invoice:
+        # empieza otra factura, se trata como anexo. Una página «2 de 2»
+        # es la continuación de la misma factura, no otra.
+        from app.extraction_rules import is_continuation_page
+
+        if first_has_summary and looks_like_new_invoice and not is_continuation_page(page_text, page_index):
             break
 
         selected.append(page_text)
@@ -2503,9 +2506,20 @@ def extract_invoice(
         page_texts
     )
 
+    from app import extraction_rules
+
+    primary_text = extraction_rules.restore_rotated_text(primary_text)
+    real_world_signals: list[str] = []
+
     tax_id_candidates = find_tax_id_candidates(
         primary_text
     )
+    for candidate in tax_id_candidates:
+        repaired = extraction_rules.repair_tax_id(candidate["value"])
+        if repaired != candidate["value"] and is_valid_spanish_tax_id(repaired):
+            candidate["value"] = repaired
+            candidate["valid_checksum"] = True
+            real_world_signals.append("tax_id_repaired")
 
     direction, direction_confidence = detect_direction(
         tax_id_candidates,
@@ -2560,9 +2574,33 @@ def extract_invoice(
             evidence=customer_name.evidence,
         )
 
+    # El emisor según el pie legal (Registro Mercantil, protección de datos).
+    company_ids = normalized_company_tax_ids(company_tax_id)
+    issuer = extraction_rules.issuer_from_legal_footer(primary_text, company_ids, company_name)
+    if issuer is not None:
+        own_in_text = any(candidate["value"] in company_ids for candidate in tax_id_candidates)
+        if issuer.tax_id and supplier_tax_id.value != issuer.tax_id and (own_in_text or not supplier_tax_id.value):
+            supplier_tax_id = ExtractedField(value=issuer.tax_id, confidence=90, source="legal_footer", evidence=issuer.source)
+            if own_in_text:
+                customer_tax_id = ExtractedField(value=sorted(company_ids & {c["value"] for c in tax_id_candidates})[0], confidence=90, source="company_tax_id", evidence="configured")
+                if company_name:
+                    customer_name = ExtractedField(value=company_name, confidence=99, source="configured_company_name")
+            if direction == "ISSUED":
+                direction, direction_confidence = "RECEIVED", 88
+                real_world_signals.append("direction_from_legal_footer")
+            supplier_name = ExtractedField(value=issuer.name, confidence=85, source="legal_footer", evidence=issuer.source) if issuer.name else supplier_name
+        elif direction != "ISSUED" and issuer.name and extraction_rules.weak_name(supplier_name.value, company_name):
+            supplier_name = ExtractedField(value=issuer.name, confidence=80, source="legal_footer", evidence=issuer.source)
+            real_world_signals.append("supplier_name_from_legal_footer")
+
     invoice_number = find_invoice_number(
         primary_text
     )
+    if extraction_rules.suspicious_number(invoice_number.value):
+        better = extraction_rules.labeled_number(primary_text) or extraction_rules.number_from_header_row(primary_text)
+        if better:
+            invoice_number = ExtractedField(value=clean_invoice_number(better) or better, confidence=80, source="table_header_row", evidence=better)
+            real_world_signals.append("invoice_number_from_table")
 
     invoice_date = find_date_near_labels(
         primary_text,
@@ -2586,6 +2624,11 @@ def extract_invoice(
     )
 
     if invoice_date.value is None:
+        textual = extraction_rules.textual_dates(primary_text)
+        if textual:
+            invoice_date = ExtractedField(value=date_to_string(textual[0]), confidence=80, source="textual_date")
+
+    if invoice_date.value is None:
         invoice_date = find_fallback_invoice_date(
             primary_text
         )
@@ -2599,6 +2642,10 @@ def extract_invoice(
         ),
         source="due_date_label",
     )
+    if due_date.value is None:
+        header_due = extraction_rules.due_date_from_header_row(primary_text)
+        if header_due:
+            due_date = ExtractedField(value=date_to_string(header_due), confidence=75, source="due_date_table")
 
     subtotal = find_labeled_amount(
         primary_text,
@@ -2652,6 +2699,16 @@ def extract_invoice(
         primary_text,
     )
 
+    # Importes que no cuadran fiscalmente: el solver busca base × IVA = cuota y base + cuota − retención = total.
+    if not extraction_rules.plausible_amounts(subtotal.value, tax_total.value, total.value, withholding_total.value, surcharge_total.value):
+        solved = extraction_rules.solve_amounts(primary_text)
+        if solved:
+            subtotal = ExtractedField(value=decimal_to_string(solved["subtotal"]), confidence=85, source="vat_solver", evidence=f"IVA {solved['tax_rate']} %")
+            tax_total = ExtractedField(value=decimal_to_string(solved["tax_total"]), confidence=85, source="vat_solver", evidence=f"IVA {solved['tax_rate']} %")
+            total = ExtractedField(value=decimal_to_string(solved["total"]), confidence=85, source="vat_solver", evidence="base + cuota − retención")
+            withholding_total = ExtractedField(value=decimal_to_string(solved["withholding_total"]) if solved["withholding_total"] else None, confidence=80 if solved["withholding_total"] else 0, source="vat_solver")
+            real_world_signals.append("amounts_from_vat_solver")
+
     concept = extract_concept(primary_text)
     if direction == "ISSUED":
         category = classify_income(
@@ -2701,6 +2758,7 @@ def extract_invoice(
 
     if len(primary_pages) < len(page_texts):
         signals.append("attachments_excluded")
+    signals.extend(real_world_signals)
 
     overall_confidence = calculate_overall_confidence(
         fields,

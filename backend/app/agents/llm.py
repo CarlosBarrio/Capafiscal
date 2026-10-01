@@ -94,35 +94,148 @@ def _client():
     return anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=90.0, max_retries=2)
 
 
-def _call(*, system: str, prompt: str, effort: str, max_tokens: int, output_format: dict[str, Any] | None = None) -> str | None:
+# Precio por millón de tokens (entrada, salida) en USD, para medir el coste real.
+PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+
+
+def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float | None:
+    price = PRICES_PER_MTOK.get(model)
+    if price is None:
+        return None
+    return round(input_tokens / 1_000_000 * price[0] + output_tokens / 1_000_000 * price[1], 6)
+
+
+def _complete(
+    *,
+    system: str,
+    content: str | list[dict[str, Any]],
+    effort: str,
+    max_tokens: int,
+    output_format: dict[str, Any] | None = None,
+    model: str | None = None,
+) -> tuple[str | None, dict[str, Any]]:
+    """Una llamada a Claude. Devuelve (texto o None, metadatos: modelo, tokens, coste, motivo del fallo)."""
+    import time
+
     import anthropic
 
+    model = model or settings.agent_model
     output_config: dict[str, Any] = {"effort": effort}
     if output_format:
         output_config["format"] = output_format
+    meta: dict[str, Any] = {"model": model, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "fallback": None}
+    started = time.perf_counter()
 
     try:
         response = _client().beta.messages.create(
-            model=settings.agent_model,
+            model=model,
             max_tokens=max_tokens,
             betas=[FALLBACK_BETA],
             fallbacks="default",
             system=system,
             output_config=output_config,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": content}],
         )
     except anthropic.APIStatusError as error:
         logger.warning("La IA devolvió un error (%s); se usan reglas.", error.status_code)
-        return None
+        meta.update(fallback=f"error {error.status_code}", ms=int((time.perf_counter() - started) * 1000))
+        return None, meta
     except anthropic.APIConnectionError:
         logger.warning("Sin conexión con la IA; se usan reglas.")
-        return None
+        meta.update(fallback="sin conexión", ms=int((time.perf_counter() - started) * 1000))
+        return None, meta
+
+    meta["ms"] = int((time.perf_counter() - started) * 1000)
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        meta["input_tokens"] = int(getattr(usage, "input_tokens", 0) or 0)
+        meta["output_tokens"] = int(getattr(usage, "output_tokens", 0) or 0)
+    served_by = getattr(response, "model", None) or model
+    meta["served_by"] = served_by
+    meta["cost_usd"] = estimate_cost(served_by, meta["input_tokens"], meta["output_tokens"])
 
     if response.stop_reason in {"refusal", "max_tokens"}:
         logger.warning("La IA no completó la respuesta (%s); se usan reglas.", response.stop_reason)
-        return None
+        meta["fallback"] = response.stop_reason
+        return None, meta
 
-    return next((block.text for block in response.content if block.type == "text"), None)
+    return next((block.text for block in response.content if block.type == "text"), None), meta
+
+
+def _call(*, system: str, prompt: str, effort: str, max_tokens: int, output_format: dict[str, Any] | None = None) -> str | None:
+    text, _meta = _complete(system=system, content=prompt, effort=effort, max_tokens=max_tokens, output_format=output_format)
+    return text
+
+
+INVOICE_FIELDS = (
+    "supplier_name", "supplier_tax_id", "customer_name", "customer_tax_id", "invoice_number",
+    "invoice_date", "due_date", "subtotal", "tax_total", "withholding_total", "total", "tax_rate", "concept",
+)
+
+INVOICE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "supplier_name": {"type": "string", "description": "Razón social o nombre de quien EMITE la factura."},
+        "supplier_tax_id": {"type": "string", "description": "NIF/CIF del emisor, sin guiones ni espacios."},
+        "customer_name": {"type": "string", "description": "Nombre de quien RECIBE la factura."},
+        "customer_tax_id": {"type": "string", "description": "NIF/CIF del destinatario, sin guiones ni espacios."},
+        "invoice_number": {"type": "string", "description": "Número de factura tal como aparece (serie incluida si va unida)."},
+        "invoice_date": {"type": "string", "description": "Fecha de expedición en formato AAAA-MM-DD."},
+        "due_date": {"type": "string", "description": "Fecha de vencimiento AAAA-MM-DD, o cadena vacía."},
+        "subtotal": {"type": "string", "description": "Base imponible total, con punto decimal (1234.56)."},
+        "tax_total": {"type": "string", "description": "Cuota total de IVA, con punto decimal."},
+        "withholding_total": {"type": "string", "description": "Retención de IRPF (positiva), o cadena vacía."},
+        "total": {"type": "string", "description": "Total de la factura, con punto decimal."},
+        "tax_rate": {"type": "string", "description": "Tipo de IVA principal (21, 10, 4, 0), o cadena vacía."},
+        "concept": {"type": "string", "description": "Concepto breve (máx. 12 palabras)."},
+    },
+    "required": list(INVOICE_FIELDS),
+    "additionalProperties": False,
+}
+
+SYSTEM_INVOICE = (
+    "Lees facturas españolas y extraes sus datos sin inventar nada. Si un dato no aparece en el documento, "
+    "devuelve cadena vacía. El emisor es quien vende o presta el servicio (suele figurar en la cabecera, el pie "
+    "o el registro mercantil); el destinatario es el cliente. Los importes van con punto decimal y sin símbolo."
+)
+
+
+def extract_invoice(*, pdf_bytes: bytes | None = None, text: str | None = None, company: str | None = None, model: str | None = None) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Claude como capacidad de interpretación: lee la factura (PDF o texto) y devuelve campos.
+
+    Las reglas validan después cada valor; aquí no se decide nada.
+    """
+    import base64
+
+    meta: dict[str, Any] = {"model": model or settings.agent_model, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+    if not available():
+        return None, {**meta, "fallback": "sin ANTHROPIC_API_KEY"}
+    hint = f"La empresa que usa el programa es {company}. " if company else ""
+    instruction = {"type": "text", "text": hint + "Extrae los datos de esta factura."}
+    if pdf_bytes:
+        content: list[dict[str, Any]] = [
+            {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode()}},
+            instruction,
+        ]
+    elif text and text.strip():
+        content = [{"type": "text", "text": f"<factura>\n{text}\n</factura>"}, instruction]
+    else:
+        return None, {**meta, "fallback": "documento vacío"}
+
+    raw, meta = _complete(
+        system=SYSTEM_INVOICE, content=content, effort="low", max_tokens=4000,
+        output_format={"type": "json_schema", "schema": INVOICE_SCHEMA}, model=model,
+    )
+    if not raw:
+        return None, meta
+    try:
+        return json.loads(raw), meta
+    except json.JSONDecodeError:
+        return None, {**meta, "fallback": "JSON inválido"}
 
 
 def extract_notification(text: str) -> dict[str, Any] | None:

@@ -878,6 +878,35 @@ def process_document(
             company_name=company_name(database),
         )
 
+        # Si las reglas no bastan y hay IA configurada, Claude interpreta
+        # y las reglas validan cada valor antes de aceptarlo.
+        from app.interpretation import refine
+
+        result = refine(
+            file_path,
+            result,
+            company_tax_ids=company_tax_ids(database),
+            company_name=company_name(database),
+        )
+        interpretation = result.get("interpretation") or {}
+        if interpretation.get("meta"):
+            add_audit_event(
+                database,
+                action="document.interpretation",
+                entity_type="document",
+                entity_id=document.id,
+                actor="claude",
+                event_data={
+                    "reasons": interpretation.get("reasons"),
+                    "changed": interpretation.get("changed"),
+                    "fallback": interpretation.get("fallback"),
+                    "model": interpretation["meta"].get("served_by") or interpretation["meta"].get("model"),
+                    "input_tokens": interpretation["meta"].get("input_tokens"),
+                    "output_tokens": interpretation["meta"].get("output_tokens"),
+                    "cost_usd": interpretation["meta"].get("cost_usd"),
+                },
+            )
+
         invoice = persist_extraction_result(
             database,
             document=document,
