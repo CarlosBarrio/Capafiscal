@@ -118,13 +118,11 @@ def prepare_environment(engine: str) -> Path | None:
 
 def reset_database() -> None:
     from app.config import settings
-    from app.database import Base
     from app.database import create_database_tables
     from app.database import engine
+    from app.migrate import reset_database
 
-    from app import models  # noqa: F401
-
-    Base.metadata.drop_all(engine)
+    reset_database(engine)
     create_database_tables()
     shutil.rmtree(settings.upload_dir, ignore_errors=True)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)

@@ -45,9 +45,16 @@ def sample_pdfs() -> dict[str, Path]:
     return {pdf.stem: pdf for pdf in pdfs}
 
 
+def drop_everything() -> None:
+    """Cada prueba parte de cero: tablas, versión de Alembic y tablas antiguas."""
+    from app.migrate import reset_database
+
+    reset_database()
+
+
 @pytest.fixture()
 def client():
-    Base.metadata.drop_all(bind=engine)
+    drop_everything()
     shutil.rmtree(settings.upload_dir, ignore_errors=True)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     create_database_tables()

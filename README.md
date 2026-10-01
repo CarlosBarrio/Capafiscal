@@ -161,8 +161,12 @@ La prueba y la demo destaparon cuatro problemas, ya corregidos:
 4. Una notificación con fechas llegada por `/api/events` (como lo hará DEHú)
    fallaba.
 
-SQLite sirve para una empresa. Para una gestoría con muchos usuarios a la
-vez, PostgreSQL, y repetir esta prueba.
+SQLite sirve para una empresa. Para una gestoría con muchos usuarios a la vez,
+PostgreSQL. Repetida en PostgreSQL 16, con concurrencia real, la prueba encontró
+dos carreras más que SQLite tapaba al serializar las escrituras (códigos de
+expediente repetidos y perfiles de la memoria financiera duplicados); ahora la
+numeración usa contadores atómicos (`app/sequences.py`) y la cadena de huellas
+de la facturación emitida se serializa con un cerrojo.
 
 ## Lectura de facturas reales y evaluación
 
@@ -362,12 +366,13 @@ completarlos a mano.
 ### Con Docker
 
 ```bash
-cp .env.example .env   # opcional
+cp .env.example .env   # y define POSTGRES_PASSWORD
 docker compose up --build
 ```
 
-La imagen incluye Tesseract y guarda base de datos y documentos en el
-volumen `capafiscal-data`.
+Levanta PostgreSQL 16 y CapaFiscal. Al arrancar, las migraciones crean o
+actualizan el esquema. La imagen incluye Tesseract; los documentos van al
+volumen `capafiscal-data` y la base de datos a `capafiscal-db`.
 
 ### Configuración
 
@@ -378,7 +383,8 @@ Copia `.env.example` a `.env` en la raíz del proyecto. Lo más útil:
   modelos te tocan) y coste por hora (para el ahorro estimado).
 - `COMPANY_NAME` y `COMPANY_TAX_IDS`: alternativa por configuración al NIF
   de Mi empresa (admite varios NIF separados por comas).
-- `DATABASE_URL`: SQLite por defecto; admite PostgreSQL.
+- `DATABASE_URL`: SQLite por defecto (local, una empresa); PostgreSQL en
+  producción (`postgresql+psycopg://usuario:clave@host:5432/capafiscal`).
 - `OUTLOOK_*` y `APP_ENCRYPTION_KEY`: conector de Outlook (ver comentarios en
   el archivo).
 
@@ -402,7 +408,9 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Los tests usan una base de datos temporal y no tocan tus datos. Están en
+Los tests usan una base de datos temporal y no tocan tus datos. Para pasarlos
+contra PostgreSQL: `TEST_DATABASE_URL=postgresql+psycopg://usuario@host:5432/base_vacía
+python -m pytest` (hoy: 228/228 en SQLite y en PostgreSQL 16). Están en
 `tests/unit`, `tests/integration`, `tests/agents` y `tests/workflows`. Esta
 última es la batería de evaluación de agentes: cada caso de
 `tests/workflows/scenarios/*.json` describe entrada → agentes ejecutados →
@@ -413,8 +421,16 @@ se abre el expediente de «factura sospechosa» y una persona lo aprueba.
 
 ## Actualizar una instalación existente
 
-Al arrancar, CapaFiscal añade automáticamente las columnas nuevas que falten
-en una base de datos creada con una versión anterior (sin borrar datos).
+El esquema lo gestiona **Alembic** (`backend/migrations`). Al arrancar,
+CapaFiscal aplica las migraciones que falten (`alembic upgrade head`). Una base
+creada antes de Alembic se completa como antes (tablas y columnas que falten,
+sin borrar datos) y se marca en la versión base; desde ahí recibe las
+migraciones normales. `tests/integration/test_migrations.py` comprueba que las
+migraciones dejan exactamente el esquema de los modelos y que una base antigua
+se adopta sin perder datos.
+
+Para cambiar el esquema: modifica los modelos, `cd backend && alembic revision
+--autogenerate -m "qué cambia"`, revisa el archivo generado y súbelo con el código.
 
 Si el extractor ha mejorado, en **Facturas → Reprocesar pendientes** se
 vuelven a leer todos los documentos que aún no están aprobados ni rechazados.

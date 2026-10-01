@@ -82,18 +82,10 @@ def get_db(request: Request) -> Generator[Session, None, None]:
 
 
 def create_database_tables() -> None:
-    """
-    Creación inicial para desarrollo.
+    """Deja el esquema en la última versión con las migraciones de Alembic (ver app/migrate.py)."""
+    from app.migrate import migrate
 
-    Más adelante Alembic será el responsable de crear y modificar
-    las tablas. Se mantiene esta función para poder arrancar el
-    proyecto local sin ejecutar todavía una migración.
-    """
-    from app import models  # noqa: F401
-
-    Base.metadata.create_all(bind=engine)
-    add_missing_columns()
-    migrate_legacy_automation_settings()
+    migrate()
 
 
 def migrate_legacy_automation_settings() -> int:

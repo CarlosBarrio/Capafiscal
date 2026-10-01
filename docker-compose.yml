@@ -1,4 +1,21 @@
+# CapaFiscal + PostgreSQL. El esquema lo crean y actualizan las migraciones al arrancar.
+# Para probar en local sin base de datos aparte, basta con DATABASE_URL=sqlite:///… (ver README).
 services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: capafiscal
+      POSTGRES_USER: capafiscal
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+    volumes:
+      - capafiscal-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U capafiscal -d capafiscal"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   capafiscal:
     build: ./backend
     ports:
@@ -9,10 +26,14 @@ services:
     environment:
       DATA_DIR: /data
       UPLOAD_DIR: /data/uploads
-      DATABASE_URL: sqlite:////data/capafiscal.db
+      DATABASE_URL: postgresql+psycopg://capafiscal:${POSTGRES_PASSWORD}@db:5432/capafiscal
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
       - capafiscal-data:/data
     restart: unless-stopped
 
 volumes:
   capafiscal-data:
+  capafiscal-db:

@@ -76,10 +76,7 @@ class OutlookImport(TenantMixin, Base):
     )
 
 
-OutlookImport.__table__.create(
-    bind=engine,
-    checkfirst=True,
-)
+# La tabla la crean las migraciones (app/migrate.py).
 
 
 def _settings() -> dict[str, str]:
