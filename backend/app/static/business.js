@@ -79,19 +79,14 @@
       </div>
     `;
 
-    document.getElementById("healthIndicators").innerHTML = [
-      indicator("IVA repercutido − soportado", money(health.vat_balance), `Repercutido ${money(health.vat_output)} · soportado ${money(health.vat_input)}`),
-      indicator(
-        "Periodo medio de cobro",
-        health.collection_days !== null ? `${String(health.collection_days).replace(".", ",")} días` : "—",
-        "Máximo legal entre empresas: 60 días"
-      ),
-      indicator(
-        "Periodo medio de pago",
-        health.payment_days !== null ? `${String(health.payment_days).replace(".", ",")} días` : "—"
-      ),
-      indicator("Pendiente de cobro", money(health.receivables_total), health.receivables_overdue ? `Vencido: ${money(health.receivables_overdue)}` : ""),
-      indicator("Pendiente de pago", money(health.payables_total), health.payables_overdue ? `Vencido: ${money(health.payables_overdue)}` : ""),
+    // Solo los indicadores con dato: un «0,00 €» o un «—» no ayudan a decidir nada.
+    const any = (...values) => values.some((value) => Number(value || 0) !== 0);
+    const indicators = [
+      any(health.vat_output, health.vat_input) ? indicator("IVA repercutido − soportado", money(health.vat_balance), `Repercutido ${money(health.vat_output)} · soportado ${money(health.vat_input)}`) : "",
+      health.collection_days !== null ? indicator("Periodo medio de cobro", `${String(health.collection_days).replace(".", ",")} días`, "Máximo legal entre empresas: 60 días") : "",
+      health.payment_days !== null ? indicator("Periodo medio de pago", `${String(health.payment_days).replace(".", ",")} días`) : "",
+      any(health.receivables_total) ? indicator("Pendiente de cobro", money(health.receivables_total), health.receivables_overdue ? `Vencido: ${money(health.receivables_overdue)}` : "") : "",
+      any(health.payables_total) ? indicator("Pendiente de pago", money(health.payables_total), health.payables_overdue ? `Vencido: ${money(health.payables_overdue)}` : "") : "",
       ...(health.top_expenses.length
         ? [indicator(
           "Mayor partida de gasto",
@@ -100,6 +95,7 @@
         )]
         : []),
     ].join("");
+    document.getElementById("healthIndicators").innerHTML = indicators || `<p class="board-empty">Aún no hay datos suficientes en este periodo.</p>`;
   }
 
   // Dos series (ingresos y gastos), un eje, barras finas con leyenda fija.

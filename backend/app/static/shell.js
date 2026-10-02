@@ -94,6 +94,12 @@
       .toLowerCase();
   }
 
+  // Resultados agrupados: primero los datos (expedientes, facturas, terceros, banco, impuestos…), después secciones y acciones.
+  const GROUPS = { Expediente: "Expedientes", Factura: "Facturas", Proveedor: "Terceros", Cliente: "Terceros", Movimiento: "Banco",
+    Fiscal: "Impuestos", Cierre: "Cierre", Documento: "Documentos", "Ir a": "Ir a", "Acción": "Acciones" };
+  const GROUP_ORDER = ["Expedientes", "Facturas", "Terceros", "Banco", "Impuestos", "Cierre", "Documentos", "Ir a", "Acciones"];
+  const groupOf = (item) => GROUPS[item.type] || item.type;
+
   function buildResults(query) {
     const text = normalize(query.trim());
     const matches = (value) => !text || normalize(value).includes(text);
@@ -152,8 +158,8 @@
                   run: () => { window.activateTab("equipo"); window.openEmployee?.(person.id); } });
     }
 
-    // Los objetos del negocio primero; las secciones y acciones, después.
-    const order = (item) => (item.type === "Ir a" || item.type === "Acción" ? 1 : 0);
+    // Los objetos del negocio primero, agrupados; las secciones y acciones, después.
+    const order = (item) => { const index = GROUP_ORDER.indexOf(groupOf(item)); return index < 0 ? GROUP_ORDER.length - 2 : index; };
     return list.sort((a, b) => order(a) - order(b)).slice(0, 18);
   }
 
@@ -186,8 +192,8 @@
 
     let lastType = null;
     container.innerHTML = results.map((item, index) => {
-      const header = item.type !== lastType ? `<p class="palette-group">${esc(item.type)}</p>` : "";
-      lastType = item.type;
+      const header = groupOf(item) !== lastType ? `<p class="palette-group">${esc(groupOf(item))}</p>` : "";
+      lastType = groupOf(item);
       return `
         ${header}
         <button type="button" class="palette-item ${index === selectedIndex ? "selected" : ""}" data-index="${index}">

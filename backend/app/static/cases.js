@@ -212,7 +212,13 @@
       badge.textContent = data.counts.waiting_human;
       badge.classList.toggle("hidden", !data.counts.waiting_human);
     }
-    const set = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
+    // Una línea, sin ceros: solo lo que hay.
+    const set = (id, value) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.textContent = value;
+      element.closest("li")?.classList.toggle("hidden", !value);
+    };
     set("casesWaiting", data.counts.waiting_human);
     set("casesDocs", data.counts.waiting_docs);
     set("casesReady", data.counts.ready_to_file);
@@ -223,8 +229,6 @@
       home.innerHTML = data.board ? boardHtml(data.board, data.pulse) : briefingHtml(data, true);
       home.classList.remove("hidden");
     }
-    const card = document.getElementById("briefingCard");
-    if (card) card.innerHTML = briefingHtml(data, false);
   }
 
   function openBriefingItem(index) {
@@ -276,7 +280,6 @@
           <span class="case-side">
             <span class="status-pill ${STATUS_CLASS[item.status] || "status-neutral"}">${esc(item.status_label)}</span>
             ${item.kind === "NOTIFICATION" ? `<span class="case-deadline ${item.days_left !== null && item.days_left <= 3 ? "is-urgent" : ""}"><strong>${esc(big)}</strong><small>${esc(small)}</small></span>` : ""}
-            <span class="case-score" title="Prioridad calculada por el Director">${item.priority}</span>
           </span>
         </button>
       `;
@@ -905,7 +908,6 @@
     document.querySelectorAll("#caseViews .segment").forEach((item) => item.classList.toggle("active", item.dataset.view === name));
     const panel = ["agents", "memory"].includes(name) ? name : "list";
     document.querySelectorAll(".case-view").forEach((item) => item.classList.toggle("hidden", item.dataset.caseView !== panel));
-    document.getElementById("briefingCard").classList.toggle("hidden", panel !== "list" || name !== "open");
     if (name === "agents") loadAgents().catch((error) => window.showMessage(error.message, "error"));
     else if (panel === "list") loadList().catch((error) => window.showMessage(error.message, "error"));
   }

@@ -17,9 +17,11 @@ diseño sirven para elevarlo poco a poco, no para sustituirlo.
 interfaz existente → detectar un problema concreto → aplicar la skill → mínima mejora necesaria → comprobar regresiones
 ```
 
-- Skills de diseño del proyecto en `.agents/skills/`. Léelas antes de tocar su ámbito:
-  `emil-design-eng` (revisión general), `mobile-native` (responsive), `review-animations` /
-  `improve-animations` (motion), `prototype` (pantallas nuevas).
+- Skills de diseño del proyecto en `.claude/skills/`. Léelas antes de tocar su ámbito:
+  `frontend-design` (dirección y lenguaje), `emil-design-eng` (revisión general), `mobile-native`
+  (responsive), `review-animations` / `improve-animations` (motion), `prototype` (pantallas nuevas).
+- Regla de poda: «¿Esto ayuda a decidir o a terminar trabajo? Si no, se va». Sin etiquetas en
+  mayúsculas sobre el contenido, sin ceros que no informan, sin degradados ni desenfoques.
 - No rediseñar pantallas completas ni cambiar componentes que funcionan por preferencia estética.
 - No cambiar APIs, backend, agentes ni modelos de datos en un trabajo de frontend salvo que se pida.
 - Revisar cómo está implementado algo antes de modificarlo; reutilizar tokens y componentes.

@@ -43,7 +43,8 @@ GROUPS = (
     ("resuelto", "Resuelto"),
 )
 MIN_UNJUSTIFIED = Decimal("50")
-STALE_BANK_DAYS = 7  # un extracto con más de una semana sin movimientos se pide
+STALE_BANK_DAYS = 7
+COMPLIANCE_HORIZON_DAYS = 30  # un cumplimiento entra en Hoy cuando faltan 30 días o menos  # un extracto con más de una semana sin movimientos se pide
 
 
 def eur(value: Any) -> str:
@@ -189,6 +190,8 @@ def decisions(database: Session, today: date, cases: list[Any]) -> list[dict[str
     for request in database.scalars(select(DocumentRequest).where(DocumentRequest.status == "PENDING")).all():
         asked.setdefault(request.case_id, []).append(request.label)
     for message in drafts:
+        if message.kind == "DIGEST":
+            continue  # el resumen diario es para ti, no un trabajo: si le falta destinatario, se ve en Automatizaciones
         wanted = asked.get(message.entity_id, []) if message.entity_type == "case_request" else []
         pedido = f"Pide: {', '.join(wanted[:3])}{'…' if len(wanted) > 3 else ''}. " if wanted else ""
         rows.append(item("accion", "outbox", message.id, f"Enviar: {message.subject}", f"{pedido}Redactado por CapaFiscal para {message.to_name or message.to_email or 'sin destinatario'}: espera tu visto bueno.",
@@ -340,7 +343,8 @@ def agenda_items(database: Session, today: date, taken: set[str]) -> list[dict[s
             else:
                 rows.append(item("accion", "collect", entry["entity_id"], entry["title"], f"{entry['detail']} ({when}): reclámalo.",
                                  action={"label": "Reclamar", "tab": "ventas", "view": "cobros"}, amount=entry["amount"], score=45, when=entry["date"]))
-        elif entry["kind"] == "compliance":
+        elif entry["kind"] == "compliance" and (days <= COMPLIANCE_HORIZON_DAYS or entry["level"] in ("overdue", "critical")):
+            # Un cumplimiento a meses vista (Verifactu en 2027) vive en Cumplimiento; Hoy lo trae cuando se acerca.
             rows.append(item("accion" if entry["level"] in ("overdue", "critical") else "falta", "compliance", entry["entity_id"], entry["title"],
                              entry["detail"], action={"label": "Revisar", "tab": "cumplimiento"}, score=40 if entry["level"] == "overdue" else 25,
                              when=entry["date"]))

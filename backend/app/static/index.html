@@ -15,7 +15,7 @@
   >
   <link
     rel="stylesheet"
-    href="/static/style.css?v=108"
+    href="/static/style.css?v=110"
   >
 </head>
 <body>
@@ -93,7 +93,7 @@
       <div class="nav-group">
         <p class="nav-group-label">Operación</p>
         <button type="button" class="nav-tab" data-tab="facturas">
-          <svg class="icon"><use href="#i-file"/></svg><span class="nav-label">Facturas recibidas</span><span class="tab-count" id="cntFacturas">0</span>
+          <svg class="icon"><use href="#i-file"/></svg><span class="nav-label">Facturas recibidas</span><span class="tab-count hidden" id="cntFacturas">0</span>
         </button>
         <button type="button" class="nav-tab" data-tab="ventas">
           <svg class="icon"><use href="#i-invoice"/></svg><span class="nav-label">Ventas y cobros</span><span class="tab-count tab-count-alert hidden" id="cntOverdue">0</span>
@@ -132,7 +132,7 @@
           <svg class="icon"><use href="#i-plug"/></svg><span class="nav-label">Conectores</span>
         </button>
         <button type="button" class="nav-tab" data-tab="actividad">
-          <svg class="icon"><use href="#i-activity"/></svg><span class="nav-label">Actividad</span><span class="tab-count" id="cntActivity">0</span>
+          <svg class="icon"><use href="#i-activity"/></svg><span class="nav-label">Actividad</span><span class="tab-count hidden" id="cntActivity">0</span>
         </button>
         <button type="button" class="nav-tab" data-tab="empresa">
           <svg class="icon"><use href="#i-building"/></svg><span class="nav-label">Mi empresa</span>
@@ -253,10 +253,10 @@
   <section class="tab-panel" id="tab-facturas">
     <div class="section-title">
       <h1>Facturas</h1>
-      <p>
-        Documentos recibidos, extraídos, revisados y aprobados.
-      </p>
+      <p>Lo que hay que revisar primero; el archivo completo en «Todas».</p>
     </div>
+
+    <div class="segmented invoice-views" id="invoiceViews" role="group" aria-label="Vista de facturas"></div>
 
     <div class="card filter-card">
       <form class="filter-toolbar" id="invoiceFilters">
@@ -308,6 +308,7 @@
           </select>
         </label>
         <button type="reset" class="btn-ghost">Limpiar</button>
+        <button type="button" class="link-button filters-toggle" id="invoiceMoreFilters" aria-expanded="false">Más filtros</button>
       </form>
       <div class="filter-footer">
         <p class="filter-summary" id="invoiceFilterSummary"></p>
@@ -549,11 +550,6 @@
           <button type="button" class="segment" data-open="false">Todas</button>
         </div>
       </div>
-      <p class="detail-hint">
-        Sube el PDF de la notificación con «Subir documentos»: el agente la
-        reconoce, calcula el plazo y crea una tarea. También puedes
-        registrarla a mano si solo has visto el aviso en DEHú o en la sede.
-      </p>
       <div id="notificationList" class="aeat-list"></div>
     </div>
 
@@ -599,33 +595,15 @@
   <section class="tab-panel" id="tab-expedientes">
     <div class="section-title">
       <h1>Expedientes</h1>
-      <p>Cada notificación llega aquí ya trabajada por los agentes: a quién afecta, qué piden, qué documentos están preparados, qué falta y el borrador de respuesta. Tú revisas y apruebas.</p>
+      <p>Cada notificación llega preparada: qué piden, qué documentos hay y el borrador de respuesta. Tú revisas y apruebas.</p>
     </div>
 
-    <div id="briefingCard" class="briefing-card"></div>
-
-    <div class="kpi-row">
-      <div class="kpi kpi-risk">
-        <span class="kpi-label">esperan tu revisión</span>
-        <span class="kpi-value" id="casesWaiting">0</span>
-        <span class="kpi-foot">con todo preparado</span>
-      </div>
-      <div class="kpi">
-        <span class="kpi-label">esperando documentación</span>
-        <span class="kpi-value" id="casesDocs">0</span>
-        <span class="kpi-foot">el perseguidor insiste por ti</span>
-      </div>
-      <div class="kpi kpi-result">
-        <span class="kpi-label">listos para presentar</span>
-        <span class="kpi-value" id="casesReady">0</span>
-        <span class="kpi-foot">escrito aprobado</span>
-      </div>
-      <div class="kpi">
-        <span class="kpi-label">anomalías abiertas</span>
-        <span class="kpi-value" id="casesAnomalies">0</span>
-        <span class="kpi-foot">detectadas en facturas y banco</span>
-      </div>
-    </div>
+    <ul class="hoy-summary cases-summary" aria-live="polite">
+      <li class="state-red hidden"><span class="board-dot"></span><strong id="casesWaiting">0</strong> esperan tu revisión</li>
+      <li class="hidden"><span class="board-dot"></span><strong id="casesDocs">0</strong> esperan documentación</li>
+      <li class="state-done hidden"><span class="board-dot"></span><strong id="casesReady">0</strong> listos para presentar</li>
+      <li class="state-orange hidden"><span class="board-dot"></span><strong id="casesAnomalies">0</strong> anomalías abiertas</li>
+    </ul>
 
     <div class="view-switch">
       <div class="segmented" id="caseViews">
@@ -1713,7 +1691,7 @@
     <button type="button" class="segment active" data-pane="resumen">Resumen</button>
     <button type="button" class="segment" data-pane="documentacion">Documentación</button>
     <button type="button" class="segment" data-pane="respuesta">Respuesta</button>
-    <button type="button" class="segment" data-pane="traza">Traza de agentes</button>
+    <button type="button" class="segment" data-pane="traza">Cómo se ha preparado</button>
     <button type="button" class="segment" data-pane="historial">Historial</button>
   </div>
   <div class="case-pane" data-pane="resumen" id="casePaneSummary"></div>
@@ -1934,27 +1912,27 @@
 <div id="appMessages" class="app-messages"></div>
 
 <script src="/static/auth.js?v=3"></script>
-<script src="/static/app.js?v=66"></script>
+<script src="/static/app.js?v=68"></script>
 <script src="/static/reports.js?v=3"></script>
 <script src="/static/assistant.js?v=3"></script>
-<script src="/static/activity.js?v=3"></script>
-<script src="/static/business.js?v=8"></script>
+<script src="/static/activity.js?v=4"></script>
+<script src="/static/business.js?v=9"></script>
 <script src="/static/taxes.js?v=3"></script>
-<script src="/static/notifications.js?v=1"></script>
+<script src="/static/notifications.js?v=2"></script>
 <script src="/static/compliance.js?v=1"></script>
 <script src="/static/company.js?v=3"></script>
 <script src="/static/team.js?v=1"></script>
 <script src="/static/payroll.js?v=2"></script>
-<script src="/static/cases.js?v=9"></script>
+<script src="/static/cases.js?v=11"></script>
 <script src="/static/sales.js?v=2"></script>
-<script src="/static/outbox.js?v=3"></script>
+<script src="/static/outbox.js?v=4"></script>
 <script src="/static/timesheet.js?v=3"></script>
 <script src="/static/automations.js?v=4"></script>
 <script src="/static/intelligence.js?v=1"></script>
 <script src="/static/close.js?v=3"></script>
-<script src="/static/work.js?v=10"></script>
+<script src="/static/work.js?v=11"></script>
 <script src="/static/accounting.js?v=2"></script>
 <script src="/static/bankconnect.js?v=1"></script>
-<script src="/static/shell.js?v=8"></script>
+<script src="/static/shell.js?v=9"></script>
 </body>
 </html>

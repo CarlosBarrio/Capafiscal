@@ -69,7 +69,7 @@
       container.innerHTML = window.emptyState(
         "🏛️",
         onlyOpen ? "Sin notificaciones abiertas" : "Sin notificaciones",
-        "Cuando subas una notificación de AEAT, Seguridad Social u otro organismo aparecerá aquí con su plazo."
+        "Sube el PDF con «Subir documentos»: CapaFiscal la reconoce y calcula el plazo. Si solo has visto el aviso en DEHú o en la sede, regístrala a mano abajo."
       );
       return;
     }

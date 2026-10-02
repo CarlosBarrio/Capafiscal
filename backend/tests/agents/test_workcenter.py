@@ -106,3 +106,21 @@ def test_each_decision_explains_itself_and_nothing_appears_twice(client):
     assert payment_case["proposal"] and payment_case["you"] == "Aprobar, corregir o descartar"
     # El mismo pago ya no sale también como «falta información»: tiene su expediente.
     assert not [item for item in by_key["falta"]["items"] if item["kind"] == "bank_unjustified" and "2.350,00" in item["why"]]
+
+
+def test_today_leaves_out_what_is_not_work(client):
+    """El resumen diario sin destinatario es configuración (Automatizaciones) y Verifactu a meses vista vive en
+    Cumplimiento: ninguno de los dos es trabajo de hoy."""
+    from app.database import SessionLocal
+    from app.models import OutboxMessage
+
+    client.put("/api/company", json={"name": "Taller Simulado S.L.", "tax_id": "B00100016", "legal_form": "SOCIEDAD"})
+    with SessionLocal() as database:
+        database.info["tenant_id"] = 0
+        database.add(OutboxMessage(kind="DIGEST", subject="Tu resumen de hoy", body="…", status="DRAFT", entity_type="digest", entity_id=1))
+        database.commit()
+    by_key = groups(client.get("/api/work").json())
+    everything = [item for group in by_key.values() for item in group["items"]]
+    assert not [item for item in everything if item["kind"] == "outbox"]
+    assert not [item for item in everything if item["kind"] == "compliance" and "Verifactu" in item["title"]]
+    assert client.get("/api/outbox", params={"status": "DRAFT"}).json()["messages"]  # sigue en la Bandeja de salida

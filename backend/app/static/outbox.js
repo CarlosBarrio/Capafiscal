@@ -71,7 +71,7 @@
   function renderBanner() {
     document.getElementById("smtpBanner").innerHTML = smtp
       ? ""
-      : `<div class="info-banner">${window.icon("mail")}<span><strong>Envío con tu propio correo.</strong> Sin servidor SMTP configurado, cada mensaje se descarga como borrador (.eml) con los adjuntos puestos: ábrelo y Outlook o Thunderbird lo deja listo para pulsar «Enviar». Después márcalo como enviado. Para enviar desde aquí, añade <code>SMTP_HOST</code> en el archivo <code>.env</code>.</span></div>`;
+      : `<div class="info-banner">${window.icon("mail")}<span>Sin servidor de correo: cada mensaje se descarga listo para enviarlo desde tu correo; después márcalo como enviado.</span></div>`;
   }
 
   function renderList() {

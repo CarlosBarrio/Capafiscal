@@ -346,7 +346,10 @@ async function loadDocuments() {
     renderRecentDocuments(documentsCache);
     renderOpenRisks(documentsCache);
 
-    setText("cntFacturas", String(documentsCache.length));
+    // El menú solo cuenta lo que pide acción: facturas por revisar (sin «0» si no hay ninguna).
+    const toReview = documentsCache.filter((doc) => doc.invoice?.review_status === "PENDING").length;
+    setText("cntFacturas", String(toReview));
+    document.getElementById("cntFacturas")?.classList.toggle("hidden", !toReview);
 
     await loadFilteredDocuments();
     return documentsCache;
@@ -405,6 +408,17 @@ function setupInvoiceFilters() {
     event.preventDefault();
     loadFilteredDocuments();
   });
+  document.getElementById("invoiceMoreFilters")?.addEventListener("click", (event) => {
+    const open = form.closest(".filter-card").classList.toggle("filters-open");
+    event.currentTarget.setAttribute("aria-expanded", String(open));
+  });
+  document.getElementById("invoiceViews")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-invoice-view]");
+    if (!button) return;
+    invoiceView = button.dataset.invoiceView;
+    form.reset();
+    loadFilteredDocuments();
+  });
 }
 
 function invoiceFilterParams() {
@@ -436,10 +450,14 @@ async function loadFilteredDocuments() {
   const summary = document.getElementById("invoiceFilterSummary");
 
   if (![...params.keys()].length) {
-    renderDocuments(documentsCache);
-    if (summary) summary.textContent = `${documentsCache.length} documento(s).`;
+    renderInvoiceViews();
+    const view = INVOICE_VIEWS[invoiceView] || INVOICE_VIEWS.all;
+    const shown = documentsCache.filter(view.test);
+    renderDocuments(shown, invoiceView !== "all");
+    if (summary) summary.textContent = `${shown.length} de ${documentsCache.length} documento(s).`;
     return;
   }
+  document.querySelectorAll("#invoiceViews .segment").forEach((item) => item.classList.remove("active"));  // con filtros manda el formulario
 
   params.set("limit", "500");
 
@@ -464,7 +482,7 @@ function renderDocuments(documents, filtered = false) {
 
   if (!documents.length) {
     container.innerHTML = filtered
-      ? emptyState("🔍", "Sin resultados", "Ningún documento coincide con los filtros.")
+      ? emptyState("check", "Nada aquí", "Ninguna factura en esta vista.")
       : emptyState("📄", "Todavía no hay documentos", "Sube o arrastra una factura PDF para comenzar.");
     return;
   }
@@ -484,100 +502,66 @@ function renderRecentDocuments(documents) {
   container.innerHTML = documents.slice(0, 5).map(realDocumentCard).join("");
 }
 
+/* Una factura, una fila: tercero, número y fecha, estado, importe y una sola acción.
+   La lectura (confianza) solo aparece si es baja; el origen y el resto de campos están en el detalle. */
 function realDocumentCard(documentItem) {
   const invoice = documentItem.invoice || {};
   const documentId = Number(documentItem.id);
-  const invoiceId = Number(invoice.id);
   const confidence = Number(invoice.confidence || 0);
-
-  const reviewRequired = requiresReview(documentItem);
-  const canReview = Boolean(invoice.id && !["APPROVED", "REJECTED"].includes(documentItem.status));
-  const payment = paymentInfo(invoice);
-
-  let sourceLabel = "";
-  if (documentItem.source === "manual_upload") sourceLabel = "Carga manual";
-  else if (["outlook", "outlook_graph", "email"].includes(documentItem.source)) sourceLabel = "Outlook";
-
-  if (documentItem.kind === "NOTIFICATION") return notificationDocumentCard(documentItem, sourceLabel);
+  if (documentItem.kind === "NOTIFICATION") return notificationDocumentCard(documentItem, "");
 
   const issued = invoice.direction === "ISSUED";
   const partyName = issued ? invoice.customer_name : invoice.supplier_name;
-  const directionTag = invoice.id
-    ? `<span class="direction-tag ${issued ? "direction-issued" : "direction-received"}">${issued ? "Emitida" : "Recibida"}</span>`
-    : "";
+  const pending = invoice.review_status === "PENDING" || requiresReview(documentItem);
+  const payment = paymentInfo(invoice);
+  const issue = invoiceIssue(documentItem);
+  const state = invoice.review_status === "REJECTED" ? { label: "Rechazada", className: "status-danger" }
+    : pending ? { label: "Por revisar", className: "status-warning" } : payment;
+  const meta = [invoice.invoice_number || "s/n", invoice.invoice_date ? formatDay(invoice.invoice_date) : null, issued ? "emitida" : null].filter(Boolean).join(" · ");
 
   return `
-  <article class="document-card ${reviewRequired ? "needs-review" : ""}">
-    <div class="document-top">
-      <div>
-        <p class="doc-type">
-          ${directionTag}
-          ${escapeHtml(invoice.category || (invoice.id ? "Factura" : "Documento sin clasificar"))}
-          ${sourceLabel ? `<span class="source-tag">${escapeHtml(sourceLabel)}</span>` : ""}
-        </p>
-        <h3>${escapeHtml(partyName || (issued ? "Cliente sin identificar" : "Proveedor sin identificar"))}</h3>
-        <p class="filename">${escapeHtml(documentItem.original_filename || "Sin nombre")}</p>
-      </div>
-
-      <div class="badges">
-        <span class="priority-pill ${reviewRequired ? "priority-high" : "priority-low"}">
-          ${reviewRequired ? "Revisar" : "Normal"}
-        </span>
-        <span class="status-pill ${statusClass(documentItem.status)}">
-          ${escapeHtml(translateStatus(documentItem.status))}
-        </span>
-        ${payment ? `<span class="status-pill ${payment.className}">${escapeHtml(payment.label)}</span>` : ""}
-      </div>
+  <article class="invoice-row ${pending ? "needs-review" : ""}">
+    <div class="invoice-row-main">
+      <strong>${escapeHtml(partyName || (invoice.id ? (issued ? "Cliente sin identificar" : "Proveedor sin identificar") : documentItem.original_filename || "Documento"))}</strong>
+      <span class="muted">${escapeHtml(meta)}</span>
+      ${issue ? `<span class="invoice-row-issue">${escapeHtml(issue)}</span>` : ""}
+      ${invoice.id && confidence && confidence < 80 ? `<span class="invoice-row-issue">Lectura dudosa (${confidence} %)</span>` : ""}
     </div>
-
-    <div class="document-grid">
-      <div>
-        <span>Número</span>
-        <strong>${escapeHtml(invoice.invoice_number || "—")}</strong>
-      </div>
-      <div>
-        <span>Fecha</span>
-        <strong>${formatDay(invoice.invoice_date)}</strong>
-      </div>
-      <div>
-        <span>Importe</span>
-        <strong>${formatMoney(invoice.total, invoice.currency)}</strong>
-      </div>
-      <div>
-        <span>Confianza</span>
-        <strong class="${confidenceClass(confidence)}">${confidence}%</strong>
-      </div>
-    </div>
-
-    <div class="card-actions">
-      <button class="btn-ghost" type="button" data-call="showDetail" data-args="${documentId}">
-        Ver detalle
-      </button>
-
-      <a
-        class="btn-ghost"
-        href="/api/documents/${documentId}/file"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Abrir archivo
-      </a>
-
-      ${
-        canReview
-          ? `
-            <button class="act-btn act-primary" type="button" data-call="approveInvoice" data-args="${invoiceId}, ${documentId}, this">
-              Aprobar
-            </button>
-            <button class="act-btn act-danger" type="button" data-call="rejectInvoice" data-args="${invoiceId}, ${documentId}">
-              Rechazar
-            </button>
-          `
-          : ""
-      }
-    </div>
+    ${state ? `<span class="status-pill ${state.className}">${escapeHtml(state.label)}</span>` : "<span></span>"}
+    <span class="invoice-row-amount">${invoice.total !== null && invoice.total !== undefined ? formatMoney(invoice.total, invoice.currency) : "—"}</span>
+    <button class="${pending ? "act-btn act-primary" : "btn-ghost"}" type="button" data-call="showDetail" data-args="${documentId}">${pending ? "Revisar" : "Ver"}</button>
   </article>
   `;
+}
+
+/* Qué tiene de raro esta factura, en pocas palabras (o nada). */
+function invoiceIssue(documentItem) {
+  const invoice = documentItem.invoice || {};
+  if (!invoice.id) return documentItem.extraction_status === "FAILED" ? "No se pudo leer" : "";
+  if (invoice.duplicate_status && invoice.duplicate_status !== "NONE") return "Posible duplicado";
+  if (invoice.validation_status && invoice.validation_status !== "VALID") return "Los importes no cuadran";
+  if (!invoice.supplier_tax_id && invoice.direction !== "ISSUED") return "Sin NIF del proveedor";
+  return "";
+}
+
+/* Vistas rápidas por estado de trabajo, sobre lo ya cargado (sin pedir nada al servidor). */
+const INVOICE_VIEWS = {
+  review: { label: "Para revisar", test: (doc) => doc.kind !== "NOTIFICATION" && (doc.invoice?.review_status === "PENDING" || requiresReview(doc)) },
+  issues: { label: "Con incidencias", test: (doc) => doc.kind !== "NOTIFICATION" && Boolean(invoiceIssue(doc)) },
+  unpaid: { label: "Sin pagar", test: (doc) => doc.invoice?.review_status === "APPROVED" && !doc.invoice?.paid_at },
+  all: { label: "Todas", test: () => true },
+};
+let invoiceView = null;
+
+function renderInvoiceViews() {
+  const bar = document.getElementById("invoiceViews");
+  if (!bar) return;
+  const counts = Object.fromEntries(Object.entries(INVOICE_VIEWS).map(([key, view]) => [key, documentsCache.filter(view.test).length]));
+  if (!invoiceView) invoiceView = counts.review ? "review" : "all";
+  bar.innerHTML = Object.entries(INVOICE_VIEWS)
+    .filter(([key]) => key === "all" || key === invoiceView || counts[key])
+    .map(([key, view]) => `<button type="button" class="segment ${key === invoiceView ? "active" : ""}" data-invoice-view="${key}">${escapeHtml(view.label)} <span class="segment-count">${counts[key]}</span></button>`)
+    .join("");
 }
 
 function notificationDocumentCard(documentItem, sourceLabel) {

@@ -423,7 +423,8 @@
         }
 
         if (counterElement) {
-            counterElement.textContent = String(events.length);
+            // Actividad es un registro, no una tarea: el menú no le pone contador.
+            counterElement.classList.add("hidden");
         }
     }
 
