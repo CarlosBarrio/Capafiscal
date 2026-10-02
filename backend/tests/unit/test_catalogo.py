@@ -82,3 +82,25 @@ def test_claude_is_not_scored_on_fields_it_does_not_produce(tmp_path, monkeypatc
     dataset.cases = [case for case in dataset.cases if case.id == "ambiguo_presupuesto"]
     claude = run(dataset, ["claude"])["engines"]["claude"]
     assert claude["rows"][0]["checks"] == {}
+
+
+def test_rows_without_any_check_are_not_evaluated_and_leave_the_denominator(monkeypatch):
+    """all({}) es True: sin esta regla, los 6 documentos que no son factura contarían como aciertos de Claude
+    sin haberse evaluado nada. Reglas e híbrido sí los evalúan (¿es factura?) y no cambian."""
+    from app.agents import llm
+    from evaluation.core import to_markdown
+
+    monkeypatch.setattr(llm, "available", lambda: True)
+    monkeypatch.setattr(llm, "extract_invoice", lambda **kwargs: ({key: "" for key in llm.INVOICE_FIELDS}, {"model": "simulado"}))
+    report = run(load_dataset(CATALOG), ["reglas", "claude", "hibrido"])
+    claude, rules, hybrid = (report["engines"][name] for name in ("claude", "reglas", "hibrido"))
+
+    no_checks = [row for row in claude["rows"] if not row["checks"]]
+    assert len(no_checks) == 6 and not any(row["perfect"] or row["evaluated"] for row in no_checks)
+    assert claude["evaluable"] + claude["not_evaluated"] == claude["docs"] == 22 and claude["not_evaluated"] == 6
+    assert claude["correct"] + claude["incorrect"] == claude["evaluable"] and claude["perfect"] == claude["correct"]
+    assert claude["accuracy"] == round(claude["correct"] / claude["evaluable"], 3)
+    for engine in (rules, hybrid):
+        assert engine["not_evaluated"] == 0 and engine["evaluable"] == 22 and all(row["evaluated"] for row in engine["rows"])
+    markdown = to_markdown(report)
+    assert "Casos no evaluables" in markdown and "% de acierto sobre evaluables" in markdown

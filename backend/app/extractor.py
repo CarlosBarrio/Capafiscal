@@ -164,11 +164,33 @@ NAME_REJECT_WORDS = (
     "vencimiento",
     "pagina",
 )
-# Palabras completas: «numero» rechaza «Número: 12», no «Asesoría Números Claros»; «cif» no rechaza «Pacífico»
-# ni «nif» «Uniformes». Los fragmentos de URL y correo sí se buscan como subcadena.
-NAME_REJECT_PATTERN = re.compile(
-    "|".join(re.escape(word) if not word[-1].isalnum() or "-" in word else rf"\b{re.escape(word)}\b" for word in NAME_REJECT_WORDS)
+# Cuándo una línea es una etiqueta y no un nombre, por su forma y no por una lista cada vez más larga:
+#   - una URL o un correo nunca es un nombre;
+#   - las frases de varias palabras («forma de pago», «registro mercantil») y una etiqueta seguida de «:» tampoco;
+#   - las palabras de etiqueta cuentan con sus derivados («fechas», «facturación», «números», «importes»), salvo
+#     que la línea lleve forma jurídica: «Asesoría Números Claros S.L.» o «Facturas y Servicios S.L.» son empresas.
+# Las palabras cortas («cif», «nif», «iban»…) solo cuentan enteras: «Pacífico» o «Uniformes» no son etiquetas.
+URL_OR_EMAIL = re.compile(r"://|\bwww\.|@")
+BARE_DOMAIN = re.compile(r"\b[a-z0-9-]+\.(?:es|com|net|org|eu|cat|info)\b")  # «empresa.es»; «Ejemplo.com S.L.» sí es nombre
+LEGAL_FORM = re.compile(
+    r"\b(?:s\.?\s?l\.?(?:\s?u\.?)?|s\.?\s?a\.?(?:\s?u\.?)?|s\.?\s?c\.?(?:\s?p\.?)?|s\.?\s?coop\.?|c\.?\s?b\.?"
+    r"|sociedad\s+(?:limitada|anonima|cooperativa)|slu|sau|slp)(?=\W|$)"
 )
+NAME_REJECT_PHRASES = tuple(word for word in NAME_REJECT_WORDS if " " in word or not word[-1].isalnum() or "-" in word)
+NAME_REJECT_STEMS = tuple(word for word in NAME_REJECT_WORDS if word not in NAME_REJECT_PHRASES)
+LABEL_WITH_COLON = re.compile(r"\b(?:" + "|".join(re.escape(word) for word in NAME_REJECT_STEMS) + r")\w*\s*:")
+LABEL_WORD = re.compile(
+    r"\b(?:" + "|".join(re.escape(word) + (r"\w*" if len(word) >= 5 else r"\b") for word in NAME_REJECT_STEMS) + r")"
+)
+
+
+def label_like(normalized: str) -> bool:
+    """La línea (ya normalizada) es una URL, un correo, una etiqueta o un campo, no el nombre de una empresa."""
+    if URL_OR_EMAIL.search(normalized) or (BARE_DOMAIN.search(normalized) and not LEGAL_FORM.search(normalized)):
+        return True
+    if any(phrase in normalized for phrase in NAME_REJECT_PHRASES) or LABEL_WITH_COLON.search(normalized):
+        return True
+    return bool(LABEL_WORD.search(normalized)) and not LEGAL_FORM.search(normalized)
 
 
 @dataclass
@@ -1085,7 +1107,7 @@ def looks_like_company_name(line: str) -> bool:
     if looks_like_address(cleaned):
         return False
 
-    if NAME_REJECT_PATTERN.search(normalized):
+    if label_like(normalized):
         return False
 
     if DATE_PATTERN.search(cleaned):
@@ -2474,7 +2496,7 @@ def detect_invoice_likelihood(
     score = min(score, 100)
 
     # Un presupuesto, un albarán, una proforma o un pedido llevan IVA y total, pero no son facturas:
-    # si su título lo dice y ninguna línea se titula «factura», no se registra como gasto.
+    # si la cabecera lleva ese título y nada la identifica como factura, no se registra como gasto.
     kind = non_invoice_title(text)
     if kind:
         signals.append(f"not_invoice:{kind}")
@@ -2483,29 +2505,53 @@ def detect_invoice_likelihood(
     return score >= 45, score, signals
 
 
-NON_INVOICE_TITLES = (
-    ("proforma", re.compile(r"^\s*(?:factura\s+)?pro\s*-?\s*forma\b", re.IGNORECASE)),
-    ("presupuesto", re.compile(r"^\s*(?:presupuesto|oferta\s+comercial)\b", re.IGNORECASE)),
-    ("albarán", re.compile(r"^\s*(?:albar[aá]n|nota\s+de\s+entrega)\b", re.IGNORECASE)),
+# Títulos de documentos que llevan IVA y total pero no son facturas. Se reconocen por la FORMA de la línea:
+# la palabra encabeza la línea y solo la sigue su número, una fecha o un paréntesis («ALBARÁN Nº AE-55120»,
+# «PRESUPUESTO Nº P-1 (no es una factura)»). No son títulos: un campo («Albarán: 4471»), una columna
+# («Albarán  Fecha  Importe») ni una frase («Presupuesto nº 88 aceptado»).
+TITLE_TAIL = (
+    r"(?:\s+(?:n\.?[o°º]\.?|num(?:ero)?\.?|#)\s*:?)?"                 # «Nº», «Núm.», «#»
+    r"(?:\s*(?=[\w/.\-]*\d)[\w/.\-]+)?"                                # el número, con al menos una cifra
+    r"(?:\s+(?:de\s+)?(?:fecha\s*:?\s*)?\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})?"  # una fecha
+    r"(?:\s*\([^)]*\))?\s*$"                                           # «(no es una factura)»
 )
-INVOICE_TITLE = re.compile(r"^\s*factura\b(?!\s*pro\s*-?\s*forma)", re.IGNORECASE)
+NON_INVOICE_TITLES = tuple(
+    (kind, re.compile(rf"^\s*(?:{head}){TITLE_TAIL}"))
+    for kind, head in (
+        ("proforma", r"(?:factura\s+)?pro\s*-?\s*forma"),
+        ("presupuesto", r"presupuesto|oferta(?:\s+comercial)?|cotizacion"),
+        ("albarán", r"albaran(?:\s+(?:de\s+entrega|valorado))?|nota\s+de\s+entrega"),
+        ("pedido", r"(?:(?:nota|orden|hoja)\s+de\s+)?pedido"),
+    )
+)
+INVOICE_TITLE = re.compile(
+    r"^\s*(?:albaran\s*-\s*)?factura(?:\s*-\s*albaran|\s+(?:simplificada|rectificativa|completa|original|duplicado|copia"
+    rf"|recapitulativa|de\s+(?:venta|servicios|compra|abono)))*{TITLE_TAIL}"
+)
+# «Nº de factura: F-12», «Número factura 77», «Factura nº 12»: el documento se identifica como factura.
+INVOICE_NUMBER_FIELD = re.compile(r"\b(?:n\.?[o°º]\.?|num(?:ero)?\.?)\s*(?:de\s+)?factura\b|\bfactura\s+n\.?[o°º]")
+SPACED_LETTERS = re.compile(r"\b(?:[a-z] ){3,}[a-z]\b")
+
+
+def title_text(line: str) -> str:
+    """Minúsculas, sin tildes y con las letras espaciadas juntas («F A C T U R A» → «factura»)."""
+    folded = "".join(char for char in unicodedata.normalize("NFKD", line.lower()) if not unicodedata.combining(char))
+    return SPACED_LETTERS.sub(lambda match: match.group(0).replace(" ", ""), folded)
 
 
 def non_invoice_title(text: str, head_lines: int = 25) -> str | None:
-    """«presupuesto», «albarán» o «proforma» si el PRIMER título de la cabecera es ese (y no «Factura»).
+    """«proforma», «presupuesto», «albarán» o «pedido» si la cabecera tiene ese título y nada la identifica como factura.
 
-    Manda el primer título: una factura que cita «Albarán nº 12» o «Presupuesto aceptado» más abajo sigue
-    siendo factura. «Pedido» no se usa: muchas facturas llevan «Pedido: 4500123» como referencia."""
-    for line in [line for line in (text or "").splitlines() if line.strip()][:head_lines]:
-        if INVOICE_TITLE.search(line) and not NON_INVOICE_TITLES[0][1].search(line):
-            return None
+    Identifica como factura un título de factura («FACTURA Nº 12», «F A C T U R A», «Factura simplificada») o el
+    campo de su número («Nº de factura: F-12»), esté donde esté en la cabecera: una factura que lleva
+    «Albarán: 4471» o «Pedido nº 45» encima de su título sigue siendo factura."""
+    lines = [title_text(line) for line in (text or "").splitlines() if line.strip()][:head_lines]
+    if any(INVOICE_TITLE.match(line) or INVOICE_NUMBER_FIELD.search(line) for line in lines):
+        return None
+    for line in lines:
         for kind, pattern in NON_INVOICE_TITLES:
-            if pattern.search(line):
+            if pattern.match(line):
                 return kind
-    return None
-    for kind, pattern in NON_INVOICE_TITLES:
-        if any(pattern.search(line) for line in lines):
-            return kind
     return None
 
 

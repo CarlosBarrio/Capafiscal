@@ -480,6 +480,19 @@ CapaFiscal queda en <http://127.0.0.1:8000> (solo este equipo).
 - **Copias**: `docker compose exec capafiscal python -m app.backup create /data/copias`
   (cifrada con `BACKUP_PASSPHRASE`); `verify` la comprueba y `restore` solo
   restaura en una base vacía. Sácalas del servidor.
+- **Pendiente antes de usarlo en producción** (no está hecho):
+  - la imagen se ejecuta como `root`; falta un usuario sin privilegios;
+  - las copias se guardan en el mismo volumen; falta programarlas y llevarlas fuera del servidor;
+  - las claves van como variables de entorno (visibles con `docker inspect`), no como Docker secrets;
+  - las imágenes (`postgres:16`, `caddy:2.8`, `axllent/mailpit`) van por etiqueta, no fijadas por digest;
+  - `FORWARDED_ALLOW_IPS="*"` solo es seguro mientras la app no publique puerto: falta limitarlo a la red del proxy;
+  - el registro de accesos de Caddy guarda URLs completas (incluidos los enlaces del portal de subida);
+  - la imagen con Tesseract no se ha construido ni probado en un entorno con acceso a los repositorios de Debian;
+  - no hay servidor, dominio, SMTP real, DEHú real ni banco real configurados.
+- **Correo y `localhost`**: hoy `localhost`, `127.0.0.1`, `::1`, `mailpit` y `mailhog` se tratan
+  siempre como buzón de pruebas (en desarrollo se permiten; STARTTLS solo si el servidor lo ofrece). Si en
+  ese equipo hay un relé de correo real en `localhost` (p. ej. postfix), el correo **sí saldría**: es una
+  decisión pendiente.
 
 ### Configuración
 

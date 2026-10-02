@@ -90,7 +90,7 @@ def run(folder: Path) -> dict[str, Any]:
                 got = observed(client, item) if item else {}
                 checks = compare(case["expected"], got) if item else {name: False for name in case["expected"]}
                 rows.append({"id": case["id"], "tags": case.get("tags", []), "expected": case["expected"], "got": got,
-                             "checks": checks, "perfect": all(checks.values()), "processed": item is not None})
+                             "checks": checks, "perfect": bool(checks) and all(checks.values()), "processed": item is not None})
             again = client.post("/api/connectors/dehu/poll").json()  # idempotencia: la segunda pasada no duplica
     finally:
         if work is not None:

@@ -25,7 +25,7 @@ def setup_company(client, **extra):
         "tax_id": "B12345674",
         "legal_form": "SOCIEDAD",
         "email": "admin@taller.es",
-        "iban": "ES9121000418450200051332",
+        "iban": "ES5500000000000000000001",
     }
     body.update(extra)
     response = client.put("/api/company", json=body)

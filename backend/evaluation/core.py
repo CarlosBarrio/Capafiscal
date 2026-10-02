@@ -235,8 +235,16 @@ def by_set(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             if values:
                 fields[field_name] = round(sum(values) / len(values), 3)
         checks = [ok for row in subset for ok in row["checks"].values()]
-        result[name] = {"docs": len(subset), "perfect": sum(1 for row in subset if all(row["checks"].values())), "field_accuracy": round(sum(checks) / len(checks), 3) if checks else None, "fields": fields}
+        result[name] = {"docs": len(subset), "evaluable": sum(1 for row in subset if row["checks"]), "perfect": sum(1 for row in subset if row["checks"] and all(row["checks"].values())), "field_accuracy": round(sum(checks) / len(checks), 3) if checks else None, "fields": fields}
     return result
+
+
+def evaluation_counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Casos totales, evaluables (con alguna comprobación), no evaluables, aciertos, errores y % sobre evaluables."""
+    evaluable = [row for row in rows if row["checks"]]
+    correct = sum(1 for row in evaluable if all(row["checks"].values()))
+    return {"evaluable": len(evaluable), "not_evaluated": len(rows) - len(evaluable), "correct": correct,
+            "incorrect": len(evaluable) - correct, "accuracy": round(correct / len(evaluable), 3) if evaluable else None}
 
 
 def by_tag(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
@@ -246,7 +254,7 @@ def by_tag(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
         for tag in row["tags"] or ["(sin etiqueta)"]:
             item = tags.setdefault(tag, {"docs": 0, "imperfect": 0})
             item["docs"] += 1
-            item["imperfect"] += 0 if all(row["checks"].values()) else 1
+            item["imperfect"] += 1 if row["checks"] and not all(row["checks"].values()) else 0
     return tags
 
 
@@ -269,7 +277,7 @@ def routing_value(report: dict[str, Any]) -> dict[str, Any] | None:
         broken += lost
         fixed_docs += 1 if gained else 0
     untouched = [row for row in engines["hibrido"]["rows"] if not row["meta"].get("claude_called")]
-    untouched_ok = sum(1 for row in untouched if all(row["checks"].values()))
+    untouched_ok = sum(1 for row in untouched if row["checks"] and all(row["checks"].values()))
     return {
         "docs": len(engines["hibrido"]["rows"]),
         "claude_called": called,
@@ -304,10 +312,13 @@ def run(dataset: Dataset, engines: list[str], *, model: str | None = None, sets:
             ms = int((time.perf_counter() - started) * 1000)
             skipped = NOT_PRODUCED.get(engine, set())
             checks = {name: same(name, case.expected.get(name), got.get(name)) for name in FIELDS if name in case.expected and name not in skipped}
-            perfect = all(checks.values())
+            # Sin ninguna comprobación aplicable (p. ej. Claude ante algo que no es factura) la fila NO es un acierto:
+            # queda como no evaluada y fuera del denominador. all({}) sería True y la contaría como perfecta.
+            evaluated = bool(checks)
+            perfect = evaluated and all(checks.values())
             flagged = bool(meta.get("flags"))
-            if engine == "claude":
-                outcome = None  # Claude solo no sabe decir cuándo duda
+            if engine == "claude" or not evaluated:
+                outcome = None  # Claude solo no sabe decir cuándo duda; sin comprobaciones no hay resultado que juzgar
             elif flagged:
                 outcome = "humano"
             elif not perfect:
@@ -318,7 +329,7 @@ def run(dataset: Dataset, engines: list[str], *, model: str | None = None, sets:
                 "id": case.id, "set": case.set, "tags": case.tags, "ms": ms, "error": error, "meta": meta, "outcome": outcome,
                 "known_errors": case.known_errors,
                 "checks": checks, "got": {name: got.get(name) for name in checks}, "expected": {name: case.expected[name] for name in checks},
-                "perfect": all(checks.values()),
+                "evaluated": evaluated, "perfect": perfect,
             })
         per_field = {}
         for name in FIELDS:
@@ -352,6 +363,7 @@ def run(dataset: Dataset, engines: list[str], *, model: str | None = None, sets:
             "fields": per_field,
             "field_accuracy": round(sum(sum(row["checks"].values()) for row in rows) / total_checks, 3) if total_checks else None,
             "perfect": sum(row["perfect"] for row in rows),
+            **evaluation_counts(rows),
             "ms_avg": int(sum(row["ms"] for row in rows) / len(rows)) if rows else 0,
             "input_tokens": sum(int(row["meta"].get("input_tokens") or 0) for row in rows),
             "output_tokens": sum(int(row["meta"].get("output_tokens") or 0) for row in rows),
@@ -386,7 +398,12 @@ def to_markdown(report: dict[str, Any]) -> str:
         if any(report["engines"][engine]["fields"].get(name) for engine in engines):
             lines.append(f"| {FIELD_LABELS[name]} | " + " | ".join(cells) + " |")
     lines.append("| **Todos los campos** | " + " | ".join(cell(engine, f"**{report['engines'][engine]['field_accuracy']:.0%}**" if report["engines"][engine]["field_accuracy"] is not None else "–") for engine in engines) + " |")
-    lines.append("| **Documentos perfectos** | " + " | ".join(cell(engine, f"**{report['engines'][engine]['perfect']}/{report['cases']}**") for engine in engines) + " |")
+    lines.append("| **Documentos perfectos** | " + " | ".join(cell(engine, f"**{report['engines'][engine]['perfect']}/{report['engines'][engine]['evaluable']}**") for engine in engines) + " |")
+    lines.append("| Casos totales | " + " | ".join(cell(engine, str(report["engines"][engine]["docs"])) for engine in engines) + " |")
+    lines.append("| Casos evaluables | " + " | ".join(cell(engine, str(report["engines"][engine]["evaluable"])) for engine in engines) + " |")
+    lines.append("| Casos no evaluables (sin ningún campo que comprobar) | " + " | ".join(cell(engine, str(report["engines"][engine]["not_evaluated"])) for engine in engines) + " |")
+    lines.append("| Aciertos / errores | " + " | ".join(cell(engine, f"{report['engines'][engine]['correct']} / {report['engines'][engine]['incorrect']}") for engine in engines) + " |")
+    lines.append("| % de acierto sobre evaluables | " + " | ".join(cell(engine, f"{report['engines'][engine]['accuracy']:.0%}" if report["engines"][engine]["accuracy"] is not None else "–") for engine in engines) + " |")
 
     lines += ["", "## Operación", "", header.replace("| Campo |", "| Métrica |", 1), "|---|" + "---:|" * len(engines)]
 
@@ -438,7 +455,7 @@ def to_markdown(report: dict[str, Any]) -> str:
             for field_name in FIELDS:
                 if any(field_name in sets_data[name]["fields"] for name in names):
                     lines.append(f"| {FIELD_LABELS[field_name]} | " + " | ".join(f"{sets_data[name]['fields'][field_name]:.0%}" if field_name in sets_data[name]["fields"] else "–" for name in names) + " |")
-            lines.append("| **Documentos perfectos** | " + " | ".join(f"{sets_data[name]['perfect']}/{sets_data[name]['docs']}" for name in names) + " |")
+            lines.append("| **Documentos perfectos** | " + " | ".join(f"{sets_data[name]['perfect']}/{sets_data[name]['evaluable']}" for name in names) + " |")
 
     weak_tags = {engine: {tag: data for tag, data in report["engines"][engine]["by_tag"].items() if data["imperfect"]} for engine in available}
     if any(weak_tags.values()):

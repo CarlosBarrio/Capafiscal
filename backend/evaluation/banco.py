@@ -161,7 +161,7 @@ def run(folder: Path) -> dict[str, Any]:
                 match["_used"] = True
                 got = observed(match, numbers)
                 checks = compare(truth["expected"], got)
-                rows.append({"movement": truth, "expected": truth["expected"], "got": got, "checks": checks, "perfect": all(checks.values()),
+                rows.append({"movement": truth, "expected": truth["expected"], "got": got, "checks": checks, "perfect": bool(checks) and all(checks.values()),
                              "wrong_auto": wrong_auto(truth["expected"], got)})
             extra = [row for row in movements if not row.get("_used")]
             unpaid = sorted(item["invoice_label"].split(" · ")[0] for item in report["unpaid_invoices"])

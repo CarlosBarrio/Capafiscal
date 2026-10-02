@@ -105,26 +105,45 @@ class LegalIdentity:
     source: str
 
 
-# Errores típicos de OCR en las etiquetas de importes: 0↔O, l/1↔I, 5↔S. Solo en esas palabras, nunca en el texto libre.
-OCR_LABELS = (
-    (re.compile(r"\bT[O0]T[A4]L\b", re.IGNORECASE), "TOTAL"),
-    (re.compile(r"(?<![A-Za-z0-9])[lI1|]V[A4](?![A-Za-z])"), "IVA"),
-    (re.compile(r"\bB[a4][s5]e\b"), "Base"),
-    (re.compile(r"\bBA[S5]E\b"), "BASE"),
-    (re.compile(r"\b[lI1]mp[o0]nible\b", re.IGNORECASE), "imponible"),
-    (re.compile(r"\bCu[o0]ta\b"), "Cuota"),
-)
+# Errores típicos de OCR en las etiquetas de importes: 0↔O, 4↔A, 5↔S, l/1/|↔I. Solo en esas palabras y solo
+# si la palabra lleva de verdad un carácter confundido: «Total» o «Base Imponible» no se tocan (ni sus mayúsculas).
+OCR_CONFUSABLE = {"o": "0", "a": "4", "s": "5", "i": "l1|"}
+OCR_LABEL_WORDS = ("total", "iva", "base", "imponible", "cuota")
 AMOUNT_LABEL_LINE = re.compile(r"\b(?:TOTAL|IVA|BASE|CUOTA|IMPONIBLE|RETENCI[OÓ]N|IRPF)\b", re.IGNORECASE)
 SPACED_AMOUNT = re.compile(r"(?<![\d.,])(\d(?: \d){1,6}(?:,\d{2}))(?!\d)")
 
 
+def _ocr_word_pattern(word: str) -> re.Pattern[str]:
+    letters = "".join(f"[{re.escape(char + char.upper() + OCR_CONFUSABLE.get(char, ''))}]" for char in word)
+    return re.compile(rf"(?<![A-Za-z0-9]){letters}(?![A-Za-z0-9])")
+
+
+OCR_LABELS = tuple((word, _ocr_word_pattern(word)) for word in OCR_LABEL_WORDS)
+
+
+def _fix_ocr_word(token: str, word: str) -> str:
+    """Cambia solo los caracteres confundidos y les da la caja del resto: «T0TAL»→«TOTAL», «Ba5e»→«Base», «lVA»→«IVA»."""
+    if token.lower() == word:
+        return token  # bien escrita: no se toca, ni siquiera las mayúsculas
+    kept = [char for char, expected in zip(token, word) if char.lower() == expected]
+    all_upper = bool(kept) and all(char.isupper() for char in kept)
+    fixed = []
+    for char, expected in zip(token, word):
+        if char.lower() == expected:
+            fixed.append(char)
+        else:
+            fixed.append(expected.upper() if all_upper else expected)
+    return "".join(fixed)
+
+
 def repair_ocr_labels(text: str) -> str:
-    """«T0TAL FACTURA», «lVA 21 % 4 9,98»: arregla las etiquetas de importes y, solo en esas líneas, los dígitos
-    separados por espacios. En el resto del texto «1 2,50» puede ser cantidad 1 y precio 2,50: no se toca."""
+    """«T0TAL FACTURA», «lVA 21 % 4 9,98»: arregla las etiquetas de importes con caracteres confundidos y, solo en
+    esas líneas, los dígitos separados por espacios. En el resto del texto «1 2,50» puede ser cantidad 1 y precio
+    2,50: no se toca. Un texto limpio sale idéntico."""
     lines = []
     for line in text.splitlines():
-        for pattern, label in OCR_LABELS:
-            line = pattern.sub(label, line)
+        for word, pattern in OCR_LABELS:
+            line = pattern.sub(lambda match, word=word: _fix_ocr_word(match.group(0), word), line)
         if AMOUNT_LABEL_LINE.search(line):
             line = SPACED_AMOUNT.sub(lambda match: match.group(1).replace(" ", ""), line)
         lines.append(line)

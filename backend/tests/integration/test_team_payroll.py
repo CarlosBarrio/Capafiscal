@@ -11,7 +11,7 @@ from app.payroll_service import iban_is_valid
 from app.team_service import build_checklist
 from app.team_service import parse_cv_text
 
-IBAN = "ES7921000813610123456789"
+IBAN = "ES2800000000000000000002"  # ficticio: entidad y oficina 0000 (no existen), dígito de control válido
 
 
 def create_employee(client, **fields) -> dict:
@@ -73,8 +73,8 @@ def test_partial_month_prorates_days():
 
 def test_iban_validation():
     assert iban_is_valid(IBAN)
-    assert iban_is_valid("ES91 2100 0418 4502 0005 1332")
-    assert not iban_is_valid("ES0021000418450200051332")
+    assert iban_is_valid("ES5500000000000000000001")
+    assert not iban_is_valid("ES5500000000000000000009")
 
 
 def test_checklist_for_recent_hire_has_deadlines():
@@ -155,7 +155,7 @@ def test_absences_validate_overlap_and_balance(client):
 
 
 def test_payroll_run_lifecycle(client):
-    client.put("/api/company", json={"name": "Taller S.L.", "tax_id": "B12345674", "iban": "ES9121000418450200051332"})
+    client.put("/api/company", json={"name": "Taller S.L.", "tax_id": "B12345674", "iban": "ES5500000000000000000001"})
     create_employee(client, first_name="Ana")
     create_employee(client, first_name="Luis", annual_salary=24000, payments_per_year=12)
 

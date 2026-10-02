@@ -112,3 +112,99 @@ def test_production_check_warns_about_a_test_mailbox(monkeypatch):
 
     monkeypatch.setattr(settings, "smtp_host", "mailpit")
     assert any("buzón de pruebas" in text for _, text in problems(settings))
+
+
+class RecordingSMTP:
+    """Servidor SMTP simulado que anota lo que se le pide (conexión, STARTTLS, login, envío); no abre red."""
+
+    calls: list[tuple] = []
+
+    def __init__(self, host, port, timeout=None):
+        RecordingSMTP.calls.append(("connect", host, port))
+
+    def ehlo(self):
+        pass
+
+    def has_extn(self, name):
+        return name == "starttls"
+
+    def starttls(self, context=None):
+        RecordingSMTP.calls.append(("starttls",))
+
+    def login(self, user, password):
+        RecordingSMTP.calls.append(("login", user))
+
+    def send_message(self, message):
+        RecordingSMTP.calls.append(("send", message["To"]))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+@pytest.mark.parametrize("allow_external", [False, True])
+def test_production_sends_to_an_external_server_with_tls_whatever_the_flag(monkeypatch, allow_external):
+    """En producción el correo real sale siempre (con STARTTLS); SMTP_ALLOW_EXTERNAL solo afecta fuera de producción."""
+    import smtplib
+
+    from app.config import settings
+    from app.outbox_service import smtp_deliver
+
+    RecordingSMTP.calls = []
+    monkeypatch.setattr(smtplib, "SMTP", RecordingSMTP)
+    monkeypatch.setattr(settings, "app_environment", "production")
+    monkeypatch.setattr(settings, "smtp_host", "smtp.office365.com")
+    monkeypatch.setattr(settings, "smtp_port", 587)
+    monkeypatch.setattr(settings, "smtp_use_ssl", False)
+    monkeypatch.setattr(settings, "smtp_user", "avisos@ejemplo.test")
+    monkeypatch.setattr(settings, "smtp_allow_external", allow_external)
+    smtp_deliver(message())
+    assert RecordingSMTP.calls == [("connect", "smtp.office365.com", 587), ("starttls",), ("login", "avisos@ejemplo.test"), ("send", "destino@ejemplo.test")]
+
+
+def test_development_sends_to_an_external_server_only_when_explicitly_allowed(monkeypatch):
+    import smtplib
+
+    from app.config import settings
+    from app.outbox_service import smtp_deliver
+
+    RecordingSMTP.calls = []
+    monkeypatch.setattr(smtplib, "SMTP", RecordingSMTP)
+    monkeypatch.setattr(settings, "app_environment", "development")
+    monkeypatch.setattr(settings, "smtp_host", "smtp.office365.com")
+    monkeypatch.setattr(settings, "smtp_use_ssl", False)
+    monkeypatch.setattr(settings, "smtp_user", "")
+    monkeypatch.setattr(settings, "smtp_allow_external", True)
+    smtp_deliver(message())
+    assert ("starttls",) in RecordingSMTP.calls and RecordingSMTP.calls[-1] == ("send", "destino@ejemplo.test")
+
+
+@pytest.mark.parametrize(("raw", "expected"), [("true", True), ("1", True), ("yes", True), ("false", False), ("0", False), ("no", False), (None, False)])
+def test_smtp_allow_external_is_read_from_the_environment(monkeypatch, tmp_path, raw, expected):
+    """El valor por defecto es False; solo un «sí» explícito en el entorno lo activa."""
+    from app.config import Settings
+
+    monkeypatch.chdir(tmp_path)
+    if raw is None:
+        monkeypatch.delenv("SMTP_ALLOW_EXTERNAL", raising=False)
+    else:
+        monkeypatch.setenv("SMTP_ALLOW_EXTERNAL", raw)
+    assert Settings(_env_file=None).smtp_allow_external is expected
+
+
+def test_localhost_is_treated_as_a_test_mailbox_in_every_environment(monkeypatch):
+    """Comportamiento actual, documentado: «localhost», «127.0.0.1», «::1», «mailpit» y «mailhog» se tratan como
+    buzón de pruebas en cualquier entorno. Por eso en desarrollo se permite y STARTTLS solo se usa si el servidor
+    lo ofrece. Si en ese equipo hay un relé real (p. ej. postfix en localhost), el correo SÍ saldría: es una
+    decisión pendiente, no una garantía."""
+    from app.config import settings
+    from app.outbox_service import local_smtp
+
+    for host in ("localhost", "LOCALHOST ", "127.0.0.1", "::1", "mailpit", "mailhog"):
+        monkeypatch.setattr(settings, "smtp_host", host)
+        assert local_smtp(), host
+    for host in ("smtp.office365.com", "10.0.0.5", "mail.ejemplo.test"):
+        monkeypatch.setattr(settings, "smtp_host", host)
+        assert not local_smtp(), host
