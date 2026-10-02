@@ -2183,3 +2183,17 @@ app.mount(
     StaticFiles(directory=str(STATIC_DIRECTORY)),
     name="static",
 )
+
+
+# Se registra la última: envuelve a todas, también a las respuestas 401/403 de identify_request.
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Cabeceras básicas: no se incrusta en otras webs, no se adivinan tipos de archivo, no se filtra la URL."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")  # datos fiscales: que no queden en cachés intermedias
+    return response

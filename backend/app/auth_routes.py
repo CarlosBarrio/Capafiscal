@@ -99,10 +99,16 @@ def setup(payload: SetupPayload, database: DatabaseDependency, response: Respons
 
 
 @router.post("/auth/login", tags=["Acceso"])
-def login(payload: LoginPayload, database: DatabaseDependency, response: Response) -> dict[str, Any]:
-    user = database.scalar(select(User).where(User.email == payload.email.lower().strip()))
+def login(payload: LoginPayload, database: DatabaseDependency, response: Response, request: Request) -> dict[str, Any]:
+    email = payload.email.lower().strip()
+    key = (email, request.client.host if request.client else "?")
+    if login_blocked(key):
+        raise HTTPException(status_code=429, detail="Demasiados intentos fallidos. Espera 15 minutos o pide a un administrador que revise tu acceso.")
+    user = database.scalar(select(User).where(User.email == email))
     if user is None or not user.active or not verify_password(payload.password, user.password_hash):
+        login_failed(key)
         raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos.")
+    _login_failures.pop(key, None)
     token = create_session(database, user)
     database.commit()
     set_session_cookie(response, token)
@@ -141,14 +147,42 @@ def choose_client(payload: ClientChoice, request: Request, database: DatabaseDep
     user = current_user(request)
     if payload.client_id not in client_ids(database, user):
         raise HTTPException(status_code=403, detail="No tienes acceso a ese cliente.")
-    response.set_cookie(CLIENT_COOKIE, str(payload.client_id), httponly=True, samesite="lax")
+    response.set_cookie(CLIENT_COOKIE, str(payload.client_id), httponly=True, samesite="lax", secure=secure_cookies())
     return {"client_id": payload.client_id}
+
+
+def secure_cookies() -> bool:
+    """Con HTTPS, las cookies solo viajan cifradas."""
+    from app.config import settings
+
+    return settings.public_base_url.lower().startswith("https://")
 
 
 def set_session_cookie(response: Response, token: str) -> None:
     from app.config import settings
 
-    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", max_age=settings.session_hours * 3600)
+    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", secure=secure_cookies(), max_age=settings.session_hours * 3600)
+
+
+# Freno a quien prueba contraseñas: 5 fallos en 15 minutos bloquean ese correo (desde esa IP) 15 minutos.
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_MAX_FAILURES = 5
+_login_failures: dict[tuple[str, str], list[float]] = {}
+
+
+def login_blocked(key: tuple[str, str]) -> bool:
+    import time
+
+    now = time.time()
+    recent = [moment for moment in _login_failures.get(key, []) if now - moment < LOGIN_WINDOW_SECONDS]
+    _login_failures[key] = recent
+    return len(recent) >= LOGIN_MAX_FAILURES
+
+
+def login_failed(key: tuple[str, str]) -> None:
+    import time
+
+    _login_failures.setdefault(key, []).append(time.time())
 
 
 @router.get("/auth/me", tags=["Acceso"])

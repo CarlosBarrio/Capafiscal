@@ -484,6 +484,13 @@ un requerimiento de la AEAT que el agente reconoce como notificación. En
 `backend/tests/fixtures/` hay más ejemplos en texto (factura emitida, factura
 con retención, providencia de apremio).
 
+## Copias, recuperación y seguridad
+
+`python -m app.backup create|verify|restore`: copia completa (todas las tablas y documentos),
+cifrada con `BACKUP_PASSPHRASE`, verificada con huellas y restaurable en una base vacía (también
+de SQLite a PostgreSQL). El ensayo de recuperación está en los tests. Detalles, cron y la lista
+de seguridad para producción: `docs/seguridad_y_copias.md`.
+
 ## Tests
 
 ```bash

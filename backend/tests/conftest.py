@@ -54,6 +54,9 @@ def drop_everything() -> None:
 
 @pytest.fixture()
 def client():
+    from app.auth_routes import _login_failures
+
+    _login_failures.clear()
     drop_everything()
     shutil.rmtree(settings.upload_dir, ignore_errors=True)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
