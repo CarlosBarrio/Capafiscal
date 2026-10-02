@@ -97,3 +97,25 @@ def test_upgrade_from_previous_version_keeps_data():
     assert schema_differences() == []
     with engine.connect() as connection:
         assert connection.execute(text("SELECT name FROM company_profile")).scalar() == "Empresa previa S.L."
+
+
+def test_every_migration_can_be_undone_and_redone():
+    """Volver atrás una versión (y hasta el principio) y regresar deja el mismo esquema: una actualización
+    fallida en producción se puede deshacer."""
+    from alembic import command
+
+    from app.database import engine
+    from app.migrate import alembic_config
+    from app.migrate import migrate
+
+    drop_everything()
+    assert migrate() == "upgrade"
+    with engine.begin() as connection:
+        command.downgrade(alembic_config(connection), "-1")
+    assert current_revision() != head_revision()
+    with engine.begin() as connection:
+        command.downgrade(alembic_config(connection), "base")
+    assert current_revision() is None
+    assert migrate() == "upgrade"
+    assert current_revision() == head_revision()
+    assert schema_differences() == []

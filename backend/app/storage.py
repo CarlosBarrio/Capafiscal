@@ -3,7 +3,7 @@ import hashlib
 import json
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from threading import RLock
 from typing import Any

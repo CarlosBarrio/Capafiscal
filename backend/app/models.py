@@ -3,7 +3,6 @@ from __future__ import annotations
 from app import clock
 from datetime import date
 from datetime import datetime
-from datetime import timezone
 from decimal import Decimal
 from typing import Any
 

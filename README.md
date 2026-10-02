@@ -501,7 +501,8 @@ python -m pytest
 
 Los tests usan una base de datos temporal y no tocan tus datos. Para pasarlos
 contra PostgreSQL: `TEST_DATABASE_URL=postgresql+psycopg://usuario@host:5432/base_vacía
-python -m pytest` (hoy: 228/228 en SQLite y en PostgreSQL 16). Están en
+python -m pytest` (hoy: 300/300 en PostgreSQL 16; en SQLite se saltan las 4 de varios procesos a la vez).
+Todas ven el mismo «hoy» (reloj fijo de `app/clock.py`): ningún test depende de la fecha real. Están en
 `tests/unit`, `tests/integration`, `tests/agents` y `tests/workflows`. Esta
 última es la batería de evaluación de agentes: cada caso de
 `tests/workflows/scenarios/*.json` describe entrada → agentes ejecutados →

@@ -258,8 +258,6 @@ class GestorIncidencias(Agent):
         period = ctx.facts["period"]
         if ctx.facts.get("not_applicable"):
             # El Fiscal ha visto que este modelo no corresponde: se descarta solo, con el motivo.
-            from datetime import datetime
-            from datetime import timezone
 
             note = (ctx.facts.get("fiscal_notes") or ["Este modelo no aplica a tu empresa."])[0]
             case.status, case.resolution, case.resolved_at = "DISMISSED", note, clock.now()

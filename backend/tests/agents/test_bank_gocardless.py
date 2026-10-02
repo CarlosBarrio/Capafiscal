@@ -146,9 +146,7 @@ def test_rejected_authorization_and_renewal_after_consent_expires(client, api):
 
 
 def test_consent_about_to_expire_is_warned_before_movements_stop(client, api):
-    from datetime import datetime
     from datetime import timedelta
-    from datetime import timezone
 
     from app.database import SessionLocal
     from app.models import BankConnection

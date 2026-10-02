@@ -178,8 +178,6 @@ def compute_profiles(database: Session, *, today: date | None = None) -> list[tu
 
 def upsert_profile(database: Session, *, tenant: int, party: str, key: str, name: str, profile: dict[str, Any]) -> None:
     """Insertar o actualizar en una sola sentencia: dos barridos simultáneos no chocan (PostgreSQL y SQLite)."""
-    from datetime import datetime
-    from datetime import timezone
 
     dialect = database.get_bind().dialect.name
     if dialect == "postgresql":

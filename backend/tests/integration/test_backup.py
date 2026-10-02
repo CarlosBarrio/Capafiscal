@@ -29,7 +29,7 @@ def seeded(client, tmp_path):
     from app.config import settings
 
     ids = setup_month(client)
-    client.post(f"/api/close/2026-09/run")
+    client.post("/api/close/2026-09/run")
     attachment = settings.data_dir / "expedientes" / "prueba.txt"
     attachment.parent.mkdir(parents=True, exist_ok=True)
     attachment.write_text("Adjunto de prueba (SIMULACIÓN — NO OFICIAL)", encoding="utf-8")
@@ -65,6 +65,56 @@ def test_backup_roundtrip_into_an_empty_database(seeded, tmp_path):
 
     with pytest.raises(BackupError, match="no está vacía"):
         restore(content, engine=target, folders=folders, passphrase=PASSPHRASE)
+
+
+@pytest.fixture()
+def empty_engine(tmp_path):
+    """Una base vacía del mismo motor que las pruebas: en PostgreSQL, una base de datos nueva que se borra al acabar."""
+    from sqlalchemy import text
+    from sqlalchemy.engine import make_url
+
+    from app.database import engine
+
+    if engine.dialect.name != "postgresql":
+        target = create_engine(f"sqlite:///{tmp_path / 'vacia.db'}")
+        yield target
+        target.dispose()
+        return
+    url = make_url(str(engine.url.render_as_string(hide_password=False)))
+    name = f"{url.database}_restaurada"
+    admin = create_engine(url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as connection:
+        connection.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+        connection.execute(text(f'CREATE DATABASE "{name}"'))
+    target = create_engine(url.set(database=name))
+    try:
+        yield target
+    finally:
+        target.dispose()
+        with admin.connect() as connection:
+            connection.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+        admin.dispose()
+
+
+def test_restored_database_keeps_working_with_the_same_engine(seeded, empty_engine, tmp_path):
+    """Ensayo de recuperación en el motor de producción: tras restaurar, CapaFiscal sigue creando registros
+    (en PostgreSQL los contadores de id continúan después del último restaurado)."""
+    from sqlalchemy.orm import Session
+
+    from app.backup import create
+    from app.backup import restore
+    from app.models import AuditEvent
+
+    content = create(passphrase=PASSPHRASE)
+    restore(content, engine=empty_engine, folders={"uploads": tmp_path / "u", "data": tmp_path / "d"}, passphrase=PASSPHRASE)
+    with Session(empty_engine) as database:
+        database.info["tenant_id"] = 0
+        before = database.scalar(select(func.max(AuditEvent.id)))
+        assert before  # hay eventos restaurados: el siguiente id debe ir detrás
+        event = AuditEvent(entity_type="backup", entity_id="0", action="backup.restored", actor="sistema", tenant_id=0)
+        database.add(event)
+        database.commit()
+        assert event.id > before
 
 
 def test_tampered_or_wrong_passphrase_is_refused(seeded):

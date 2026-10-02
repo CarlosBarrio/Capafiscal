@@ -507,10 +507,18 @@ def confirm_match(
     if target_id is None:
         raise ValueError("Indica la factura con la que conciliar el movimiento.")
 
-    invoice = database.get(Invoice, target_id)
+    invoice = database.get(Invoice, target_id, with_for_update=True)
 
     if invoice is None:
         raise ValueError("Factura no encontrada.")
+
+    if transaction.match_status == "IGNORED" or (transaction.match_status == "MATCHED" and transaction.matched_invoice_id not in (None, invoice.id)):
+        raise ValueError("Ese movimiento ya está conciliado o descartado: deshazlo antes de conciliarlo con otra factura.")
+
+    other = database.scalar(select(BankTransaction.id).where(
+        BankTransaction.matched_invoice_id == invoice.id, BankTransaction.match_status == "MATCHED", BankTransaction.id != transaction.id).limit(1))
+    if other is not None:
+        raise ValueError("Esa factura ya está conciliada con otro movimiento: deshaz esa conciliación antes. Los pagos en varias veces se aceptan desde la propuesta de reparto de CapaFiscal.")
 
     if invoice.review_status != "APPROVED":
         raise ValueError("Solo se pueden conciliar facturas aprobadas.")

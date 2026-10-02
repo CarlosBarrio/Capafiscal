@@ -325,9 +325,7 @@ def impact(case: Case, today: date) -> dict[str, Any]:
 
 def operational_board(database: Session, today: date | None = None, *, days: int = 7) -> dict[str, Any]:
     """Qué requiere atención, qué está pendiente y qué se ha resuelto solo."""
-    from datetime import datetime
     from datetime import timedelta
-    from datetime import timezone
 
     from sqlalchemy import func
 

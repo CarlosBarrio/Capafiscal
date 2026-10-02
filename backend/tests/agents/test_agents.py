@@ -4,7 +4,6 @@ from __future__ import annotations
 from app import clock
 import io
 import zipfile
-from datetime import date
 from datetime import timedelta
 from decimal import Decimal
 

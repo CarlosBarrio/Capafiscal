@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from app import clock
 from datetime import datetime
-from datetime import timezone
 from typing import Any
 
 from sqlalchemy import case

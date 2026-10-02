@@ -10,7 +10,6 @@ import csv
 import io
 import re
 import zipfile
-from datetime import date
 from typing import Any
 
 from sqlalchemy import select

@@ -37,6 +37,30 @@ la restaura en una base nueva y comprueba que las filas y los documentos son los
 de PostgreSQL a SQLite). Además, una vez al mes, restaura la última copia real en una base de
 prueba y abre CapaFiscal contra ella: una copia que nunca se ha restaurado no es una copia.
 
+## PostgreSQL: lo que está comprobado (esquema congelado)
+
+Base de producción: PostgreSQL 16. La batería completa pasa igual en PostgreSQL y en SQLite, y
+estas garantías tienen su prueba:
+
+| Qué | Prueba |
+| --- | --- |
+| Una base nueva se crea con las migraciones y coincide con los modelos (sin diferencias) | `test_migrations` |
+| Una base anterior a Alembic se adopta sin perder datos; la actualización incremental conserva datos | `test_migrations` |
+| Cada migración se deshace y se rehace (una actualización fallida tiene marcha atrás) | `test_migrations` |
+| Copia → restauración en una base PostgreSQL vacía → CapaFiscal sigue creando registros (los contadores de id continúan) | `test_backup` |
+| Un cliente nunca ve ni toca datos de otro, en todas las rutas | `test_cross_tenant`, `test_multiempresa` |
+| Varios procesos (`uvicorn --workers N`, varias instancias): cada automatización se ejecuta una sola vez por cliente (cerrojo consultivo) | `test_concurrency` |
+| Dos personas concilian el mismo movimiento a la vez: queda con una sola factura y la otra recibe un aviso (bloqueo de fila) | `test_concurrency` |
+| Dos peticiones crean lo mismo (doble clic): 409 explicable, nunca 500 ni duplicado | `test_concurrency` |
+| 100 entradas simultáneas sin pérdidas ni duplicados | `test_resistencia` |
+| Las simulaciones («¿y si…?») no dejan rastro: se deshacen siempre | `test_treasury`, `test_workcenter` |
+
+Todas las pruebas ven el mismo «hoy» (`app/clock.py`, fijado a 1-10-2026): no hay tests que pasen
+un día y fallen al siguiente. **El esquema queda congelado**: un cambio de modelo necesita una
+migración revisada y volver a pasar la batería en PostgreSQL.
+
+SQLite sigue sirviendo para una empresa en un solo equipo y un solo proceso.
+
 ## Seguridad en producción
 
 | | |

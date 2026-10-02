@@ -515,12 +515,12 @@ def bank_transactions(
     return list_transactions(database, status=match_status, limit=limit)
 
 
-def get_transaction(database, transaction_id: int) -> BankTransaction:
-    transaction = database.scalar(
-        select(BankTransaction)
-        .where(BankTransaction.id == transaction_id)
-        .options(selectinload(BankTransaction.matched_invoice))
-    )
+def get_transaction(database, transaction_id: int, *, for_update: bool = False) -> BankTransaction:
+    """for_update: quien va a cambiar el movimiento lo bloquea hasta el commit (en PostgreSQL), así dos
+    personas que lo concilian a la vez no lo asignan cada una a una factura: la segunda espera y ve el
+    resultado de la primera."""
+    statement = select(BankTransaction).where(BankTransaction.id == transaction_id).options(selectinload(BankTransaction.matched_invoice))
+    transaction = database.scalar(statement.with_for_update(of=BankTransaction) if for_update else statement)
 
     if transaction is None:
         raise not_found("Movimiento no encontrado.")
@@ -535,7 +535,7 @@ def bank_confirm(
     database: DatabaseDependency,
     actor_header: ActorHeader = None,
 ) -> dict[str, Any]:
-    transaction = get_transaction(database, transaction_id)
+    transaction = get_transaction(database, transaction_id, for_update=True)
 
     try:
         confirm_match(
@@ -561,7 +561,7 @@ def bank_unmatch(
     database: DatabaseDependency,
     actor_header: ActorHeader = None,
 ) -> dict[str, Any]:
-    transaction = get_transaction(database, transaction_id)
+    transaction = get_transaction(database, transaction_id, for_update=True)
     unmatch(
         database,
         transaction=transaction,
@@ -593,7 +593,7 @@ def bank_allocate(transaction_id: int, payload: AllocationRequest, database: Dat
     from app.allocations import allocations_of
     from app.allocations import apply
 
-    transaction = get_transaction(database, transaction_id)
+    transaction = get_transaction(database, transaction_id, for_update=True)
     if transaction.match_status in ("MATCHED", "IGNORED"):
         raise HTTPException(status_code=409, detail="Ese movimiento ya está conciliado o descartado: deshazlo antes.")
     for part in payload.parts:
@@ -615,7 +615,7 @@ def bank_accept_proposal(transaction_id: int, database: DatabaseDependency, acto
     from app.allocations import accept_proposal
     from app.allocations import allocations_of
 
-    transaction = get_transaction(database, transaction_id)
+    transaction = get_transaction(database, transaction_id, for_update=True)
     try:
         plan = accept_proposal(database, transaction, actor=normalize_actor(actor_header))
     except ValueError as error:

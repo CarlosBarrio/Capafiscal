@@ -189,8 +189,6 @@ def ruleset_version(database: Session) -> int:
 
 def decide_rule(database: Session, rule: LearningRule, decision: str, actor: str | None, note: str | None = None) -> LearningRule:
     """Aprobar, rechazar o retirar una regla. Aprobar crea una versión nueva del conjunto de reglas."""
-    from datetime import datetime
-    from datetime import timezone
 
     allowed = {"aprobar": ({"PROPUESTA"}, "APROBADA"), "rechazar": ({"PROPUESTA"}, "RECHAZADA"), "retirar": ({"APROBADA"}, "RETIRADA")}
     if decision not in allowed:

@@ -54,10 +54,9 @@ def drop_everything() -> None:
     reset_database()
 
 
-# Todas las pruebas ven el mismo «hoy»: nada pasa ayer y falla hoy (ni al cruzar la medianoche).
-# Los datos de prueba son de septiembre de 2026; el reloj se fija a la mañana del 1 de octubre.
 # Todas las pruebas ven el mismo «hoy»: ni pasan ayer y fallan hoy ni fallan al cruzar la medianoche.
-# Se fija ya al importar, porque algunos módulos de test calculan TODAY al cargarse.
+# Los datos de prueba son de septiembre de 2026; el reloj se fija a la mañana del 1 de octubre, y ya al
+# importar, porque algunos módulos de test calculan TODAY al cargarse.
 FROZEN_NOW = datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc)
 from app import clock as _clock  # noqa: E402
 

@@ -452,9 +452,29 @@ def run_automation(database: Session, code: str, *, trigger: str = "MANUAL", now
     return run
 
 
+# Clave de los cerrojos consultivos de PostgreSQL para el planificador (un número cualquiera, fijo).
+SCHEDULER_LOCK = 4_243_303
+
+
+def claim_turn(database: Session, client_id: int) -> bool:
+    """
+    Con varios procesos (uvicorn --workers, dos instancias) cada uno tiene su planificador: sin turno, lo
+    que toca se ejecutaría una vez por proceso (el resumen diario dos veces, dos recordatorios al proveedor).
+    En PostgreSQL el turno es un cerrojo consultivo de la transacción, por cliente: quien no lo consigue
+    lo deja para la siguiente vuelta; quien lo consigue decide qué toca DESPUÉS de tenerlo, así ve las
+    ejecuciones que otro acaba de anotar. Se suelta solo con el commit o el rollback.
+    SQLite es de un solo proceso: siempre hay turno.
+    """
+    if database.get_bind().dialect.name != "postgresql":
+        return True
+    return bool(database.scalar(select(func.pg_try_advisory_xact_lock(SCHEDULER_LOCK, client_id))))
+
+
 def run_due(database: Session, now: datetime | None = None) -> list[AutomationRun]:
     now = now or local_now()
     runs = []
+    if not claim_turn(database, 0):
+        return runs
     for automation in AUTOMATIONS:
         setting = read_setting(database, automation.code)
         if is_due(automation, setting, now):
@@ -477,6 +497,8 @@ def run_due_all_clients(now: datetime | None = None) -> dict[int, int]:
     for client_id in clients:
         with tenant_session(client_id) as database:
             try:
+                if not claim_turn(database, client_id):
+                    continue  # otro proceso está con este cliente
                 # Cada cliente tiene sus automatizaciones activadas y su propio «última vez».
                 due = [automation.code for automation in AUTOMATIONS if is_due(automation, read_setting(database, automation.code), now)]
                 runs = [run_automation(database, code, trigger="SCHEDULE", now=now) for code in due]

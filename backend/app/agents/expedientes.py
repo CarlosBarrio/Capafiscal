@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from app import clock
 import re
-from datetime import date
 
 from sqlalchemy import func
 from sqlalchemy import select

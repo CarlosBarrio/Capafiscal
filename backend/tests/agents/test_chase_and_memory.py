@@ -3,9 +3,7 @@ from __future__ import annotations
 
 from app import clock
 from datetime import date
-from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 
 from tests.agents.test_agents import REQUERIMIENTO
 from tests.agents.test_agents import setup_company

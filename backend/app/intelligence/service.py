@@ -15,7 +15,6 @@ import logging
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from typing import Any
 
 from sqlalchemy import select

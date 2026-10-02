@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from app import clock
 import io
-from datetime import date
 from datetime import timedelta
 
 from openpyxl import load_workbook

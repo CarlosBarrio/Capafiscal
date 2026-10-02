@@ -7,8 +7,6 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date
-from datetime import datetime
-from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,16 +15,19 @@ from fastapi import FastAPI
 from fastapi import File
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi import UploadFile
 from fastapi import status
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.inspection import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import selectinload
 
@@ -342,6 +343,16 @@ app = FastAPI(
     debug=settings.debug,
     lifespan=lifespan,
 )
+
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_conflict(request: Request, error: IntegrityError) -> JSONResponse:
+    """Dos peticiones que crean lo mismo a la vez (doble clic, dos personas): la base de datos impide el
+    duplicado y quien llega segundo recibe un 409 explicable, no un error 500."""
+    logging.getLogger(__name__).warning("Conflicto de integridad en %s %s: %s", request.method, request.url.path, error.orig)
+    return JSONResponse(status_code=409, content={"detail": "Otra persona (u otra pestaña) acaba de hacer este mismo cambio. Recarga para ver el estado actual."})
+
 
 app.include_router(outlook_router)
 app.include_router(business_router)
