@@ -11,6 +11,7 @@ SAVEPOINT que se deshace siempre: nada queda guardado.
 """
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from datetime import timedelta
 from decimal import Decimal
@@ -123,7 +124,7 @@ def explain(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
 
 
 def simulate(database: Session, scenario: dict[str, Any], *, today: date | None = None) -> dict[str, Any]:
-    today = today or date.today()
+    today = today or clock.today()
     savepoint = database.begin_nested()
     try:
         title, quarter = apply(database, scenario, today)

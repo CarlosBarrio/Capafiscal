@@ -9,6 +9,7 @@ oficial debe validarla la persona responsable o la gestoría.
 """
 from __future__ import annotations
 
+from app import clock
 import calendar
 import io
 import re
@@ -627,9 +628,9 @@ def set_run_status(run: PayrollRun, status: str, paid_at: date | None = None) ->
     run.status = status
 
     if status == "APPROVED":
-        run.approved_at = datetime.now(timezone.utc)
+        run.approved_at = clock.now()
     elif status == "PAID":
-        run.paid_at = paid_at or date.today()
+        run.paid_at = paid_at or clock.today()
     elif status == "DRAFT":
         run.approved_at = None
 
@@ -723,7 +724,7 @@ def build_sepa_xml(
 
     total = sum((money(payslip.net) for payslip, _iban in payments), ZERO)
     message_id = f"CF-NOM-{run.year}{run.month:02d}-{run.id}"
-    created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    created = clock.now().strftime("%Y-%m-%dT%H:%M:%S")
     debtor = sepa_text(company.name or "Empresa")
     bic = (company.bic or "").strip().upper()
     debtor_agent = (

@@ -90,11 +90,14 @@ def test_cli_keeps_only_the_latest_copies(seeded, tmp_path, monkeypatch, capsys)
 
     monkeypatch.setenv("BACKUP_PASSPHRASE", PASSPHRASE)
     monkeypatch.setenv("BACKUP_KEEP", "2")
-    import time
+    from datetime import timedelta
 
-    for _ in range(3):
-        assert main(["create", str(tmp_path / "copias")]) == 0
-        time.sleep(1.1)  # el nombre lleva la hora al segundo
+    from app import clock
+
+    start = clock.now()
+    for hour in range(3):  # el nombre lleva la hora: se adelanta el reloj en vez de esperar
+        with clock.frozen(start + timedelta(hours=hour)):
+            assert main(["create", str(tmp_path / "copias")]) == 0
     copies = sorted((tmp_path / "copias").glob("capafiscal-*.zip.enc"))
     assert len(copies) == 2 and "✓ Copia creada y verificada" in capsys.readouterr().out
     assert main(["verify", str(copies[-1])]) == 0

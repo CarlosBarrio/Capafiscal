@@ -16,6 +16,7 @@ el 303» se calcula aquí. Todo es determinista; no interviene la IA.
 """
 from __future__ import annotations
 
+from app import clock
 import statistics
 from collections import defaultdict
 from datetime import date
@@ -104,7 +105,7 @@ def position(database: Session, model: str, year: int, quarter: int, *, today: d
     from app.tax_service import filings_index
     from app.tax_service import quarterly_due_date
 
-    today = today or date.today()
+    today = today or clock.today()
     date_from, date_to = quarter_range(year, quarter)
     draft = build_draft(database, model, year, quarter)
     filing = filings_index(database).get((model, year, quarter))
@@ -184,7 +185,7 @@ def position(database: Session, model: str, year: int, quarter: int, *, today: d
 
 
 def positions(database: Session, *, year: int | None = None, quarter: int | None = None, today: date | None = None) -> dict[str, Any]:
-    today = today or date.today()
+    today = today or clock.today()
     if year is None or quarter is None:
         year, quarter = current_obligation_period(today)
     return {

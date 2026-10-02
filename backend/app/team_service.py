@@ -4,6 +4,7 @@ ausencias y checklist de incorporación y baja.
 """
 from __future__ import annotations
 
+from app import clock
 import re
 from datetime import date
 from datetime import timedelta
@@ -428,7 +429,7 @@ def serialize_employee(
     detail: bool = False,
     today: date | None = None,
 ) -> dict[str, Any]:
-    current_day = today or date.today()
+    current_day = today or clock.today()
     checklist = build_checklist(employee, current_day)
     pending = [item for item in checklist if not item["done"]]
     manager = database.get(Employee, employee.manager_id) if employee.manager_id else None
@@ -553,7 +554,7 @@ def get_employee(database: Session, employee_id: int) -> Employee | None:
 # -------------------------------------------------------------------
 
 def build_org_chart(database: Session, today: date | None = None) -> dict[str, Any]:
-    current_day = today or date.today()
+    current_day = today or clock.today()
     employees = [
         employee
         for employee in load_employees(database)
@@ -651,7 +652,7 @@ def build_team_overview(database: Session, today: date | None = None) -> dict[st
     from app.payroll_service import company_at_ep
     from app.payroll_service import simulate_employee_cost
 
-    current_day = today or date.today()
+    current_day = today or clock.today()
     employees = load_employees(database)
     active = [e for e in employees if employment_status(e, current_day) == "ACTIVE"]
     incoming = [e for e in employees if employment_status(e, current_day) == "INCOMING"]

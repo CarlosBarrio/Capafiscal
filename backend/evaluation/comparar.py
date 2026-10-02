@@ -32,6 +32,7 @@ escritos): se mide envolviendo app.agents.llm._complete desde el evaluador.
 """
 from __future__ import annotations
 
+from app import clock
 import json
 import os
 import shutil
@@ -108,7 +109,7 @@ def run(dataset: str, *, engines: list[str], blind: bool = False) -> dict[str, A
     from app.main import app
 
     instrument()
-    report: dict[str, Any] = {"dataset": dataset, "date": date.today().isoformat(), "engines": {}}
+    report: dict[str, Any] = {"dataset": dataset, "date": clock.today().isoformat(), "engines": {}}
     try:
         with TestClient(app) as client:
             for engine in engines:

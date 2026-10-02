@@ -1,6 +1,7 @@
 """Ventas, cobros, bandeja de salida, jornada, automatizaciones y cierre."""
 from __future__ import annotations
 
+from app import clock
 import io
 import zipfile
 from datetime import date
@@ -15,7 +16,7 @@ from app.sales_service import fill_template
 from app.sales_service import madrid_now
 from app.sales_service import record_hash
 
-TODAY = date.today()
+TODAY = clock.today()
 
 
 def setup_company(client, **extra):

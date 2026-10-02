@@ -1,6 +1,7 @@
 """Perseguidor 48 h / 5 días / 8 días + memoria del negocio («raro para ti») + aprendizaje visible."""
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
@@ -28,7 +29,7 @@ def test_chase_reminds_at_48h_insists_at_5_days_and_tells_the_gestor_at_8(client
     setup_company(client)
     upload_text(client, "requerimiento_303.txt", REQUERIMIENTO)
     send_pending_drafts(client)  # la petición inicial sale hoy
-    sent = datetime.now(timezone.utc).date()
+    sent = clock.now().date()
 
     def run(days):
         with SessionLocal() as database:
@@ -64,7 +65,7 @@ def test_unusual_for_this_company(client):
     with SessionLocal() as database:
         def with_iban(invoice, iban):
             database.add(ExtractionRun(document_id=invoice.document_id, extractor_name="prueba", extractor_version="1", status="COMPLETED",
-                                       raw_text=f"Pago por transferencia a {iban}", started_at=datetime.now(timezone.utc)))
+                                       raw_text=f"Pago por transferencia a {iban}", started_at=clock.now()))
             return invoice
 
         for month in range(4, 10):

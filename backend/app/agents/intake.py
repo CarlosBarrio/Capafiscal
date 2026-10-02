@@ -13,6 +13,7 @@ todo el recorrido, queda en FAILED y se puede reintentar sin perder nada.
 """
 from __future__ import annotations
 
+from app import clock
 import hashlib
 import json
 import logging
@@ -227,7 +228,7 @@ def process(database: Session, event: IngestedEvent, *, trigger: str | None = No
         event.status = "COMPLETED"
         event.failed_agent = None
         event.error = None
-        event.completed_at = datetime.now(timezone.utc)
+        event.completed_at = clock.now()
         if case is not None and (case.facts or {}).get("processing"):
             facts = dict(case.facts)
             facts.pop("processing", None)

@@ -1,6 +1,7 @@
 """Catálogo del equipo de agentes y su actividad."""
 from __future__ import annotations
 
+from app import clock
 from datetime import datetime
 from datetime import timezone
 from typing import Any
@@ -35,7 +36,7 @@ AGENTS_BY_CODE = {item["code"]: item for item in AGENTS}
 
 
 def agents_overview(database: Session) -> dict[str, Any]:
-    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start = clock.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     rows = database.execute(
         select(AgentStep.agent, func.count(), func.avg(AgentStep.duration_ms), func.max(AgentStep.created_at))
         .where(AgentStep.created_at >= month_start)

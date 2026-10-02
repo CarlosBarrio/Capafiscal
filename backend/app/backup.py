@@ -21,6 +21,7 @@ La restauración se ensaya en los tests (copia → base nueva → mismos datos).
 """
 from __future__ import annotations
 
+from app import clock
 import base64
 import hashlib
 import io
@@ -128,7 +129,7 @@ def create(*, engine: Engine | None = None, folders: dict[str, Path] | None = No
 
     engine = engine or default_engine
     folders = folders if folders is not None else {"uploads": Path(settings.upload_dir), "data": Path(settings.data_dir)}
-    manifest: dict[str, Any] = {"format": FORMAT, "created_at": datetime.now(timezone.utc).isoformat(), "schema": schema_version(engine),
+    manifest: dict[str, Any] = {"format": FORMAT, "created_at": clock.now().isoformat(), "schema": schema_version(engine),
                                 "tables": {}, "files": {}}
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -244,7 +245,7 @@ def restore(content: bytes, *, engine: Engine | None = None, folders: dict[str, 
 def write(target_dir: Path, content: bytes, *, encrypted: bool, keep: int = KEEP_DEFAULT) -> Path:
     """Guarda la copia con fecha y deja solo las `keep` más recientes."""
     target_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = clock.now().strftime("%Y%m%d-%H%M%S")
     path = target_dir / f"capafiscal-{stamp}.zip{'.enc' if encrypted else ''}"
     path.write_bytes(content)
     try:

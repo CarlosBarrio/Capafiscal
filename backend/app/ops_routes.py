@@ -4,6 +4,7 @@ de salida, registro de jornada, automatizaciones y cierre para la gestoría.
 """
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -762,7 +763,7 @@ def automation_run(code: str, database: DatabaseDependency, actor_header: ActorH
 def digest(database: DatabaseDependency) -> dict[str, Any]:
     from app.automation_service import build_digest
 
-    return build_digest(database, date.today())
+    return build_digest(database, clock.today())
 
 
 # -------------------------------------------------------------------

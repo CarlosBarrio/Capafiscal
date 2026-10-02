@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app import clock
 import hashlib
 import logging
 import os
@@ -587,7 +588,7 @@ def resolve_period(
     year: int | None,
     quarter: int | None,
 ) -> tuple[int, int | None]:
-    return (year or date.today().year), quarter
+    return (year or clock.today().year), quarter
 
 
 @app.get(
@@ -1605,7 +1606,7 @@ def approve_invoice_endpoint(
 
     if missing_fields and force_approval:
         invoice.review_status = "APPROVED"
-        invoice.approved_at = datetime.now(timezone.utc)
+        invoice.approved_at = clock.now()
         invoice.rejected_at = None
         invoice.rejection_reason = None
 

@@ -10,6 +10,7 @@ Inteligencia: descargar, guardar sin duplicados, decidir la relevancia, enriquec
 """
 from __future__ import annotations
 
+from app import clock
 import logging
 from datetime import date
 from datetime import datetime
@@ -53,7 +54,7 @@ AI_PER_RUN = 10
 
 
 def now() -> datetime:
-    return datetime.now(timezone.utc)
+    return clock.now()
 
 
 def ensure_sources(database: Session) -> dict[str, IntelSource]:
@@ -131,7 +132,7 @@ def fetch_boe_day(database: Session, day: date, transport=None, *, payload: byte
 
 def refresh_boe(database: Session, *, today: date | None = None, back_days: int = 3, transport=None, force: bool = False) -> dict[str, Any]:
     """Los sumarios de hoy y de los días anteriores que aún no estén descargados."""
-    today = today or date.today()
+    today = today or clock.today()
     source = ensure_sources(database)["boe"]
     done = (source.meta or {}).get("days") or {}
     results, errors = [], []
@@ -214,7 +215,7 @@ def as_row(item: ExternalItem) -> dict[str, Any]:
 def match(database: Session, radar: str = "juridico", *, today: date | None = None, transport=None, use_ai: bool = True) -> dict[str, Any]:
     if radar != "juridico":
         return {"radar": radar, "assessed": 0, "visible": 0, "note": "conector pendiente"}
-    today = today or date.today()
+    today = today or clock.today()
     from app.config import settings
 
     profile = get_profile(database)

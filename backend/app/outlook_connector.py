@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app import clock
 import base64
 import json
 from datetime import datetime, timezone
@@ -63,7 +64,7 @@ class OutlookImport(TenantMixin, Base):
     imported_at = Column(
         DateTime,
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: clock.now(),
     )
 
     __table_args__ = (

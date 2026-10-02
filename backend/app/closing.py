@@ -15,6 +15,7 @@ No es una puntuación inventada: se puede contar a mano.
 """
 from __future__ import annotations
 
+from app import clock
 import calendar
 from collections import Counter
 from datetime import date
@@ -66,7 +67,7 @@ def evaluate(database: Session, period: str, *, today: date | None = None) -> di
     from app.fiscal_position import position
     from app.reconciliation import reconcile
 
-    today = today or date.today()
+    today = today or clock.today()
     start, end = parse_period(period)
     checks: list[dict[str, Any]] = []
     units_total = units_done = 0
@@ -284,14 +285,14 @@ def run_close(database: Session, period: str, *, today: date | None = None, acto
     from app.reconciliation import reconcile
 
     parse_period(period)
-    today = today or date.today()
+    today = today or clock.today()
     reconciled = reconcile(database, today=today, actor="cierre-mensual")
     scan = run_anomaly_scan(database, trigger="cierre", today=today)
     database.flush()
     result = evaluate(database, period, today=today)
     stored = upsert(database, period)
     work = {"auto_matched": reconciled["auto_matched"], "anomalies_created": scan.get("created", 0), "anomalies_closed": scan.get("closed", 0)}
-    stored.percent, stored.last_run_at = result["percent"], datetime.now(timezone.utc)
+    stored.percent, stored.last_run_at = result["percent"], clock.now()
     stored.snapshot = {"checks": [{key: item[key] for key in ("key", "status", "detail")} for item in result["checks"]], "blockers": result["blockers"], "work": work}
     from app.invoice_service import add_audit_event
 
@@ -306,7 +307,7 @@ def close(database: Session, period: str, *, actor: str, note: str | None = None
     if result["blockers"] and not (note and note.strip()):
         raise ValueError(f"Quedan {result['blockers']} bloqueo(s): para cerrar con salvedades escribe el motivo.")
     stored = upsert(database, period)
-    stored.status, stored.closed_by, stored.closed_at, stored.note, stored.percent = "CLOSED", actor, datetime.now(timezone.utc), note, result["percent"]
+    stored.status, stored.closed_by, stored.closed_at, stored.note, stored.percent = "CLOSED", actor, clock.now(), note, result["percent"]
     stored.snapshot = {**(stored.snapshot or {}), "checks": [{key: item[key] for key in ("key", "status", "detail")} for item in result["checks"]],
                        "blockers": result["blockers"]}
     from app.invoice_service import add_audit_event
@@ -331,7 +332,7 @@ def reopen(database: Session, period: str, *, actor: str) -> dict[str, Any]:
 
 def default_period(today: date | None = None) -> str:
     """El mes que toca cerrar: el anterior."""
-    today = today or date.today()
+    today = today or clock.today()
     year, month = (today.year, today.month - 1) if today.month > 1 else (today.year - 1, 12)
     return f"{year}-{month:02d}"
 
@@ -428,7 +429,7 @@ def report_pdf(database: Session, period: str, *, today: date | None = None) -> 
         for number, item in enumerate(data["to_resolve"], start=1):
             line(f"{number}. {item['text']}", 10)
     y -= 10
-    line(f"Generado por CapaFiscal el {date.today():%d/%m/%Y}. Los importes y asientos son un borrador a revisar por la gestoría; "
+    line(f"Generado por CapaFiscal el {clock.today():%d/%m/%Y}. Los importes y asientos son un borrador a revisar por la gestoría; "
          "CapaFiscal no presenta nada ante la Administración.", 8, color="#6b6459")
     pdf.save()
     return buffer.getvalue()

@@ -7,6 +7,7 @@ bandeja de salida. El destinatario sube el documento con un enlace personal.
 """
 from __future__ import annotations
 
+from app import clock
 import secrets
 from datetime import date
 from datetime import datetime
@@ -203,7 +204,7 @@ def follow_up(database: Session, today: date | None = None) -> dict[str, Any]:
     """Persigue lo pedido sin respuesta: a las 48 h recuerda, a los 5 días insiste y a los 8 avisa al gestor."""
     from app.outbox_service import create_message
 
-    today = today or date.today()
+    today = today or clock.today()
     reminders = 0
     escalated = 0
     cases = database.scalars(select(Case).where(Case.status.notin_(["RESOLVED", "DISMISSED", "FILED"]))).all()
@@ -235,7 +236,7 @@ def follow_up(database: Session, today: date | None = None) -> dict[str, Any]:
         level += 1
         for item in pending:
             item.reminders_sent = level
-            item.last_contact_at = datetime.now(timezone.utc)
+            item.last_contact_at = clock.now()
             item.next_reminder_at = chase_plan(first_sent.sent_at.date(), level)
         if level < len(CHASE):
             subject, body = request_message_body(case, pending, reminder=level)

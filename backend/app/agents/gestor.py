@@ -5,6 +5,7 @@ el borrador de respuesta para que una persona solo tenga que revisarlo.
 """
 from __future__ import annotations
 
+from app import clock
 import re
 from datetime import date
 from datetime import timedelta
@@ -261,7 +262,7 @@ class GestorIncidencias(Agent):
             from datetime import timezone
 
             note = (ctx.facts.get("fiscal_notes") or ["Este modelo no aplica a tu empresa."])[0]
-            case.status, case.resolution, case.resolved_at = "DISMISSED", note, datetime.now(timezone.utc)
+            case.status, case.resolution, case.resolved_at = "DISMISSED", note, clock.now()
             case.summary = note
             case.proposed_actions = []
             ctx.facts["insights"] = [note]

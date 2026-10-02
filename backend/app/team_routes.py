@@ -4,6 +4,7 @@ y Nóminas.
 """
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -198,7 +199,7 @@ def employee_detail(employee_id: int, database: DatabaseDependency) -> dict[str,
     if employee.annual_salary:
         data["cost"] = simulate_employee_cost(
             employee,
-            year=date.today().year,
+            year=clock.today().year,
             at_ep_rate=company_at_ep(database),
         )
 
@@ -295,7 +296,7 @@ def toggle_checklist(
     checklist = dict(employee.checklist or {})
 
     if payload.done:
-        checklist[payload.code] = date.today().isoformat()
+        checklist[payload.code] = clock.today().isoformat()
     else:
         checklist.pop(payload.code, None)
 
@@ -349,11 +350,11 @@ async def upload_employee_document(
     # El resguardo confirma el alta o la baja en la Seguridad Social.
     if kind == "ALTA_SS" and employee.ss_status == "PENDIENTE_ALTA":
         employee.ss_status = "ALTA"
-        employee.ss_registered_at = employee.ss_registered_at or employee.hire_date or date.today()
+        employee.ss_registered_at = employee.ss_registered_at or employee.hire_date or clock.today()
 
     if kind == "BAJA_SS":
         employee.ss_status = "BAJA"
-        employee.ss_deregistered_at = employee.ss_deregistered_at or employee.termination_date or date.today()
+        employee.ss_deregistered_at = employee.ss_deregistered_at or employee.termination_date or clock.today()
 
     add_audit_event(
         database,
@@ -474,7 +475,7 @@ def simulate_cost(
 
     return simulate_employee_cost(
         employee,
-        year=date.today().year,
+        year=clock.today().year,
         at_ep_rate=company_at_ep(database),
     )
 
@@ -625,7 +626,7 @@ def list_absences(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
 ) -> list[dict[str, Any]]:
-    today = date.today()
+    today = clock.today()
     start = date_from or date(today.year, today.month, 1)
     end = date_to or last_day_of_month(today.year, today.month)
     absences = database.scalars(
@@ -716,7 +717,7 @@ def list_runs(database: DatabaseDependency) -> dict[str, Any]:
         .options(selectinload(PayrollRun.payslips))
         .order_by(PayrollRun.year.desc(), PayrollRun.month.desc())
     ).all()
-    today = date.today()
+    today = clock.today()
 
     return {
         "runs": [serialize_run(run) for run in runs],
@@ -896,7 +897,7 @@ def payroll_sepa(
         raise HTTPException(status_code=409, detail="Aprueba la nómina antes de generar la remesa de pago.")
 
     company = database.scalar(select(CompanyProfile).limit(1))
-    when = execution_date or next_business_day(date.today())
+    when = execution_date or next_business_day(clock.today())
 
     try:
         content, skipped = build_sepa_xml(run, company, execution_date=when)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
@@ -419,7 +420,7 @@ def test_business_health_and_cashflow(client, sample_pdfs):
     labels = [movement["label"] for movement in cashflow["movements"]]
     assert cashflow["current_balance"] == 11966.5
 
-    if date.today() <= date(2026, 10, 20):
+    if clock.today() <= date(2026, 10, 20):
         assert any("Modelo 303" in label for label in labels)
 
 
@@ -440,7 +441,7 @@ def make_certificate(days_valid: int, password: bytes) -> bytes:
         x509.NameAttribute(NameOID.COMMON_NAME, "TALLERES GARCIA SL"),
         x509.NameAttribute(x509.ObjectIdentifier("2.5.4.97"), "VATES-B20123457"),
     ])
-    now = datetime.now(timezone.utc)
+    now = clock.now()
     certificate = (
         x509.CertificateBuilder()
         .subject_name(subject)

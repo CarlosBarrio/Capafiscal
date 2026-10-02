@@ -1,6 +1,7 @@
 """Plataforma de agentes: contratos, motor del Detector, rutas, encadenado y humano en el bucle."""
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from datetime import timedelta
 from decimal import Decimal
@@ -161,7 +162,7 @@ def test_human_decisions_close_the_loop(client):
     from app.database import SessionLocal
 
     with SessionLocal() as database:
-        invoice = add_invoice(database, supplier="ENDESA ENERGIA S.A.", tax_id="A81948077", number="FAC-2001", total=540, when=date.today() - timedelta(days=1))
+        invoice = add_invoice(database, supplier="ENDESA ENERGIA S.A.", tax_id="A81948077", number="FAC-2001", total=540, when=clock.today() - timedelta(days=1))
         database.commit()
         invoice_id = invoice.id
     body = client.post("/api/events", json={"kind": "invoice", "invoice_id": invoice_id}).json()
@@ -251,7 +252,7 @@ def test_external_source_event_uses_the_same_chain(client):
 
 def test_scan_endpoint_saves_a_payment_without_invoice(client):
     """El barrido por la API guarda el expediente aunque el hallazgo lleve fechas (antes daba 500)."""
-    csv = "Fecha;Concepto;Importe\n" + f"{(date.today() - timedelta(days=20)):%d/%m/%Y};TRANSFERENCIA A PROVEEDOR SIN FACTURA;-1800,00\n"
+    csv = "Fecha;Concepto;Importe\n" + f"{(clock.today() - timedelta(days=20)):%d/%m/%Y};TRANSFERENCIA A PROVEEDOR SIN FACTURA;-1800,00\n"
     client.post("/api/bank/import", files={"uploaded_file": ("extracto.csv", csv.encode(), "text/csv")}).raise_for_status()
     response = client.post("/api/agents/anomalies/scan")
     assert response.status_code == 200, response.text

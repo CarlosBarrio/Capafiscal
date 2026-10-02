@@ -14,6 +14,7 @@ Solo lee. Las cifras son previsiones con supuestos a la vista, no certezas.
 """
 from __future__ import annotations
 
+from app import clock
 import re
 import statistics
 from collections import defaultdict
@@ -99,7 +100,7 @@ def predict(database: Session, *, today: date | None = None, horizon_days: int =
     from app.bank_service import payroll_movements
     from app.dunning_service import average_delay_by_customer
 
-    today = today or date.today()
+    today = today or clock.today()
     horizon = today + timedelta(days=horizon_days)
     base = build_cashflow_forecast(database, horizon_days=horizon_days, today=today)
     delays = average_delay_by_customer(database)

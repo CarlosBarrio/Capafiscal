@@ -16,6 +16,7 @@ y qué hizo cada tipo de disparador.
 """
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from datetime import datetime
 from datetime import timezone
@@ -78,7 +79,7 @@ def pulse_status(database: Session, *, now: datetime | None = None) -> dict[str,
     from app.models import AutomationSetting
     from app.models import IngestedEvent
 
-    now = now or datetime.now(timezone.utc)
+    now = now or clock.now()
     settings_by_code = {item.code: item for item in database.scalars(select(AutomationSetting)).all()}
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 

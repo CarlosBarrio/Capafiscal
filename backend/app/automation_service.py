@@ -12,6 +12,7 @@ cambiar las tareas.
 """
 from __future__ import annotations
 
+from app import clock
 import logging
 import threading
 from dataclasses import dataclass
@@ -420,7 +421,7 @@ def run_automation(database: Session, code: str, *, trigger: str = "MANUAL", now
 
     now = now or local_now()
     setting = get_setting(database, code)
-    run = AutomationRun(code=code, trigger=trigger, status="RUNNING", started_at=datetime.now(timezone.utc))
+    run = AutomationRun(code=code, trigger=trigger, status="RUNNING", started_at=clock.now())
     database.add(run)
     database.flush()
 
@@ -436,7 +437,7 @@ def run_automation(database: Session, code: str, *, trigger: str = "MANUAL", now
         run.items = 0
         run.summary = f"Error: {error}"
 
-    run.finished_at = datetime.now(timezone.utc)
+    run.finished_at = clock.now()
     setting.last_run_at = run.finished_at
     setting.last_status = run.status
     setting.last_summary = run.summary
@@ -614,7 +615,7 @@ class Scheduler:
 
         if settings.auth_required:
             run_due_all_clients()
-            self.last_tick = datetime.now(timezone.utc)
+            self.last_tick = clock.now()
             return
         database = SessionLocal()
         try:
@@ -625,7 +626,7 @@ class Scheduler:
             logger.exception("Error en el planificador de automatizaciones")
         finally:
             database.close()
-        self.last_tick = datetime.now(timezone.utc)
+        self.last_tick = clock.now()
 
     def _loop(self) -> None:
         # Pequeña espera para no competir con el arranque.

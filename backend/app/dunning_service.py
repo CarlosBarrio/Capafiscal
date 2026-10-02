@@ -14,6 +14,7 @@ Nada se envía sin que una persona lo revise en la bandeja de salida.
 """
 from __future__ import annotations
 
+from app import clock
 import io
 from datetime import date
 from datetime import timedelta
@@ -184,7 +185,7 @@ def average_delay_by_customer(database: Session) -> dict[str, float]:
 
 
 def collections_overview(database: Session, today: date | None = None) -> dict[str, Any]:
-    today = today or date.today()
+    today = today or clock.today()
     override = company_override(database)
     delays = average_delay_by_customer(database)
     rows: list[dict[str, Any]] = []
@@ -352,7 +353,7 @@ def prepare_reminders(
     created_by: str = "agent",
 ) -> list[OutboxMessage]:
     """Prepara, para cada factura vencida, la reclamación del nivel que toca."""
-    today = today or date.today()
+    today = today or clock.today()
     company = database.scalar(select(CompanyProfile).limit(1))
     override = company_override(database)
     created: list[OutboxMessage] = []
@@ -412,7 +413,7 @@ def build_letter_pdf(database: Session, invoice_id: int, today: date | None = No
     from app.outbox_service import format_iban
     from app.sales_service import format_day
 
-    today = today or date.today()
+    today = today or clock.today()
     invoice = database.get(Invoice, invoice_id)
     if invoice is None:
         raise ValueError("Factura no encontrada.")

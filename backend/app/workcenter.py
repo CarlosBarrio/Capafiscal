@@ -16,6 +16,7 @@ en SQLite dos lecturas que escriben a la vez acaban en «database is locked».
 """
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
@@ -372,7 +373,7 @@ def work_center(database: Session, *, today: date | None = None, now: datetime |
     from app.closing import default_period
     from app.closing import evaluate
 
-    now = now or datetime.now(timezone.utc)
+    now = now or clock.now()
     today = today or now.date()
     cases = assessed_open_cases(database, today)
 

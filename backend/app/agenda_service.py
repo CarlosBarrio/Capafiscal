@@ -4,6 +4,7 @@ notificaciones, cobros, pagos y caducidades de cumplimiento).
 """
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from typing import Any
 
@@ -45,7 +46,7 @@ def build_agenda(
     from app.reports_service import format_eur
     from app.tax_service import build_tax_calendar
 
-    current_day = today or date.today()
+    current_day = today or clock.today()
     items: list[dict[str, Any]] = []
 
     # Impuestos

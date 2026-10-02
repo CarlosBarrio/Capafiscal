@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from datetime import datetime
 from datetime import timezone
@@ -30,7 +31,7 @@ from app.schemas import InvoiceUpdate
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return clock.now()
 
 
 def parse_iso_date(
@@ -157,7 +158,7 @@ def validate_invoice_values(
         )
 
     if invoice_date is not None:
-        today = date.today()
+        today = clock.today()
 
         if invoice_date > today:
             messages.append(
@@ -1330,7 +1331,7 @@ def set_invoice_payment(
         )
 
     if paid:
-        invoice.paid_at = paid_at or date.today()
+        invoice.paid_at = paid_at or clock.today()
         invoice.payment_method = payment_method
         action = "invoice.paid"
     else:

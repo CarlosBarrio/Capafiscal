@@ -6,6 +6,7 @@ consentimiento. Datos inventados (SIMULACIÓN — NO OFICIAL).
 """
 from __future__ import annotations
 
+from app import clock
 import json
 
 import httpx
@@ -155,7 +156,7 @@ def test_consent_about_to_expire_is_warned_before_movements_stop(client, api):
     connection = connect(client)
     client.post(f"/api/bank/connections/{connection['id']}/confirm")
     with SessionLocal() as database:
-        database.get(BankConnection, connection["id"]).consent_expires_at = datetime.now(timezone.utc) + timedelta(days=5)
+        database.get(BankConnection, connection["id"]).consent_expires_at = clock.now() + timedelta(days=5)
         database.commit()
     warning = next(item for item in client.get("/api/work").json()["groups"][0]["items"] if item["kind"] == "bank_consent_soon")
     assert "caduca en" in warning["title"] and warning["action"]["label"] == "Renovar"

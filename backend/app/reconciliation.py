@@ -31,6 +31,7 @@ Las excepciones las convierte el Detector en hallazgos.
 """
 from __future__ import annotations
 
+from app import clock
 import re
 from collections import Counter
 from datetime import date
@@ -219,7 +220,7 @@ def reconcile(database: Session, *, today: date | None = None, auto: bool = True
     auto = auto and persist
     from app.bank_service import confirm_match
 
-    today = today or date.today()
+    today = today or clock.today()
     invoices = database.scalars(select(Invoice).where(Invoice.review_status != "REJECTED", Invoice.total.is_not(None))).all()
     transactions = database.scalars(select(BankTransaction).order_by(BankTransaction.booking_date, BankTransaction.id)).all()
     matched_invoice_ids = {item.matched_invoice_id for item in transactions if item.match_status == "MATCHED" and item.matched_invoice_id}

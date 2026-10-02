@@ -7,6 +7,7 @@ escrito en PDF y paquete listo para presentar.
 """
 from __future__ import annotations
 
+from app import clock
 import csv
 import io
 import uuid
@@ -90,7 +91,7 @@ def procedure_label(case: Case) -> str:
 
 
 def serialize_case(database: Session, case: Case, *, full: bool = False, today: date | None = None) -> dict[str, Any]:
-    today = today or date.today()
+    today = today or clock.today()
     documents = case.required_documents or []
     days_left = (case.deadline - today).days if case.deadline else None
     data: dict[str, Any] = {
@@ -236,7 +237,7 @@ def update_case(database: Session, case: Case, data: dict[str, Any], actor: str)
 
     from app.agents.director import prioritize
 
-    prioritize(database, case, date.today())
+    prioritize(database, case, clock.today())
     return case
 
 
@@ -246,7 +247,7 @@ def sync_notification(database: Session, case: Case, status: str) -> None:
         if notification:
             notification.status = status
             if status == "CLOSED":
-                notification.closed_at = datetime.now(timezone.utc)
+                notification.closed_at = clock.now()
 
 
 def record_decision(case: Case, decision: str, actor: str, note: str | None) -> None:
@@ -260,7 +261,7 @@ def record_decision(case: Case, decision: str, actor: str, note: str | None) -> 
         record_case_decision(database, case, decision, actor, note)
     case.facts = {
         **(case.facts or {}),
-        "human_decision": {"decision": decision, "actor": actor, "note": note, "at": datetime.now(timezone.utc).isoformat()},
+        "human_decision": {"decision": decision, "actor": actor, "note": note, "at": clock.now().isoformat()},
     }
 
 
@@ -273,7 +274,7 @@ def approve(database: Session, case: Case, actor: str) -> Case:
         recommendation = (case.facts or {}).get("recommendation") or next((item["label"] for item in (case.proposed_actions or [])), "Revisado")
         case.status = "RESOLVED"
         case.resolution = f"Recomendación aprobada: {recommendation}"
-        case.resolved_at = datetime.now(timezone.utc)
+        case.resolved_at = clock.now()
         record_decision(case, "approved", actor, recommendation)
         event(database, case, case.resolution, actor=actor)
     else:
@@ -292,7 +293,7 @@ def approve(database: Session, case: Case, actor: str) -> Case:
 
 def file_case(database: Session, case: Case, *, reference: str | None, filed_at: date | None, actor: str) -> Case:
     case.status = "FILED"
-    case.filed_at = filed_at or date.today()
+    case.filed_at = filed_at or clock.today()
     case.filing_reference = (reference or "").strip() or None
     sync_notification(database, case, "ANSWERED")
     event(database, case, f"Presentado el {case.filed_at:%d/%m/%Y}" + (f" · registro {case.filing_reference}" if case.filing_reference else ""), actor=actor)
@@ -303,7 +304,7 @@ def file_case(database: Session, case: Case, *, reference: str | None, filed_at:
 def resolve(database: Session, case: Case, *, resolution: str | None, dismiss: bool, actor: str) -> Case:
     case.status = "DISMISSED" if dismiss else "RESOLVED"
     case.resolution = (resolution or "").strip() or ("Descartado: no requiere acción." if dismiss else "Resuelto.")
-    case.resolved_at = datetime.now(timezone.utc)
+    case.resolved_at = clock.now()
     record_decision(case, "rejected" if dismiss else "resolved", actor, case.resolution)
     for request in case.requests:
         if request.status == "PENDING":
@@ -453,7 +454,7 @@ def receive_upload(database: Session, request: DocumentRequest, *, filename: str
     case = request.case
     attachment = store_attachment(database, case, filename=filename, content=content, content_type=content_type, item_code=request.item_code, source="client")
     request.status = "RECEIVED"
-    request.received_at = datetime.now(timezone.utc)
+    request.received_at = clock.now()
     request.attachment_id = attachment.id
 
     verdict = attachment.verification.get("status")
@@ -471,7 +472,7 @@ def receive_upload(database: Session, request: DocumentRequest, *, filename: str
         case.status = "WAITING_HUMAN"
         event(database, case, "Perseguidor · Documentación completa: el expediente vuelve a ti para revisar y aprobar", kind="agent", actor="perseguidor")
         recalculate(database, case)
-    prioritize(database, case, date.today())
+    prioritize(database, case, clock.today())
     add_audit_event(database, action="case.document_received", entity_type="case", entity_id=case.id, actor="portal", event_data={"request_id": request.id, "filename": attachment.filename})
     return {"received": True, "verification": attachment.verification}
 

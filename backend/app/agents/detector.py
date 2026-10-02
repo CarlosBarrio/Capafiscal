@@ -20,6 +20,7 @@ proveedor y lo dio por correcto, el aviso baja de riesgo y lo dice.
 """
 from __future__ import annotations
 
+from app import clock
 import math
 import statistics
 from collections import defaultdict
@@ -826,8 +827,8 @@ def run_anomaly_scan(database: Session, *, trigger: str = "schedule", today: dat
     from app.agents.director import prioritize
     from app.agents.expedientes import next_case_code
 
-    today = today or date.today()
-    ctx = AgentContext(database=database, today=today, now=datetime.now(timezone.utc), trigger=trigger)
+    today = today or clock.today()
+    ctx = AgentContext(database=database, today=today, now=clock.now(), trigger=trigger)
     run = AgentRun(pipeline="anomalies", trigger=trigger, status="RUNNING")
     database.add(run)
     database.flush()
@@ -887,12 +888,12 @@ def run_anomaly_scan(database: Session, *, trigger: str = "schedule", today: dat
         if case.fingerprint and case.fingerprint not in fingerprints:
             case.status = "RESOLVED"
             case.resolution = "Resuelta automáticamente: la condición ya no se da (por ejemplo, llegó la factura o se concilió el movimiento)."
-            case.resolved_at = datetime.now(timezone.utc)
+            case.resolved_at = clock.now()
             database.add(CaseEvent(case_id=case.id, kind="agent", actor="detector", title="Detector de anomalías · Ya no se da la condición: cerrada automáticamente", data={}))
             closed += 1
 
     run.status = "OK"
-    run.finished_at = datetime.now(timezone.utc)
+    run.finished_at = clock.now()
     run.summary = f"{created} anomalía(s) nuevas, {closed} cerrada(s)"
     database.flush()
     return {"found": len(findings), "created": created, "closed": closed, "run_id": run.id}

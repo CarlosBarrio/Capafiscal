@@ -15,6 +15,7 @@ Estadística descriptiva sobre los datos de la empresa: sin IA. Solo lee.
 """
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from typing import Any
 
@@ -54,7 +55,7 @@ def unusual(database: Session, invoice: Invoice, *, today: date | None = None, p
     from app.financial_memory import party_key
     from app.financial_memory import vat_rate
 
-    today = today or date.today()
+    today = today or clock.today()
     party = "customer" if invoice.direction == "ISSUED" else "supplier"
     key = party_key(invoice, party)
     name = (invoice.customer_name if party == "customer" else invoice.supplier_name) or "este proveedor"

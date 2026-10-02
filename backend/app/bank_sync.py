@@ -1,6 +1,7 @@
 """Conectar el banco, confirmar la autorización del titular y sincronizar movimientos hacia la entrada común."""
 from __future__ import annotations
 
+from app import clock
 import secrets
 from datetime import date
 from datetime import datetime
@@ -90,7 +91,7 @@ def confirm(database: Session, connection: BankConnection, *, actor: str) -> dic
     except BankProviderError as error:
         raise BankSyncError(str(error)) from error
     connection.status, connection.last_error = "LINKED", None
-    connection.consent_expires_at = datetime.now(timezone.utc) + timedelta(days=CONSENT_DAYS)
+    connection.consent_expires_at = clock.now() + timedelta(days=CONSENT_DAYS)
     # Renovar = conectar de nuevo el mismo banco: la conexión caducada queda sustituida.
     for old_connection in database.scalars(select(BankConnection).where(BankConnection.id != connection.id, BankConnection.institution_id == connection.institution_id,
                                                                         BankConnection.status.in_(("EXPIRED", "ERROR", "PENDING")))).all():
@@ -109,7 +110,7 @@ def sync(database: Session, connection: BankConnection, *, actor: str = "banco-c
     if connection.status != "LINKED":
         raise BankSyncError("Ese banco no está conectado.")
     source = require_provider()
-    today = today or date.today()
+    today = today or clock.today()
     since = (connection.last_sync_at.date() - timedelta(days=OVERLAP_DAYS)) if connection.last_sync_at else today - timedelta(days=CONSENT_DAYS)
     totals = {"imported": 0, "duplicated": 0, "auto_matched": 0, "accounts": 0, "skipped": 0}
     errors = []
@@ -130,7 +131,7 @@ def sync(database: Session, connection: BankConnection, *, actor: str = "banco-c
         label = account.get("iban") or account.get("name") or connection.institution_name or "Banco conectado"
         result = store_rows(database, rows, source=f"{CONNECTED_SOURCE} · {connection.institution_name or connection.institution_id} · {label}",
                             account_label=label, actor=actor, external=True)
-        account.update(last_sync_at=datetime.now(timezone.utc).isoformat(), last_error=None)
+        account.update(last_sync_at=clock.now().isoformat(), last_error=None)
         accounts.append(account)
         for key in ("imported", "duplicated", "auto_matched"):
             totals[key] += result[key]
@@ -139,7 +140,7 @@ def sync(database: Session, connection: BankConnection, *, actor: str = "banco-c
     connection.accounts = accounts
     connection.last_error = "; ".join(errors) or None
     if totals["accounts"]:
-        connection.last_sync_at = datetime.now(timezone.utc)
+        connection.last_sync_at = clock.now()
         connection.last_result = (f"{totals['imported']} movimiento(s) nuevos, {totals['duplicated']} ya estaban"
                                   f" y {totals['auto_matched']} conciliado(s) solos"
                                   + (f"; {totals['skipped']} sin usar (importe cero u otra divisa)" if totals["skipped"] else ""))

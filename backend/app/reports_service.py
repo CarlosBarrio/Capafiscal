@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app import clock
 import csv
 import io
 from collections import defaultdict
@@ -580,7 +581,7 @@ def build_payments_overview(
     Recibidas: pagos pendientes a proveedores.
     Emitidas: cobros pendientes de clientes (paid_at = fecha de cobro).
     """
-    current_day = today or date.today()
+    current_day = today or clock.today()
 
     statement = (
         select(Invoice)
@@ -930,7 +931,7 @@ def apply_document_filters(
     direction: str | None = None,
     today: date | None = None,
 ):
-    current_day = today or date.today()
+    current_day = today or clock.today()
     needs_invoice = any(
         (search, review_status, category, date_from, date_to, payment,
          direction)

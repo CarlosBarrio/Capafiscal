@@ -5,6 +5,7 @@ facturas, nóminas y movimientos bancarios) y un LEEME con las incidencias.
 """
 from __future__ import annotations
 
+from app import clock
 import csv
 import io
 import re
@@ -210,7 +211,7 @@ def build_advisor_pack(database: Session, *, year: int, quarter: int) -> bytes:
         lines = [
             f"CIERRE {label} · {(company.name if company else '') or ''} {('· NIF ' + company.tax_id) if company and company.tax_id else ''}",
             f"Periodo: {date_from:%d/%m/%Y} – {date_to:%d/%m/%Y}",
-            f"Generado por CapaFiscal el {date.today():%d/%m/%Y}.",
+            f"Generado por CapaFiscal el {clock.today():%d/%m/%Y}.",
             "",
             "CONTENIDO",
             f"  01_libros    Libros registro de facturas emitidas ({summary['issued']}) y recibidas ({summary['received']})",

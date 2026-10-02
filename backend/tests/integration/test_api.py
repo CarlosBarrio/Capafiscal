@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app import clock
 import io
 from datetime import date
 from datetime import timedelta
@@ -122,7 +123,7 @@ def test_payments_flow_and_overview(client, sample_pdfs):
     assert response.status_code == 409  # todavía no aprobada
 
     client.post(f"/api/invoices/{iid}/approve", json={})
-    overdue_date = (date.today() - timedelta(days=5)).isoformat()
+    overdue_date = (clock.today() - timedelta(days=5)).isoformat()
     client.post(f"/api/invoices/{iid}/reopen", json={"reason": "Añadir vencimiento"})
     client.patch(f"/api/invoices/{iid}", json={"due_date": overdue_date})
     client.post(f"/api/invoices/{iid}/approve", json={})

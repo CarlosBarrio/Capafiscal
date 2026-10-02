@@ -4,6 +4,7 @@ cada mañana resume «las cosas que deberías revisar hoy».
 """
 from __future__ import annotations
 
+from app import clock
 import math
 from datetime import date
 from typing import Any
@@ -166,7 +167,7 @@ def daily_briefing(database: Session, today: date | None = None, limit: int = 8)
     """Las cosas que alguien debería revisar hoy, de todas las fuentes, en orden."""
     from app.agenda_service import build_agenda
 
-    today = today or date.today()
+    today = today or clock.today()
     cases = assessed_open_cases(database, today)
 
     items: list[dict[str, Any]] = []
@@ -333,8 +334,8 @@ def operational_board(database: Session, today: date | None = None, *, days: int
     from app.models import DocumentRequest
     from app.models import IngestedEvent
 
-    today = today or date.today()
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+    today = today or clock.today()
+    since = clock.now() - timedelta(days=days)
     cases = assessed_open_cases(database, today)
 
     # 🔴 Requiere tu atención: lo urgente o importante que espera a una persona, y lo bloqueado.

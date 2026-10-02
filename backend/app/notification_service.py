@@ -8,6 +8,7 @@ autonómicos o locales que CapaFiscal no conoce.
 """
 from __future__ import annotations
 
+from app import clock
 import re
 from datetime import date
 from datetime import datetime
@@ -98,7 +99,7 @@ ACTION_WORDS = (
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return clock.now()
 
 
 # -------------------------------------------------------------------

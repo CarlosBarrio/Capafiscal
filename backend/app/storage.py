@@ -1,3 +1,4 @@
+from app import clock
 import hashlib
 import json
 import os
@@ -202,7 +203,7 @@ def add_activity(time_label: str, message: str) -> None:
         {
             "time": time_label,
             "message": message,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": clock.now().isoformat(),
         },
     )
 
@@ -230,7 +231,7 @@ def add_audit_event(
     events.insert(
         0,
         {
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": clock.now().isoformat(),
             "actor": actor,
             "action": action,
             "entity_type": entity_type,

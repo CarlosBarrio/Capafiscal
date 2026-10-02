@@ -1,6 +1,7 @@
 """Sistema de agentes: el recorrido completo de una notificación y el detector."""
 from __future__ import annotations
 
+from app import clock
 import io
 import zipfile
 from datetime import date
@@ -11,7 +12,7 @@ from app.agents.fiscal import detect_references
 from app.agents.gestor import requested_items
 from app.agents.memory import tokenize
 
-TODAY = date.today()
+TODAY = clock.today()
 
 REQUERIMIENTO = f"""AGENCIA TRIBUTARIA
 Delegación Especial de Castilla y León

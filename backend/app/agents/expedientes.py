@@ -4,6 +4,7 @@ exactamente y abre (o reutiliza) el expediente.
 """
 from __future__ import annotations
 
+from app import clock
 import re
 from datetime import date
 
@@ -274,7 +275,7 @@ class ClasificadorExpedientes(Agent):
         case = database.scalar(select(Case).where(Case.notification_id == notification.id))
         created = case is None
         if created:
-            year = (ctx.today or date.today()).year
+            year = (ctx.today or clock.today()).year
             case = Case(
                 code=next_case_code(database, year),
                 kind="NOTIFICATION",

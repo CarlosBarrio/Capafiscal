@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app import clock
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -81,7 +82,7 @@ class RiskItem:
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return clock.now()
 
 
 def decimal_to_number(value: Decimal | None) -> float | None:
@@ -347,7 +348,7 @@ def build_document_risks(
         )
 
     if invoice.invoice_date is not None:
-        today = datetime.now().date()
+        today = clock.today()
 
         if invoice.invoice_date > today:
             risks.append(
@@ -463,7 +464,7 @@ def build_agent_catalog(
     documents_today = sum(
         1
         for document in documents
-        if document.created_at.date() == datetime.now().date()
+        if document.created_at.date() == clock.today()
     )
 
     processed_documents = sum(
@@ -602,7 +603,7 @@ def build_today_dashboard(
     risks = list_open_risks(database, limit=20)
     agents = build_agent_catalog(database)
 
-    today = datetime.now().date()
+    today = clock.today()
 
     documents_today = [
         document
@@ -948,7 +949,7 @@ def parse_question_period(
     Extrae año y trimestre de la pregunta. Por defecto, el trimestre
     en curso del año actual.
     """
-    today = date.today()
+    today = clock.today()
     year_match = re.search(r"\b(20\d{2})\b", normalized_question)
     year = int(year_match.group(1)) if year_match else today.year
 
@@ -1131,7 +1132,7 @@ def assistant_answer(
         keyword in normalized_question
         for keyword in ("calendario", "presentar", "proximo modelo", "próximo modelo", "plazos fiscales", "que modelos", "qué modelos")
     ):
-        today = date.today()
+        today = clock.today()
         upcoming = [
             entry
             for entry in build_tax_calendar(database, year=today.year)["entries"]

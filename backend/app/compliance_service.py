@@ -4,6 +4,7 @@ RGPD y controles automáticos sobre los datos de CapaFiscal.
 """
 from __future__ import annotations
 
+from app import clock
 import re
 from datetime import date
 from datetime import datetime
@@ -388,7 +389,7 @@ def build_compliance_status(
     database: Session,
     today: date | None = None,
 ) -> dict[str, Any]:
-    current_day = today or date.today()
+    current_day = today or clock.today()
     stored = {
         item.code: item
         for item in database.scalars(select(ComplianceItem)).all()

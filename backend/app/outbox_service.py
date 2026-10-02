@@ -9,6 +9,7 @@ los revisa y los envía.
 """
 from __future__ import annotations
 
+from app import clock
 import re
 import smtplib
 import ssl
@@ -177,7 +178,7 @@ def eml_bytes(database: Session, message: OutboxMessage) -> bytes:
 
 
 def after_sent(database: Session, message: OutboxMessage) -> None:
-    now = datetime.now(timezone.utc)
+    now = clock.now()
     message.status = "SENT"
     message.sent_at = now
     message.error = None

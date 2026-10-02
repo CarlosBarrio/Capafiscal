@@ -14,6 +14,7 @@ entonces el registro queda preparado y encadenado, sin remitir.
 """
 from __future__ import annotations
 
+from app import clock
 import hashlib
 import io
 import uuid
@@ -99,7 +100,7 @@ def _last_sunday(year: int, month: int) -> date:
 
 def madrid_now(now: datetime | None = None) -> datetime:
     """Hora de Madrid con su desplazamiento (CET/CEST)."""
-    utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    utc = (now or clock.now()).astimezone(timezone.utc)
     start = datetime.combine(_last_sunday(utc.year, 3), datetime.min.time(), timezone.utc) + timedelta(hours=1)
     end = datetime.combine(_last_sunday(utc.year, 10), datetime.min.time(), timezone.utc) + timedelta(hours=1)
     offset = 2 if start <= utc < end else 1
@@ -465,7 +466,7 @@ def issue_invoice(
     if invoice.series == "F" and money(invoice.total) <= ZERO:
         raise SalesError("El importe de una factura ordinaria debe ser positivo.")
 
-    issue_day = invoice.issue_date or today or date.today()
+    issue_day = invoice.issue_date or today or clock.today()
     previous_in_series = last_issued(database, invoice.series)
     if previous_in_series and previous_in_series.issue_date and issue_day < previous_in_series.issue_date:
         raise SalesError(
@@ -581,7 +582,7 @@ def record_in_ledger(
         validation_messages=[],
         review_status="APPROVED",
         duplicate_status="NONE",
-        approved_at=datetime.now(timezone.utc),
+        approved_at=clock.now(),
     )
     database.add(ledger)
     database.flush()
@@ -643,7 +644,7 @@ def collection_state(invoice: SalesInvoice, today: date) -> dict[str, Any]:
 
 
 def serialize_invoice(invoice: SalesInvoice, today: date | None = None, *, full: bool = False) -> dict[str, Any]:
-    today = today or date.today()
+    today = today or clock.today()
     customer = invoice.customer_snapshot or (customer_snapshot(invoice.customer) if invoice.customer else {})
     data = {
         "id": invoice.id,
@@ -731,7 +732,7 @@ def list_invoices(
 
 
 def sales_overview(database: Session, today: date | None = None) -> dict[str, Any]:
-    today = today or date.today()
+    today = today or clock.today()
     invoices = database.scalars(select(SalesInvoice)).all()
     issued = [item for item in invoices if item.status == "ISSUED"]
     year_items = [item for item in issued if item.year == today.year]
@@ -856,7 +857,7 @@ def generate_due_recurring(
     actor: str = "agent",
 ) -> list[SalesInvoice]:
     """Crea (y, si está configurado, emite) las facturas recurrentes que tocan."""
-    today = today or date.today()
+    today = today or clock.today()
     created: list[SalesInvoice] = []
     templates = database.scalars(
         select(RecurringInvoice).where(RecurringInvoice.active.is_(True), RecurringInvoice.next_date <= today)
@@ -892,7 +893,7 @@ def generate_due_recurring(
 
             created.append(draft)
             template.generated_count += 1
-            template.last_generated_at = datetime.now(timezone.utc)
+            template.last_generated_at = clock.now()
             months = FREQUENCIES[template.frequency][1]
             template.next_date = add_months(template.next_date, months)
 

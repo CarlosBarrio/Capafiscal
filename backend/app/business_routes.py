@@ -4,6 +4,7 @@ tesorería, cumplimiento, agenda y memoria del agente.
 """
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -69,11 +70,11 @@ MAX_CERT_FILE = 64 * 1024
 
 
 def current_year(year: int | None) -> int:
-    return year or date.today().year
+    return year or clock.today().year
 
 
 def current_quarter(quarter: int | None) -> int:
-    return quarter or ((date.today().month - 1) // 3 + 1)
+    return quarter or ((clock.today().month - 1) // 3 + 1)
 
 
 def not_found(message: str) -> HTTPException:
@@ -197,7 +198,7 @@ def create_filing(
             model=payload.model,
             year=payload.year,
             period=payload.period,
-            filed_at=payload.filed_at or date.today(),
+            filed_at=payload.filed_at or clock.today(),
             amount=payload.amount,
             reference=payload.reference,
             notes=payload.notes,

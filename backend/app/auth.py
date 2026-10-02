@@ -19,6 +19,7 @@ solo se decide QUIÉN es y PARA QUÉ cliente trabaja la petición.
 """
 from __future__ import annotations
 
+from app import clock
 import hashlib
 import hmac
 import re
@@ -78,7 +79,7 @@ def create_session(database: Session, user: User) -> str:
     from app.config import settings
 
     token = secrets.token_urlsafe(32)
-    database.add(ApiSession(token_hash=token_hash(token), user_id=user.id, expires_at=datetime.now(timezone.utc) + timedelta(hours=settings.session_hours)))
+    database.add(ApiSession(token_hash=token_hash(token), user_id=user.id, expires_at=clock.now() + timedelta(hours=settings.session_hours)))
     database.flush()
     return token
 
@@ -90,7 +91,7 @@ def user_for_token(database: Session, token: str | None) -> User | None:
     if session is None:
         return None
     expires = session.expires_at if session.expires_at.tzinfo else session.expires_at.replace(tzinfo=timezone.utc)
-    if expires < datetime.now(timezone.utc):
+    if expires < clock.now():
         return None
     user = database.get(User, session.user_id)
     return user if user is not None and user.active else None

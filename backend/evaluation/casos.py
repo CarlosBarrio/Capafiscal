@@ -29,6 +29,7 @@ Hallazgos semánticos (no son tipos del Detector; se comprueban así):
 """
 from __future__ import annotations
 
+from app import clock
 import json
 import os
 import re
@@ -575,7 +576,7 @@ def run(dataset: str, *, engine: str = "reglas", blind: bool = False) -> dict[st
     finally:
         if work is not None:
             shutil.rmtree(work, ignore_errors=True)
-    return {"dataset": dataset, "engine": engine, "date": date.today().isoformat(), "cases": results, "summary": summarize_run(results)}
+    return {"dataset": dataset, "engine": engine, "date": clock.today().isoformat(), "cases": results, "summary": summarize_run(results)}
 
 
 def summarize_run(results: list[dict[str, Any]]) -> dict[str, Any]:

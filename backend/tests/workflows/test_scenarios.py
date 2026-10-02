@@ -10,6 +10,7 @@ factura o plazo) y comprueba cada una de las cinco partes.
 """
 from __future__ import annotations
 
+from app import clock
 import json
 import uuid
 from datetime import date
@@ -22,7 +23,7 @@ import pytest
 SCENARIOS_DIR = Path(__file__).resolve().parent / "scenarios"
 TEXTS_DIR = SCENARIOS_DIR / "textos"
 SCENARIOS = sorted(SCENARIOS_DIR.glob("*.json"))
-TODAY = date.today()
+TODAY = clock.today()
 
 
 def load(path: Path) -> dict:

@@ -21,6 +21,7 @@ Para qué sirve:
 """
 from __future__ import annotations
 
+from app import clock
 from collections import Counter
 from collections import defaultdict
 from typing import Any
@@ -200,7 +201,7 @@ def decide_rule(database: Session, rule: LearningRule, decision: str, actor: str
     if decision == "aprobar":
         rule.simulation = simulate(database, rule.subject_key, rule.field)  # se aprueba con la simulación al día
         rule.version = ruleset_version(database) + 1
-    rule.status, rule.decided_by, rule.decided_at, rule.note = target, actor, datetime.now(timezone.utc), note
+    rule.status, rule.decided_by, rule.decided_at, rule.note = target, actor, clock.now(), note
     from app.invoice_service import add_audit_event
 
     add_audit_event(database, action=f"learning.rule_{target.lower()}", entity_type="learning_rule", entity_id=rule.id, actor=actor or "persona",

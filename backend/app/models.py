@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from datetime import datetime
 from datetime import timezone
@@ -26,7 +27,7 @@ from app.database import Base
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return clock.now()
 
 
 class TenantMixin:

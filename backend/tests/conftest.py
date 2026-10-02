@@ -9,6 +9,8 @@ import os
 import shutil
 import sys
 import tempfile
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -50,6 +52,24 @@ def drop_everything() -> None:
     from app.migrate import reset_database
 
     reset_database()
+
+
+# Todas las pruebas ven el mismo «hoy»: nada pasa ayer y falla hoy (ni al cruzar la medianoche).
+# Los datos de prueba son de septiembre de 2026; el reloj se fija a la mañana del 1 de octubre.
+# Todas las pruebas ven el mismo «hoy»: ni pasan ayer y fallan hoy ni fallan al cruzar la medianoche.
+# Se fija ya al importar, porque algunos módulos de test calculan TODAY al cargarse.
+FROZEN_NOW = datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc)
+from app import clock as _clock  # noqa: E402
+
+_clock.freeze(FROZEN_NOW)
+
+
+@pytest.fixture(autouse=True)
+def fixed_clock():
+    from app import clock
+
+    with clock.frozen(FROZEN_NOW):
+        yield
 
 
 @pytest.fixture()

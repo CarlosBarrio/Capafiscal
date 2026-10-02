@@ -8,6 +8,7 @@ flujo de datos.
 """
 from __future__ import annotations
 
+from app import clock
 import csv
 import hashlib
 import io
@@ -707,7 +708,7 @@ def expected_date(invoice: Invoice) -> date:
     if invoice.invoice_date:
         return invoice.invoice_date + timedelta(days=DEFAULT_PAYMENT_TERM_DAYS)
 
-    return date.today()
+    return clock.today()
 
 
 def payroll_movements(database: Session, current_day: date) -> list[dict[str, Any]]:
@@ -792,7 +793,7 @@ def build_cashflow_forecast(
 ) -> dict[str, Any]:
     from app.tax_service import build_tax_calendar
 
-    current_day = today or date.today()
+    current_day = today or clock.today()
     horizon = current_day + timedelta(days=horizon_days)
 
     invoices = database.scalars(
@@ -959,7 +960,7 @@ def build_business_health(
     from app.reports_service import build_payments_overview
     from app.reports_service import quarter_range
 
-    current_day = today or date.today()
+    current_day = today or clock.today()
     date_from, date_to = quarter_range(year, quarter)
 
     invoices = database.scalars(

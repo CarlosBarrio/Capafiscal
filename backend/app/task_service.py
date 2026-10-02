@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app import clock
 from datetime import datetime
 from datetime import timezone
 from typing import Any
@@ -49,7 +50,7 @@ REVIEW_DOCUMENT_STATUSES = {
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return clock.now()
 
 
 def add_task_event(

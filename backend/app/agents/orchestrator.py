@@ -16,6 +16,7 @@ humano recibe un único aviso con todo trabajado y un «Revisar y aprobar».
 """
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from datetime import datetime
 from datetime import timezone
@@ -176,8 +177,8 @@ def backfill_case_events(ctx: AgentContext, run: AgentRun, *, until: int) -> Non
 
 
 def process_event(database: Session, event: Event, *, trigger: str = "system", today: date | None = None, holder: dict[str, Any] | None = None) -> Case | None:
-    now = datetime.now(timezone.utc)
-    ctx = AgentContext(database=database, today=today or date.today(), now=now, trigger=trigger, event=event)
+    now = clock.now()
+    ctx = AgentContext(database=database, today=today or clock.today(), now=now, trigger=trigger, event=event)
     if event.kind == "notification":
         notification = database.get(FiscalNotification, event.ref_id)
         if notification is None:
@@ -258,7 +259,7 @@ def process_event(database: Session, event: Event, *, trigger: str = "system", t
 
     case = ctx.case
     run.status = "OK" if not errors else "PARTIAL"
-    run.finished_at = datetime.now(timezone.utc)
+    run.finished_at = clock.now()
     route_info = {
         "code": route,
         "label": ROUTES[route]["label"],
@@ -381,7 +382,7 @@ def watch_deadlines(database: Session, *, trigger: str = "schedule", today: date
     """Tercer tipo de entrada: plazos que se acercan crean su expediente."""
     from app.tax_service import build_tax_calendar
 
-    today = today or date.today()
+    today = today or clock.today()
     entries = []
     for year in [today.year] + ([today.year + 1] if today.month == 12 else []):
         entries += build_tax_calendar(database, year=year, today=today)["entries"]

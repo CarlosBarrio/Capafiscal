@@ -7,6 +7,7 @@ se muestran siempre como revisables.
 """
 from __future__ import annotations
 
+from app import clock
 import calendar
 from datetime import date
 from datetime import timedelta
@@ -94,4 +95,4 @@ def last_day_of_month(year: int, month: int) -> date:
 
 
 def days_until(target: date, today: date | None = None) -> int:
-    return (target - (today or date.today())).days
+    return (target - (today or clock.today())).days

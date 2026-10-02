@@ -20,6 +20,7 @@ Solo lee.
 """
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from datetime import datetime
 from datetime import time
@@ -46,7 +47,7 @@ HUMAN_ACTIONS = ("invoice.approved", "invoice.rejected", "invoice.updated", "ban
 def measure(database: Session, *, days: int = 30, today: date | None = None) -> dict[str, Any]:
     from app.agents.director import operational_board
 
-    today = today or date.today()
+    today = today or clock.today()
     since_day = today - timedelta(days=days)
     since = datetime.combine(since_day, time.min, tzinfo=timezone.utc)
 

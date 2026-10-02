@@ -13,6 +13,7 @@ Solo lee. Los resultados llevan su acción (abrir el detalle o ir a la pantalla)
 """
 from __future__ import annotations
 
+from app import clock
 import re
 from datetime import date
 from decimal import Decimal
@@ -87,7 +88,7 @@ def fiscal_results(database: Session, text: str, today: date) -> list[dict[str, 
 def search(database: Session, query: str, *, today: date | None = None) -> dict[str, Any]:
     from app.reports_service import counterparty
 
-    today = today or date.today()
+    today = today or clock.today()
     raw = query.strip()
     text = normalize_search_text(raw)
     if len(text) < 2:

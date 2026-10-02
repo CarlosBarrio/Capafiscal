@@ -7,6 +7,7 @@ prorrata, regímenes especiales ni compensaciones de periodos anteriores.
 """
 from __future__ import annotations
 
+from app import clock
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
@@ -616,7 +617,7 @@ def build_tax_calendar(
     Obligaciones cuyo plazo vence en `year` (incluye el 4T y los
     resúmenes anuales del año anterior, que vencen en enero).
     """
-    current_day = today or date.today()
+    current_day = today or clock.today()
     form = legal_form(database)
     filings = filings_index(database)
 

@@ -18,6 +18,7 @@ los datos de la empresa: sin IA.
 """
 from __future__ import annotations
 
+from app import clock
 import statistics
 from collections import Counter
 from collections import defaultdict
@@ -142,7 +143,7 @@ def refresh_profiles(database: Session, *, today: date | None = None) -> int:
 
 def compute_profiles(database: Session, *, today: date | None = None) -> list[tuple[str, str, str, dict[str, Any]]]:
     """Los perfiles calculados en memoria (solo lee): (parte, clave, nombre, perfil)."""
-    today = today or date.today()
+    today = today or clock.today()
     invoices = database.scalars(
         select(Invoice).where(Invoice.invoice_date.is_not(None), Invoice.total.is_not(None), Invoice.review_status != "REJECTED")
     ).all()
@@ -185,7 +186,7 @@ def upsert_profile(database: Session, *, tenant: int, party: str, key: str, name
         from sqlalchemy.dialects.postgresql import insert
     else:
         from sqlalchemy.dialects.sqlite import insert
-    values = {"tenant_id": tenant, "party": party, "key": key, "name": name, "profile": profile, "updated_at": datetime.now(timezone.utc)}
+    values = {"tenant_id": tenant, "party": party, "key": key, "name": name, "profile": profile, "updated_at": clock.now()}
     statement = insert(CounterpartyProfile).values(**values)
     statement = statement.on_conflict_do_update(index_elements=["tenant_id", "party", "key"], set_={"name": name, "profile": profile, "updated_at": values["updated_at"]})
     database.execute(statement)

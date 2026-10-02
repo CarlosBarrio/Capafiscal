@@ -1,6 +1,7 @@
 """Tesorería predictiva (retrasos reales, cargos habituales, riesgo explicado) y «¿qué cambia si…?» sin guardar nada."""
 from __future__ import annotations
 
+from app import clock
 from datetime import date
 from datetime import timedelta
 from decimal import Decimal
@@ -104,10 +105,10 @@ def test_work_center_raises_the_liquidity_risk(client):
     from app.database import SessionLocal
 
     client.put("/api/company", json=COMPANY)
-    import_with_balance(client, [(date.today() - timedelta(days=1), "INGRESO", "100,00", "500,00")])
+    import_with_balance(client, [(clock.today() - timedelta(days=1), "INGRESO", "100,00", "500,00")])
     with SessionLocal() as database:
-        invoice = add_invoice(database, supplier="TALLERES OTRO S.L.", tax_id="B00000025", number="T-0960", total=3000.0, when=date.today() - timedelta(days=5))
-        invoice.due_date = date.today() + timedelta(days=7)
+        invoice = add_invoice(database, supplier="TALLERES OTRO S.L.", tax_id="B00000025", number="T-0960", total=3000.0, when=clock.today() - timedelta(days=5))
+        invoice.due_date = clock.today() + timedelta(days=7)
         database.commit()
     first = client.get("/api/work").json()["groups"][0]["items"][0]
     assert first["kind"] == "liquidity" and first["title"] == "Riesgo de liquidez en 7 días"
