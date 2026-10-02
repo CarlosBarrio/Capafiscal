@@ -41,3 +41,6 @@ backend/evaluation/informes/
 
 # Banco ciego C: se genera con una semilla y no se versiona
 backend/evaluation/datasets/c_ciego/
+
+# Registro local de «npx skills add» (cada equipo tiene el suyo)
+skills-lock.json
