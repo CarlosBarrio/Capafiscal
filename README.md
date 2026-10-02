@@ -458,6 +458,29 @@ Levanta PostgreSQL 16 y CapaFiscal. Al arrancar, las migraciones crean o
 actualizan el esquema. La imagen incluye Tesseract; los documentos van al
 volumen `capafiscal-data` y la base de datos a `capafiscal-db`.
 
+CapaFiscal queda en <http://127.0.0.1:8000> (solo este equipo).
+
+- **Correo en desarrollo**: `docker compose --profile dev up --build` añade
+  [Mailpit](https://mailpit.axllent.org/), un buzón local. Con `SMTP_HOST=mailpit` y
+  `SMTP_PORT=1025` en `.env`, los correos se ven en <http://127.0.0.1:8025> y no
+  llegan a nadie. Fuera de producción CapaFiscal se niega a enviar a un servidor
+  que no sea local (salvo `SMTP_ALLOW_EXTERNAL=true`).
+- **Producción (detrás de HTTPS)**: Internet → Caddy (certificado automático) →
+  CapaFiscal → PostgreSQL. Define `DOMAIN`, `POSTGRES_PASSWORD`, `APP_SECRET_KEY`,
+  `BACKUP_PASSPHRASE` y el `SMTP_*` real en `.env`, y:
+
+  ```bash
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml config   # revisar
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+  ```
+
+  La aplicación no publica puerto: solo se llega por el proxy (`deploy/Caddyfile`).
+  Al arrancar comprueba la configuración (`python -m app.production`) y no arranca
+  si algo es inseguro. Con `DOMAIN=localhost` se prueba la cadena en local.
+- **Copias**: `docker compose exec capafiscal python -m app.backup create /data/copias`
+  (cifrada con `BACKUP_PASSPHRASE`); `verify` la comprueba y `restore` solo
+  restaura en una base vacía. Sácalas del servidor.
+
 ### Configuración
 
 Copia `.env.example` a `.env` en la raíz del proyecto. Lo más útil:

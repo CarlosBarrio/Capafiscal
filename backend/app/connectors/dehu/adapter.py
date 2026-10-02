@@ -113,9 +113,15 @@ def metadata_notification(item: DehuItem) -> dict[str, Any]:
     from app.notification_service import NOTIFICATION_TYPES
     from app.notification_service import classify_type
 
+    from app.notification_service import action_class
+
     kind = "COMUNICACION" if item.kind == "comunicacion" else classify_type(item.subject)[0]
+    issuer = issuer_code(item.issuer_name)
+    # Sin PDF también se sabe qué hay que hacer: un apremio o un requerimiento requieren actuación; lo dudoso, a una persona.
+    action, document_kind = action_class(item.subject, kind)
     return {
-        "issuer": issuer_code(item.issuer_name), "notification_type": kind,
+        "issuer": issuer, "notification_type": kind,
+        "classification": {"organism": issuer, "type": kind, "confidence": None, "source": "metadatos DEHú", "action": action, "document_kind": document_kind},
         "title": f"{NOTIFICATION_TYPES.get(kind, 'Notificación')} · {item.issuer_name}"[:255],
         "reference": item.identifier[:100], "summary": item.subject[:1000],
         "available_at": item.available_at, "notified_at": item.accessed_at,

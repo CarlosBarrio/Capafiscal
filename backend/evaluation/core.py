@@ -26,10 +26,13 @@ from typing import Any
 from typing import Callable
 
 FIELDS = (
-    "direction", "supplier_name", "supplier_tax_id", "customer_tax_id", "invoice_number",
-    "invoice_date", "due_date", "subtotal", "tax_total", "total", "category",
+    "is_invoice", "direction", "supplier_name", "supplier_tax_id", "customer_tax_id", "invoice_number",
+    "invoice_date", "due_date", "subtotal", "tax_total", "withholding_total", "total", "category",
 )
+# Campos que un motor no produce: no se le cuentan como fallo (Claude no decide si algo es factura).
+NOT_PRODUCED = {"claude": {"is_invoice"}}
 FIELD_LABELS = {
+    "is_invoice": "¿Es factura?",
     "direction": "Sentido (recibida/emitida)",
     "supplier_name": "Proveedor",
     "supplier_tax_id": "NIF proveedor",
@@ -39,6 +42,7 @@ FIELD_LABELS = {
     "due_date": "Vencimiento",
     "subtotal": "Base",
     "tax_total": "IVA",
+    "withholding_total": "Retención IRPF",
     "total": "Total",
     "category": "Clasificación",
 }
@@ -118,8 +122,9 @@ def same(name: str, expected: Any, got: Any) -> bool:
 
 def flatten(result: dict[str, Any]) -> dict[str, Any]:
     fields = result.get("fields") or {}
-    values = {name: (fields.get(name) or {}).get("value") for name in FIELDS if name != "direction"}
+    values = {name: (fields.get(name) or {}).get("value") for name in FIELDS if name not in ("direction", "is_invoice")}
     values["direction"] = result.get("direction")
+    values["is_invoice"] = result.get("is_invoice")
     return values
 
 
@@ -184,6 +189,8 @@ OUTCOMES = {
     "error_silencioso": "Errores silenciosos (no avisa y está mal)",
 }
 ERROR_TYPES = {
+    "is_invoice": "error_tipo_documento",
+    "withholding_total": "error_retencion",
     "direction": "error_sentido",
     "supplier_name": "error_proveedor",
     "supplier_tax_id": "error_nif",
@@ -295,7 +302,8 @@ def run(dataset: Dataset, engines: list[str], *, model: str | None = None, sets:
             except Exception as exc:  # un caso roto no para la evaluación
                 got, meta, error = {}, {"engine": engine}, f"{type(exc).__name__}: {exc}"
             ms = int((time.perf_counter() - started) * 1000)
-            checks = {name: same(name, case.expected.get(name), got.get(name)) for name in FIELDS if name in case.expected}
+            skipped = NOT_PRODUCED.get(engine, set())
+            checks = {name: same(name, case.expected.get(name), got.get(name)) for name in FIELDS if name in case.expected and name not in skipped}
             perfect = all(checks.values())
             flagged = bool(meta.get("flags"))
             if engine == "claude":

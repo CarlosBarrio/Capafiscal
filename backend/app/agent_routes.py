@@ -531,9 +531,14 @@ def dehu_poll(database: DatabaseDependency) -> dict[str, Any]:
     from app.connectors.dehu.client import FolderTransport
     from app.connectors.dehu.client import poll
 
+    from app.connectors.dehu.client import DehuUnavailable
+
     if not settings.dehu_inbox_dir:
         raise HTTPException(status_code=400, detail="Configura DEHU_INBOX_DIR con la carpeta de notificaciones descargadas de la DEHú.")
-    return poll(database, FolderTransport(Path(settings.dehu_inbox_dir)))
+    try:
+        return poll(database, FolderTransport(Path(settings.dehu_inbox_dir)))
+    except DehuUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @router.get("/connectors/email", tags=["Conectores"])

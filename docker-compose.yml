@@ -1,5 +1,9 @@
 # CapaFiscal + PostgreSQL. El esquema lo crean y actualizan las migraciones al arrancar.
 # Para probar en local sin base de datos aparte, basta con DATABASE_URL=sqlite:///… (ver README).
+#
+#   docker compose up --build                       desarrollo (CapaFiscal en 127.0.0.1:8000)
+#   docker compose --profile dev up --build         + Mailpit: buzón local, ningún correo sale (http://127.0.0.1:8025)
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d   producción detrás de HTTPS (ver deploy/)
 services:
   db:
     image: postgres:16
@@ -19,7 +23,7 @@ services:
   capafiscal:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"  # solo este equipo; en producción entra por el proxy HTTPS
     env_file:
       - path: .env
         required: false
@@ -38,6 +42,15 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    restart: unless-stopped
+
+  # Buzón SMTP local para desarrollo: guarda los correos y los enseña en una web; no entrega a nadie.
+  # En .env: SMTP_HOST=mailpit, SMTP_PORT=1025 (CapaFiscal solo envía a buzones locales fuera de producción).
+  mailpit:
+    image: axllent/mailpit:v1.21
+    profiles: ["dev"]
+    ports:
+      - "127.0.0.1:8025:8025"
     restart: unless-stopped
 
 volumes:

@@ -63,3 +63,45 @@ def test_folder_transport_processes_downloads_once(client, tmp_path):
         first = poll(database, FolderTransport(inbox))
         second = poll(database, FolderTransport(inbox))
     assert first["new"] == 1 and first["cases"] and second["duplicates"] == 1
+
+
+def test_a_stray_or_broken_file_in_the_inbox_does_not_block_the_rest(client, tmp_path):
+    """Un .json que no es una notificación (o está dañado) se salta con aviso; los demás se procesan."""
+    from app.connectors.dehu.client import FolderTransport
+    from app.connectors.dehu.client import poll
+    from app.database import SessionLocal
+
+    setup(client)
+    inbox = tmp_path / "dehu"
+    inbox.mkdir()
+    (inbox / "notas.json").write_text(json.dumps({"comentario": "no es una notificación"}))
+    (inbox / "roto.json").write_text("{ esto no es json")
+    (inbox / "N-9.json").write_text(json.dumps({"identifier": "N-9", "issuer": "AEAT", "subject": "Requerimiento", "accessed_at": "2026-09-28"}))
+    with SessionLocal() as database:
+        database.info["tenant_id"] = 0
+        result = poll(database, FolderTransport(inbox))
+    assert result["new"] == 1 and {item["file"] for item in result["skipped"]} == {"notas.json", "roto.json"}
+
+
+def test_metadata_only_notifications_still_say_whether_they_need_action(client):
+    setup(client)
+    result = client.post("/api/connectors/dehu/import", json={
+        "identifier": "N-2026-000200", "issuer": "Tesorería General de la Seguridad Social", "subject": "Providencia de apremio", "accessed_at": "2026-10-05",
+    }).json()
+    notification = next(row for row in client.get("/api/notifications", params={"open_only": "false"}).json() if row["reference"] == "N-2026-000200")
+    assert notification["classification"]["action"] == "ACTION_REQUIRED" and result["case_id"]
+    assert notification["deadline"] == "2026-10-20"  # LGT 62.5: notificada el 5 → hasta el día 20
+
+
+def test_synthetic_dehu_dataset_end_to_end(client, monkeypatch):
+    """El evaluador recorre carpeta → adaptador → expediente y compara con la verdad calculada con reglas legales."""
+    from pathlib import Path
+
+    from app.config import settings
+    from evaluation import dehu
+
+    monkeypatch.setattr(settings, "dehu_inbox_dir", settings.dehu_inbox_dir)  # el evaluador lo cambia; se restaura al acabar
+    report = dehu.run(Path(__file__).resolve().parents[2] / "evaluation" / "datasets" / "dehu_sintetico")
+    failures = [row["id"] for row in report["rows"] if not row["perfect"]]
+    assert report["processed"] == report["notifications"] == 7 and not failures, dehu.to_markdown(report)
+    assert report["new_on_second_poll"] == 0 and report["duplicates_on_second_poll"] == 7

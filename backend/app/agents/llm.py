@@ -109,6 +109,11 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float | 
     return round(input_tokens / 1_000_000 * price[0] + output_tokens / 1_000_000 * price[1], 6)
 
 
+# Motivo legible del fallback. Los reintentos (2, con espera) ya los hace el cliente antes de llegar aquí.
+STATUS_REASONS = {401: "clave no válida (401)", 403: "sin permiso (403)", 429: "límite de peticiones (429)",
+                  529: "servicio saturado (529)"}
+
+
 def _complete(
     *,
     system: str,
@@ -141,12 +146,21 @@ def _complete(
             messages=[{"role": "user", "content": content}],
         )
     except anthropic.APIStatusError as error:
-        logger.warning("La IA devolvió un error (%s); se usan reglas.", error.status_code)
-        meta.update(fallback=f"error {error.status_code}", ms=int((time.perf_counter() - started) * 1000))
+        reason = STATUS_REASONS.get(error.status_code, f"error {error.status_code}")
+        logger.warning("La IA devolvió un error (%s); se usan reglas.", reason)
+        meta.update(fallback=reason, ms=int((time.perf_counter() - started) * 1000))
+        return None, meta
+    except anthropic.APITimeoutError:
+        logger.warning("La IA no respondió a tiempo; se usan reglas.")
+        meta.update(fallback="tiempo agotado", ms=int((time.perf_counter() - started) * 1000))
         return None, meta
     except anthropic.APIConnectionError:
         logger.warning("Sin conexión con la IA; se usan reglas.")
         meta.update(fallback="sin conexión", ms=int((time.perf_counter() - started) * 1000))
+        return None, meta
+    except anthropic.AnthropicError as error:  # cualquier otro fallo del cliente: nunca rompe el proceso
+        logger.warning("Fallo del cliente de IA (%s); se usan reglas.", type(error).__name__)
+        meta.update(fallback=f"fallo del cliente ({type(error).__name__})", ms=int((time.perf_counter() - started) * 1000))
         return None, meta
 
     meta["ms"] = int((time.perf_counter() - started) * 1000)
@@ -241,9 +255,12 @@ def extract_invoice(*, pdf_bytes: bytes | None = None, text: str | None = None, 
     if not raw:
         return None, meta
     try:
-        return json.loads(raw), meta
+        data = json.loads(raw)
     except json.JSONDecodeError:
         return None, {**meta, "fallback": "JSON inválido"}
+    if not isinstance(data, dict):
+        return None, {**meta, "fallback": "JSON inválido"}
+    return data, meta
 
 
 def extract_notification(text: str) -> dict[str, Any] | None:
@@ -259,9 +276,10 @@ def extract_notification(text: str) -> dict[str, Any] | None:
     if not raw:
         return None
     try:
-        return json.loads(raw)
+        data = json.loads(raw)
     except json.JSONDecodeError:
         return None
+    return data if isinstance(data, dict) else None
 
 
 def draft_letter(facts: dict[str, Any], template: str) -> str | None:

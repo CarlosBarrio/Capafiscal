@@ -280,6 +280,12 @@ def test_smtp_sending_uses_configured_server(client, monkeypatch):
         def __init__(self, host, port, timeout=None):
             self.host = host
 
+        def ehlo(self):
+            pass
+
+        def has_extn(self, name):
+            return True
+
         def starttls(self, context=None):
             pass
 
@@ -297,6 +303,7 @@ def test_smtp_sending_uses_configured_server(client, monkeypatch):
 
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
     monkeypatch.setattr(settings, "smtp_from", "facturas@taller.es")
+    monkeypatch.setattr(settings, "smtp_allow_external", True)  # servidor real pedido expresamente
     monkeypatch.setattr("app.outbox_service.smtplib.SMTP", FakeSMTP)
 
     setup_company(client)

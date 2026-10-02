@@ -111,3 +111,18 @@ def test_iban_in_bank_and_invoice_is_identity_evidence(client):
     row = by_description(client.get("/api/bank/reconciliation").json())["TRANSFERENCIA ES0000000000000000001234"]
     assert row["invoice_id"] == ids["a"] and row["level"] == "SEGURO" and row["state"] == "CONCILIADO"
     assert checks(row)["iban"] is True  # la evidencia sigue visible después de conciliar
+
+
+def test_synthetic_bank_dataset_end_to_end(client):
+    """Dos extractos de formatos distintos → importación → conciliación, contra la verdad de banco_sintetico.
+
+    Lo crítico: ninguna conciliación automática incorrecta y reimportar no duplica nada."""
+    from pathlib import Path
+
+    from evaluation import banco
+
+    report = banco.run(Path(__file__).resolve().parents[2] / "evaluation" / "datasets" / "banco_sintetico")
+    assert not report["errors"] and report["wrong_auto"] == 0, banco.to_markdown(report)
+    assert report["perfect"] == report["movements"] == 18, banco.to_markdown(report)
+    assert report["unpaid_ok"], banco.to_markdown(report)
+    assert report["reimport"] == {"imported": 0, "duplicated": 18}

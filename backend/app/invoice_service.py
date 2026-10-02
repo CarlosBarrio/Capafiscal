@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from app import clock
+import logging
+import time
 from datetime import date
 from datetime import datetime
 from decimal import Decimal
@@ -833,6 +835,27 @@ def learn_supplier_rule(
     )
 
 
+DOCUMENT_LOG = logging.getLogger("capafiscal.documents")
+
+
+def log_processing(document: Document, *, started: float, stage: str, outcome: str, interpretation: dict[str, Any] | None = None,
+                   error: BaseException | None = None) -> None:
+    """Una línea por documento: qué motor, cuánto tardó, si llamó a Claude y en qué etapa falló.
+    Sin nombre de archivo ni contenido (pueden llevar datos personales) y nunca claves."""
+    meta = (interpretation or {}).get("meta") or {}
+    fields = {
+        "document_id": document.id, "extension": document.extension, "outcome": outcome, "stage": stage,
+        "engine": "reglas+claude" if meta else "reglas", "claude_calls": 1 if meta else 0,
+        "claude_fallback": (interpretation or {}).get("fallback"), "cost_usd": meta.get("cost_usd"),
+        "ms": int((time.perf_counter() - started) * 1000),
+    }
+    if error is not None:
+        fields["error"] = type(error).__name__
+    level = logging.WARNING if outcome == "error" else logging.INFO
+    DOCUMENT_LOG.log(level, "documento %s · %s · %s · %s ms%s", document.id, outcome, fields["engine"], fields["ms"],
+                     f" · falló en {stage} ({fields['error']})" if error is not None else "", extra={"fields": fields})
+
+
 def process_document(
     database: Session,
     *,
@@ -840,6 +863,9 @@ def process_document(
     file_path: Path,
     actor: str = "system",
 ) -> Invoice | None:
+    started = time.perf_counter()
+    stage = "lectura"
+    interpretation: dict[str, Any] = {}
     document.status = "PROCESSING"
     document.extraction_status = "RUNNING"
     document.failure_reason = None
@@ -887,6 +913,7 @@ def process_document(
 
         # Lo que las personas corrigen a menudo en este proveedor no se da por bueno solo con reglas.
         rules_supplier = ((result.get("fields") or {}).get("supplier_tax_id") or {}).get("value")
+        stage = "interpretación"
         result = refine(
             file_path,
             result,
@@ -913,6 +940,7 @@ def process_document(
                 },
             )
 
+        stage = "guardado"
         invoice = persist_extraction_result(
             database,
             document=document,
@@ -952,10 +980,12 @@ def process_document(
         )
 
         database.commit()
+        log_processing(document, started=started, stage=stage, outcome=document.extraction_status.lower(), interpretation=interpretation)
 
         return invoice
 
     except Exception as error:
+        log_processing(document, started=started, stage=stage, outcome="error", interpretation=interpretation, error=error)
         document.status = "FAILED"
         document.extraction_status = "FAILED"
         document.failure_reason = str(error)

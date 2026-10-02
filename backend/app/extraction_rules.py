@@ -105,6 +105,32 @@ class LegalIdentity:
     source: str
 
 
+# Errores típicos de OCR en las etiquetas de importes: 0↔O, l/1↔I, 5↔S. Solo en esas palabras, nunca en el texto libre.
+OCR_LABELS = (
+    (re.compile(r"\bT[O0]T[A4]L\b", re.IGNORECASE), "TOTAL"),
+    (re.compile(r"(?<![A-Za-z0-9])[lI1|]V[A4](?![A-Za-z])"), "IVA"),
+    (re.compile(r"\bB[a4][s5]e\b"), "Base"),
+    (re.compile(r"\bBA[S5]E\b"), "BASE"),
+    (re.compile(r"\b[lI1]mp[o0]nible\b", re.IGNORECASE), "imponible"),
+    (re.compile(r"\bCu[o0]ta\b"), "Cuota"),
+)
+AMOUNT_LABEL_LINE = re.compile(r"\b(?:TOTAL|IVA|BASE|CUOTA|IMPONIBLE|RETENCI[OÓ]N|IRPF)\b", re.IGNORECASE)
+SPACED_AMOUNT = re.compile(r"(?<![\d.,])(\d(?: \d){1,6}(?:,\d{2}))(?!\d)")
+
+
+def repair_ocr_labels(text: str) -> str:
+    """«T0TAL FACTURA», «lVA 21 % 4 9,98»: arregla las etiquetas de importes y, solo en esas líneas, los dígitos
+    separados por espacios. En el resto del texto «1 2,50» puede ser cantidad 1 y precio 2,50: no se toca."""
+    lines = []
+    for line in text.splitlines():
+        for pattern, label in OCR_LABELS:
+            line = pattern.sub(label, line)
+        if AMOUNT_LABEL_LINE.search(line):
+            line = SPACED_AMOUNT.sub(lambda match: match.group(1).replace(" ", ""), line)
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def clean_name(value: str) -> str | None:
     # Lo que va delante del nombre (IBAN, importes, etiquetas) no es parte de él.
     value = re.split(r"[\d€|:]", value)[-1]

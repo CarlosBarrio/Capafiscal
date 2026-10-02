@@ -47,6 +47,8 @@ def problems(settings: Any | None = None) -> list[tuple[str, str]]:
         add(WARNING, "Sin BACKUP_PASSPHRASE: las copias de seguridad irían sin cifrar.")
     if not settings.smtp_host:
         add(WARNING, "Sin SMTP: no llegan los enlaces de «He olvidado mi contraseña» (el administrador puede generarlos).")
+    elif settings.smtp_host.strip().lower() in {"localhost", "127.0.0.1", "::1", "mailpit", "mailhog"}:
+        add(WARNING, f"SMTP_HOST={settings.smtp_host} es un buzón de pruebas: los correos no llegarían a nadie. Usa el servidor de correo real.")
     return found
 
 

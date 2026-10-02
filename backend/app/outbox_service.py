@@ -189,13 +189,36 @@ def after_sent(database: Session, message: OutboxMessage) -> None:
             invoice.sent_at = now
 
 
+LOCAL_SMTP_HOSTS = {"localhost", "127.0.0.1", "::1", "mailpit", "mailhog"}
+
+
+class SmtpBlocked(smtplib.SMTPException):
+    """Envío bloqueado por configuración: en desarrollo no sale correo real."""
+
+
+def local_smtp() -> bool:
+    """Un buzón de pruebas en este equipo o en la red de Docker (Mailpit, MailHog): no entrega a nadie."""
+    return settings.smtp_host.strip().lower() in LOCAL_SMTP_HOSTS
+
+
 def smtp_deliver(email: EmailMessage) -> None:
-    """Entrega un correo por el servidor SMTP configurado (TLS siempre)."""
+    """Entrega un correo por el servidor SMTP configurado.
+
+    A un servidor real, siempre con TLS. A un buzón local de pruebas, TLS solo si lo ofrece.
+    Fuera de producción, solo a un buzón local salvo SMTP_ALLOW_EXTERNAL=true."""
+    local = local_smtp()
+    if not local and settings.app_environment.lower() != "production" and not settings.smtp_allow_external:
+        raise SmtpBlocked(
+            f"En {settings.app_environment} no se envía correo real: usa un buzón local (SMTP_HOST=localhost o mailpit) "
+            "o define SMTP_ALLOW_EXTERNAL=true si de verdad quieres enviar."
+        )
     if settings.smtp_use_ssl:
         server: smtplib.SMTP = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=30, context=ssl.create_default_context())
     else:
         server = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30)
-        server.starttls(context=ssl.create_default_context())
+        server.ehlo()
+        if not local or server.has_extn("starttls"):
+            server.starttls(context=ssl.create_default_context())
     with server:
         if settings.smtp_user:
             server.login(settings.smtp_user, settings.smtp_password)

@@ -164,6 +164,11 @@ NAME_REJECT_WORDS = (
     "vencimiento",
     "pagina",
 )
+# Palabras completas: «numero» rechaza «Número: 12», no «Asesoría Números Claros»; «cif» no rechaza «Pacífico»
+# ni «nif» «Uniformes». Los fragmentos de URL y correo sí se buscan como subcadena.
+NAME_REJECT_PATTERN = re.compile(
+    "|".join(re.escape(word) if not word[-1].isalnum() or "-" in word else rf"\b{re.escape(word)}\b" for word in NAME_REJECT_WORDS)
+)
 
 
 @dataclass
@@ -481,6 +486,10 @@ def extract_page_with_ocr(
 
     except Exception:
         return ""
+
+class UnreadableDocument(ValueError):
+    """El archivo no se puede abrir (PDF dañado o truncado): reintentar no sirve, hace falta otra copia."""
+
 
 def read_document(
     path: Path,
@@ -1076,7 +1085,7 @@ def looks_like_company_name(line: str) -> bool:
     if looks_like_address(cleaned):
         return False
 
-    if any(word in normalized for word in NAME_REJECT_WORDS):
+    if NAME_REJECT_PATTERN.search(normalized):
         return False
 
     if DATE_PATTERN.search(cleaned):
@@ -2464,7 +2473,40 @@ def detect_invoice_likelihood(
 
     score = min(score, 100)
 
+    # Un presupuesto, un albarán, una proforma o un pedido llevan IVA y total, pero no son facturas:
+    # si su título lo dice y ninguna línea se titula «factura», no se registra como gasto.
+    kind = non_invoice_title(text)
+    if kind:
+        signals.append(f"not_invoice:{kind}")
+        return False, min(score, 30), signals
+
     return score >= 45, score, signals
+
+
+NON_INVOICE_TITLES = (
+    ("proforma", re.compile(r"^\s*(?:factura\s+)?pro\s*-?\s*forma\b", re.IGNORECASE)),
+    ("presupuesto", re.compile(r"^\s*(?:presupuesto|oferta\s+comercial)\b", re.IGNORECASE)),
+    ("albarán", re.compile(r"^\s*(?:albar[aá]n|nota\s+de\s+entrega)\b", re.IGNORECASE)),
+)
+INVOICE_TITLE = re.compile(r"^\s*factura\b(?!\s*pro\s*-?\s*forma)", re.IGNORECASE)
+
+
+def non_invoice_title(text: str, head_lines: int = 25) -> str | None:
+    """«presupuesto», «albarán» o «proforma» si el PRIMER título de la cabecera es ese (y no «Factura»).
+
+    Manda el primer título: una factura que cita «Albarán nº 12» o «Presupuesto aceptado» más abajo sigue
+    siendo factura. «Pedido» no se usa: muchas facturas llevan «Pedido: 4500123» como referencia."""
+    for line in [line for line in (text or "").splitlines() if line.strip()][:head_lines]:
+        if INVOICE_TITLE.search(line) and not NON_INVOICE_TITLES[0][1].search(line):
+            return None
+        for kind, pattern in NON_INVOICE_TITLES:
+            if pattern.search(line):
+                return kind
+    return None
+    for kind, pattern in NON_INVOICE_TITLES:
+        if any(pattern.search(line) for line in lines):
+            return kind
+    return None
 
 
 def calculate_overall_confidence(
@@ -2518,6 +2560,10 @@ def extract_invoice(
         page_texts,
     ) = read_document(path)
 
+    if path.suffix.lower() == ".pdf" and not page_count:
+        # Ni PyMuPDF ni pdfplumber lo abren (o no tiene páginas): no es un escaneado, está dañado.
+        raise UnreadableDocument("El PDF está dañado o incompleto y no se puede abrir. Pide al emisor una copia nueva.")
+
     if requires_ocr:
         return {
             "extractor_name": EXTRACTOR_NAME,
@@ -2546,7 +2592,9 @@ def extract_invoice(
     from app import extraction_rules
 
     primary_text = extraction_rules.restore_rotated_text(primary_text)
-    real_world_signals: list[str] = []
+    repaired_text = extraction_rules.repair_ocr_labels(primary_text)
+    real_world_signals: list[str] = ["ocr_labels_repaired"] if repaired_text != primary_text else []
+    primary_text = repaired_text
 
     tax_id_candidates = find_tax_id_candidates(
         primary_text

@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_use_ssl: bool = False
+    # Fuera de producción solo se entrega a un servidor local (Mailpit, MailHog…): nunca sale correo real.
+    # Para probar contra un servidor real en desarrollo hay que pedirlo expresamente.
+    smtp_allow_external: bool = False
 
     # Correo entrante (conector de correo): buzón IMAP del que se leen
     # facturas y notificaciones. Sin IMAP, se puede usar la carpeta

@@ -18,6 +18,10 @@ Uso (desde backend/):
     python -m evaluation comparar --dataset b_sintetico    # reglas vs Claude vs híbrido (ANTHROPIC_API_KEY)
     python -m evaluation politica --informe evaluation/informes/comparar_b_sintetico_<fecha>.json   # routing de Claude
 
+    python -m evaluation --dataset catalogo                # catálogo sintético de casos (IRPF, rectificativas, presupuestos…)
+    python -m evaluation dehu [--dataset dehu_sintetico]   # notificaciones DEHú de punta a punta (carpeta → expediente)
+    python -m evaluation banco [--dataset banco_sintetico] # conciliación bancaria (extracto + facturas → resultado)
+
 Conjuntos: A = desarrollo (se puede mirar y ajustar reglas con ellos),
 B = evaluación (no se usan para cambiar reglas), C = ciego (no se tocan
 hasta el final; cada uso queda anotado en informes/ciego.log).
@@ -246,8 +250,48 @@ def policy(argv: list[str]) -> int:
     return 0
 
 
+def write_report(name: str, report: dict, markdown: str) -> Path:
+    folder = HERE / "informes"
+    folder.mkdir(exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    (folder / f"{name}-{stamp}.json").write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    path = folder / f"{name}-{stamp}.md"
+    path.write_text(markdown, encoding="utf-8")
+    return path
+
+
+def dehu(argv: list[str]) -> int:
+    from evaluation import dehu as evaluator
+
+    parser = argparse.ArgumentParser(prog="python -m evaluation dehu")
+    parser.add_argument("--dataset", default="dehu_sintetico")
+    args = parser.parse_args(argv)
+    report = evaluator.run(dataset_folder(args.dataset))
+    markdown = evaluator.to_markdown(report)
+    print(markdown)
+    print(f"Informe guardado en {write_report('dehu-' + report['dataset'], report, markdown)}")
+    return 0
+
+
+def bank(argv: list[str]) -> int:
+    from evaluation import banco as evaluator
+
+    parser = argparse.ArgumentParser(prog="python -m evaluation banco")
+    parser.add_argument("--dataset", default="banco_sintetico")
+    args = parser.parse_args(argv)
+    report = evaluator.run(dataset_folder(args.dataset))
+    markdown = evaluator.to_markdown(report)
+    print(markdown)
+    print(f"Informe guardado en {write_report('banco-' + report['dataset'], report, markdown)}")
+    return 1 if report["wrong_auto"] or report["errors"] else 0
+
+
 def main() -> int:
     argv = sys.argv[1:]
+    if argv and argv[0] == "dehu":
+        return dehu(argv[1:])
+    if argv and argv[0] == "banco":
+        return bank(argv[1:])
     if argv and argv[0] == "politica":
         return policy(argv[1:])
     if argv and argv[0] == "comparar":

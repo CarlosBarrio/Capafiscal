@@ -1,0 +1,38 @@
+# Producción (NO desplegado): Internet → Caddy (HTTPS, certificado automático) → CapaFiscal → PostgreSQL.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml config   # revisar la configuración final
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Requisitos en .env: DOMAIN (con su DNS apuntando al servidor), POSTGRES_PASSWORD, APP_SECRET_KEY,
+# BACKUP_PASSPHRASE y SMTP_* reales. Al arrancar, CapaFiscal comprueba la configuración (python -m app.production)
+# y no arranca si hay algo inseguro.
+services:
+  capafiscal:
+    ports: !reset []  # sin puerto publicado: solo se llega a través del proxy
+    environment:
+      APP_ENVIRONMENT: production
+      AUTH_REQUIRED: "true"
+      DEBUG: "false"
+      PUBLIC_BASE_URL: https://${DOMAIN:?Define DOMAIN en .env}
+      # La app solo es accesible desde la red interna (el proxy): puede fiarse de X-Forwarded-For/Proto
+      # para saber la IP real (límite de intentos de acceso) y que la conexión es HTTPS.
+      FORWARDED_ALLOW_IPS: "*"
+
+  caddy:
+    image: caddy:2.8
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - capafiscal
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
