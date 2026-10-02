@@ -83,6 +83,54 @@ def invoice_checks(invoice: Invoice) -> list[dict[str, Any]]:
     return rows
 
 
+def notification_checks(case: Any) -> list[dict[str, Any]]:
+    """Lo que el proceso de notificaciones ya ha hecho con ella (leerla, reunir documentos, redactar la respuesta)."""
+    facts = case.facts or {}
+    rows = [{"label": f"Ha leído la notificación ({facts.get('type_label') or 'notificación'})"
+                      + (f" y calculado el plazo: {case.deadline:%d/%m}" if case.deadline else ""), "ok": True}]
+    documents = case.required_documents or []
+    if documents:
+        ready = sum(1 for document in documents if document.get("status") != "missing")
+        rows.append({"label": f"Ha reunido {ready} de {len(documents)} documento(s) que se piden", "ok": True if ready == len(documents) else None})
+    if case.draft_response:
+        rows.append({"label": "Ha preparado el escrito de contestación", "ok": True})
+    return rows
+
+
+def case_explanation(case: Any) -> dict[str, Any]:
+    """Qué pasa (el hallazgo o el resumen), qué propone (su primer paso pendiente) y qué te toca a ti."""
+    findings = (case.facts or {}).get("findings") or []
+    what = (findings[0].get("por_que") if findings else None) or case.summary or ""
+    pending = [step["label"] for step in (case.proposed_actions or []) if not step.get("done")]
+    if case.kind == "NOTIFICATION":
+        proposal = "Contestar con el escrito preparado y la documentación reunida" if case.draft_response else (pending[0] if pending else None)
+        you = "Revisar y aprobar la contestación" if case.draft_response else "Revisar qué piden y decidir"
+        checks = notification_checks(case)
+    else:
+        proposal = pending[0] if pending else None
+        you = "Aprobar, corregir o descartar" if case.kind == "ANOMALY" else "Revisar y decidir"
+        checks = case_checks(case)
+    return {"what": what[:240], "proposal": proposal, "you": you, "checks": checks}
+
+
+def covered_by_cases(cases: list[Any]) -> tuple[set[int], set[int]]:
+    """Documentos y movimientos que ya tienen su expediente abierto: no se repiten en la lista."""
+    documents, movements = set(), set()
+    for case in cases:
+        if case.status != "WAITING_HUMAN":
+            continue
+        facts = case.facts or {}
+        for value in (case.document_id, facts.get("document_id")):
+            if value:
+                documents.add(int(value))
+        if facts.get("transaction_id"):
+            movements.add(int(facts["transaction_id"]))
+        for evidence in facts.get("evidence") or []:
+            if isinstance(evidence, dict) and evidence.get("transaction_id"):
+                movements.add(int(evidence["transaction_id"]))
+    return documents, movements
+
+
 def decisions(database: Session, today: date, cases: list[Any]) -> list[dict[str, Any]]:
     from app.agents.director import attention_reason
     from app.agents.director import impact
@@ -92,16 +140,23 @@ def decisions(database: Session, today: date, cases: list[Any]) -> list[dict[str
         if case.status == "WAITING_HUMAN":
             score = impact(case, today)
             blocked = bool((case.facts or {}).get("processing"))
-            rows.append(item("accion", "case", case.id, case.title, score["why"] or attention_reason(case, today),
-                             action={"label": "Revisar expediente", "case_id": case.id}, checked=case_checks(case),
+            explained = case_explanation(case)
+            means = score["why"] or attention_reason(case, today)
+            document = (case.facts or {}).get("document_id") or case.document_id
+            rows.append(item("accion", "case", case.id, case.title, explained["what"] or means,
+                             action={"label": "Revisar", "case_id": case.id}, checked=explained["checks"],
                              amount=score["amount"], score=score["score"] + (30 if blocked else 0),
-                             when=case.deadline.isoformat() if case.deadline else None) | {"code": case.code, "level": case.level}
+                             when=case.deadline.isoformat() if case.deadline else None)
+                        | {"code": case.code, "level": case.level, "means": means if explained["what"] else None,
+                           "proposal": explained["proposal"], "you": explained["you"],
+                           "secondary": {"label": "Ver documento", "document_id": int(document)} if document and case.kind == "ANOMALY" else None}
                         | ({"simulate": {"type": "dismiss_anomaly", "case_id": case.id}, "simulate_label": "¿Qué cambia si la descarto?"} if case.kind == "ANOMALY" else {}))
         elif case.status == "READY_TO_FILE":
             score = impact(case, today)
             rows.append(item("accion", "file", case.id, f"Presentar: {case.title}", "Está preparado: falta que lo revises y lo presentes.",
                              action={"label": "Revisar y presentar", "case_id": case.id}, checked=case_checks(case),
-                             amount=score["amount"], score=score["score"], when=case.deadline.isoformat() if case.deadline else None) | {"code": case.code})
+                             amount=score["amount"], score=score["score"], when=case.deadline.isoformat() if case.deadline else None)
+                        | {"code": case.code, "you": "Revisar y presentar"})
 
     for event in database.scalars(select(IngestedEvent).where(IngestedEvent.status == "FAILED").order_by(IngestedEvent.id.desc()).limit(5)).all():
         rows.append(item("accion", "event", event.id, f"No se pudo procesar una entrada ({event.source})", (event.error or "Error al procesar")[:140],
@@ -123,7 +178,11 @@ def decisions(database: Session, today: date, cases: list[Any]) -> list[dict[str
                          checked=invoice_checks(invoice) + [{"label": signal["text"], "ok": False if signal["severity"] != "info" else None} for signal in memory],
                          amount=float(invoice.total) if invoice.total is not None else None, score=40 + 10 * len(problems) + (25 if rare else 0),
                          when=invoice.invoice_date.isoformat() if invoice.invoice_date else None)
-                    | {"simulate": {"type": "approve_invoice", "invoice_id": invoice.id}, "simulate_label": "¿Qué cambia si la apruebo?"})
+                    | {"simulate": {"type": "approve_invoice", "invoice_id": invoice.id}, "simulate_label": "¿Qué cambia si la apruebo?",
+                       "proposal": ("Confirmar el importe con el proveedor antes de aprobarla" if rare else
+                                    f"Corregir antes de aprobar: {blocking[0]['label'].lower()}" if (blocking := [row for row in problems if row['ok'] is False])
+                                    else "Aprobarla si el proveedor y el concepto son los esperados" if problems else "Aprobarla: todo cuadra"),
+                       "you": "Aprobar, corregir o rechazar"})
 
     drafts = database.scalars(select(OutboxMessage).where(OutboxMessage.status == "DRAFT").order_by(OutboxMessage.id)).all()
     asked = {}
@@ -378,6 +437,10 @@ def work_center(database: Session, *, today: date | None = None, now: datetime |
 
     rows = treasury_items(database, today) + decisions(database, today, cases) + bank_items(database, today) + missing_documents(database, today) + working(database, today, cases) + fiscal_items(database, today)
     rows += agenda_items(database, today, {row["id"] for row in rows})
+    documents, movements = covered_by_cases(cases)
+    rows = [row for row in rows if not (
+        (row["kind"] == "invoice" and (row["action"] or {}).get("document_id") in documents)
+        or (row["kind"] in ("bank_unjustified", "bank_probable") and int(str(row["id"]).split(":")[1]) in movements))]
     rows.sort(key=lambda row: (-row["score"], row["when"] or "9999"))
     groups = {key: [row for row in rows if row["group"] == key] for key, _ in GROUPS}
 

@@ -79,3 +79,30 @@ def test_metrics_count_finished_work_not_processed_documents(client):
     after = client.get("/api/work/metrics").json()
     assert after["finished"]["invoices"] == 3 and after["decisions"] >= 1 and after["without_human"] >= 1
     assert "Terminado =" in after["definition"] and after["false_positives"]["rate"] is None
+
+
+def test_each_decision_explains_itself_and_nothing_appears_twice(client):
+    """Hoy: qué pasa, qué ha comprobado CapaFiscal, qué propone y qué te toca; un expediente abierto no se repite suelto."""
+    from datetime import timedelta
+
+    from app import clock
+    from tests.agents.test_today_learning import notify
+
+    setup_month(client)
+    notify(client, "req-1", issuer="AEAT", notification_type="REQUERIMIENTO", title="Requerimiento de información", reference="RQ-1",
+           summary="Aporte el libro registro de facturas recibidas.", deadline=(clock.today() + timedelta(days=2)).isoformat())
+    client.post("/api/agents/pulse/run")  # el Detector abre el expediente del pago de 2.350 € sin factura
+    by_key = groups(client.get("/api/work").json())
+
+    notice = next(item for item in by_key["accion"]["items"] if item["kind"] == "case" and "Requerimiento" in item["title"])
+    assert notice["you"] == "Revisar y aprobar la contestación" and notice["proposal"].startswith("Contestar")
+    assert notice["checked"][0]["label"].startswith("Ha leído la notificación") and "vence en 2" in notice["means"]
+    assert any(check["label"] == "Ha preparado el escrito de contestación" for check in notice["checked"])
+
+    invoice = next(item for item in by_key["accion"]["items"] if item["kind"] == "invoice")
+    assert invoice["you"] and invoice["proposal"]
+
+    payment_case = next(item for item in by_key["accion"]["items"] if item["kind"] == "case" and "2.350,00" in item["title"])
+    assert payment_case["proposal"] and payment_case["you"] == "Aprobar, corregir o descartar"
+    # El mismo pago ya no sale también como «falta información»: tiene su expediente.
+    assert not [item for item in by_key["falta"]["items"] if item["kind"] == "bank_unjustified" and "2.350,00" in item["why"]]

@@ -3010,7 +3010,6 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 @media (max-width: 640px) {
     .work-item-main { flex-direction: column; gap: 8px; }
     .work-item-side { width: 100%; justify-content: space-between; }
-    .work-title > .btn-ghost { width: 100%; justify-content: center; }
 }
 .journal-checks { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 10px; padding: 0; list-style: none; font-size: 13px; color: var(--ink-2); }
 .journal-checks li { display: flex; gap: 8px; align-items: baseline; }
@@ -3072,3 +3071,43 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 .work-metrics { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .state-blue .board-dot { background: var(--blue); }
 .state-done .board-dot { background: var(--green); }
+
+/* Hoy: centro de decisión (decisiones → lo que falta → estado → lo ya resuelto). Mismos tokens y componentes. */
+.hoy-summary { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: -6px 0 18px; padding: 0; list-style: none; font-size: 13.5px; color: var(--ink-2); }
+.hoy-summary li { display: inline-flex; align-items: center; gap: 7px; }
+.hoy-summary strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.hoy-decision { gap: 10px; padding: 14px 0; }
+.hoy-decision:first-child { padding-top: 0; }
+.hoy-means { color: var(--muted); font-size: 12.5px; }
+.hoy-block { display: flex; flex-direction: column; gap: 4px; }
+.hoy-label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
+.hoy-checks { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--ink-2); }
+.hoy-checks li { display: flex; gap: 8px; align-items: baseline; }
+.hoy-line { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; margin: 0; font-size: 13.5px; color: var(--ink); }
+.hoy-you { display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px dashed var(--line); }
+.hoy-actions { display: flex; gap: 14px; align-items: center; margin-left: auto; }
+.hoy-heading { margin: 4px 0 10px; color: var(--muted); font: 600 12px var(--font); letter-spacing: 0.04em; text-transform: uppercase; }
+.hoy-state-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
+.hoy-state-grid .card { margin: 0; }
+.hoy-state { display: flex; flex-direction: column; gap: 8px; }
+.hoy-state .card-head { margin-bottom: 2px; }
+.hoy-figure { margin: 0; color: var(--ink); font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hoy-figure .hoy-sub { font-size: 12.5px; font-weight: 400; }
+.hoy-sub { margin: 0; color: var(--muted); font-size: 12.5px; }
+.hoy-state-act { align-self: flex-start; margin-top: auto; }
+.hoy-sign { width: 12px; flex-shrink: 0; color: var(--ink-2); font-weight: 700; text-align: center; }
+.hoy-risk { font-size: 13px; }
+.hoy-doing { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.hoy-foot { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.hoy-foot #workRun { margin-left: auto; }
+.hoy-calm p { margin: 0 0 4px; }
+@media (max-width: 960px) {
+    .hoy-state-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+    .hoy-summary { flex-direction: column; gap: 4px; margin-bottom: 14px; }
+    .hoy-you { flex-direction: column; align-items: stretch; }
+    .hoy-actions { justify-content: space-between; margin-left: 0; }
+    .hoy-actions .work-act { flex: 1; justify-content: center; min-height: 44px; }
+    .hoy-foot #workRun { margin-left: 0; }
+}
