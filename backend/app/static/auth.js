@@ -27,15 +27,17 @@
     return box;
   }
 
-  function showLogin(message) {
+  function showLogin(message, success = false) {
     const box = overlay(`
       <h2 style="margin:0 0 12px">CapaFiscal · Iniciar sesión</h2>
-      <p id="cf-auth-error" style="color:#b91c1c;min-height:1em">${escape(message || "")}</p>
+      <p id="cf-auth-error" role="status" style="color:${success ? "#166534" : "#b91c1c"};min-height:1em">${escape(message || "")}</p>
       <form id="cf-login" style="display:grid;gap:8px">
         <input name="email" type="email" placeholder="Correo" required autocomplete="username">
         <input name="password" type="password" placeholder="Contraseña" required autocomplete="current-password">
-        <button type="submit">Entrar</button>
-      </form>`);
+        <button type="submit" class="act-btn act-primary">Entrar</button>
+      </form>
+      <button type="button" id="cf-forgot" class="link-button" style="margin-top:12px">¿Has olvidado la contraseña?</button>`);
+    box.querySelector("#cf-forgot").addEventListener("click", () => { box.remove(); showForgot(); });
     box.querySelector("#cf-login").addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = new FormData(event.target);
@@ -44,7 +46,59 @@
         body: JSON.stringify({ email: form.get("email"), password: form.get("password") }),
       });
       if (response.ok) window.location.reload();
-      else box.querySelector("#cf-auth-error").textContent = "Correo o contraseña incorrectos.";
+      else {
+        const error = box.querySelector("#cf-auth-error");
+        error.style.color = "#b91c1c";
+        error.textContent = response.status === 429 ? "Demasiados intentos. Espera 15 minutos o cambia la contraseña." : "Correo o contraseña incorrectos.";
+      }
+    });
+  }
+
+  function showForgot() {
+    const box = overlay(`
+      <h2 style="margin:0 0 12px">Cambiar la contraseña</h2>
+      <p id="cf-forgot-info" style="max-width:340px">Escribe tu correo y te enviaremos un enlace para elegir una contraseña nueva.</p>
+      <form id="cf-forgot-form" style="display:grid;gap:8px">
+        <input name="email" type="email" placeholder="Correo" required autocomplete="username">
+        <button type="submit" class="act-btn act-primary">Enviar enlace</button>
+      </form>
+      <button type="button" id="cf-back" class="link-button" style="margin-top:12px">Volver a iniciar sesión</button>`);
+    box.querySelector("#cf-back").addEventListener("click", () => { box.remove(); showLogin(); });
+    box.querySelector("#cf-forgot-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const response = await fetch("/api/auth/forgot", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: new FormData(event.target).get("email") }),
+      });
+      const data = await response.json().catch(() => ({}));
+      event.target.remove();
+      box.querySelector("#cf-forgot-info").textContent = data.detail || "No se pudo enviar. Inténtalo de nuevo.";
+    });
+  }
+
+  function showReset(token) {
+    const box = overlay(`
+      <h2 style="margin:0 0 12px">Elige una contraseña nueva</h2>
+      <p id="cf-reset-info" style="color:#b91c1c;min-height:1em;max-width:340px"></p>
+      <form id="cf-reset" style="display:grid;gap:8px">
+        <input name="password" type="password" placeholder="Nueva contraseña (mínimo 10 caracteres)" minlength="10" required autocomplete="new-password">
+        <input name="repeat" type="password" placeholder="Repítela" minlength="10" required autocomplete="new-password">
+        <button type="submit" class="act-btn act-primary">Guardar contraseña</button>
+      </form>`);
+    box.querySelector("#cf-reset").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.target);
+      const info = box.querySelector("#cf-reset-info");
+      if (form.get("password") !== form.get("repeat")) { info.textContent = "Las dos contraseñas no coinciden."; return; }
+      const response = await fetch("/api/auth/reset", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password: form.get("password") }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) { info.textContent = typeof data.detail === "string" ? data.detail : "Revisa la contraseña (mínimo 10 caracteres)."; return; }
+      history.replaceState(null, "", window.location.pathname);  // el enlace ya no sirve: que no quede en la barra
+      box.remove();
+      showLogin(data.detail, true);
     });
   }
 
@@ -74,6 +128,8 @@
     let status;
     try { status = await (await nativeFetch("/api/auth/status")).json(); } catch (error) { return; }
     if (!status.auth_required) return;
+    const reset = new URLSearchParams(window.location.search).get("reset");
+    if (reset) return showReset(reset);
     const me = await fetch("/api/auth/me");
     if (me.status === 401) return showLogin();
     const user = await me.json();

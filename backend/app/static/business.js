@@ -189,7 +189,7 @@
             <strong>${money(item.total)}</strong>
             <span class="status-pill ${className}">${esc(label)}</span>
           </div>
-          <button type="button" class="btn-ghost" onclick="showDetail(${Number(item.document_id)}, 'payment')">
+          <button type="button" class="btn-ghost" data-call="showDetail" data-args="${Number(item.document_id)}, 'payment'">
             Registrar cobro
           </button>
         </div>
@@ -246,7 +246,7 @@
           </td>
           <td>
             ${movement.document_id
-              ? `<button type="button" class="link-button" onclick="showDetail(${Number(movement.document_id)}, 'payment')">${esc(movement.label)}</button>`
+              ? `<button type="button" class="link-button" data-call="showDetail" data-args="${Number(movement.document_id)}, 'payment'">${esc(movement.label)}</button>`
               : esc(movement.label)}
             ${movement.why ? `<small class="muted block">${esc(movement.why)}</small>` : ""}
           </td>
@@ -372,7 +372,7 @@
       }
       if (invoice) {
         invoiceCell += `
-          <button type="button" class="link-button block" onclick="showDetail(${Number(invoice.document_id)})">
+          <button type="button" class="link-button block" data-call="showDetail" data-args="${Number(invoice.document_id)}">
             ${esc(invoice.name || "Factura")} · ${esc(invoice.number || "s/n")} · ${money(invoice.total)}
           </button>
           ${transaction.match_score ? `<small class="muted">Coincidencia ${transaction.match_score} %</small>` : ""}

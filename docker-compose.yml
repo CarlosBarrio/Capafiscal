@@ -32,6 +32,12 @@ services:
         condition: service_healthy
     volumes:
       - capafiscal-data:/data
+    healthcheck:  # 503 si falla la base de datos, el esquema, el planificador o el disco
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
 volumes:

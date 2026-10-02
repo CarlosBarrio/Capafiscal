@@ -37,7 +37,7 @@ from app.models import User
 from app.models import UserClient
 
 ROLES = ("ADMIN", "GESTOR", "REVISOR", "CLIENTE", "LECTURA")
-PUBLIC_PATHS = ("/api/auth/login", "/api/auth/setup", "/api/auth/status", "/api/portal/", "/portal/")
+PUBLIC_PATHS = ("/api/auth/login", "/api/auth/setup", "/api/auth/status", "/api/auth/forgot", "/api/auth/reset", "/api/health", "/api/portal/", "/portal/")
 SESSION_COOKIE = "cf_session"
 CLIENT_COOKIE = "cf_client"
 CSRF_HEADER = "x-capafiscal"  # las escrituras autenticadas por cookie deben llevarla (otra web no puede ponerla)

@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     reset_data_on_startup: bool = False
     app_name: str = "CapaFiscal"
     app_environment: str = "development"
-    debug: bool = True
+    debug: bool = False  # True solo en desarrollo: muestra el detalle de los errores
 
     database_url: str = (
         f"sqlite:///{DEFAULT_DATABASE_PATH.as_posix()}"
@@ -46,6 +46,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000/api/connectors/outlook/callback"
     )
     app_encryption_key: str = ""
+    app_secret_key: str = ""  # firma de los enlaces de recuperación de contraseña (si falta, se genera y guarda en DATA_DIR)
 
     # Envío de correo (bandeja de salida). Sin SMTP, los mensajes se
     # descargan como borrador .eml y se abren en Outlook o Thunderbird.

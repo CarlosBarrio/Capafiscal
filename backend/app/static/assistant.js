@@ -31,7 +31,7 @@
         ${sources.map((source) => {
           const label = window.escapeHtml(source.label || "Fuente");
           if (source.document_id) {
-            return `<li><button type="button" class="link-button" onclick="showDetail(${Number(source.document_id)})">${label}</button></li>`;
+            return `<li><button type="button" class="link-button" data-call="showDetail" data-args="${Number(source.document_id)}">${label}</button></li>`;
           }
           return `<li>${label}</li>`;
         }).join("")}

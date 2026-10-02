@@ -290,7 +290,7 @@
         <ul class="plain-list">
           ${draft.invoices.map((invoice) => `
             <li>
-              <button type="button" class="link-button" onclick="showDetail(${Number(invoice.document_id)})">${esc(invoice.name || "Factura")}</button>
+              <button type="button" class="link-button" data-call="showDetail" data-args="${Number(invoice.document_id)}">${esc(invoice.name || "Factura")}</button>
               · base ${money(invoice.base)} · retención ${money(invoice.withholding)}
             </li>
           `).join("")}

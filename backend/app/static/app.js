@@ -3,6 +3,20 @@ console.log("CapaFiscal frontend real V60");
 
 const API_BASE = "/api";
 
+// Botones generados en HTML: data-call="función" data-args="1, 'texto', this" en lugar de onclick.
+// Sin manejadores en línea, la política de seguridad (CSP) puede prohibir todo script que no venga
+// de /static: una inyección de HTML no puede ejecutar código.
+const CALLABLE = new Set(["showDetail", "approveInvoice", "rejectInvoice", "activateTab", "openTask", "resolveTask", "cancelPayment", "markPaid",
+  "saveInvoice", "reopenInvoice", "reprocessDocument", "convertToNotification", "connectOutlook", "syncOutlook", "disconnectOutlook"]);
+document.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-call]");
+  const handler = target && CALLABLE.has(target.dataset.call) && window[target.dataset.call];
+  if (typeof handler !== "function") return;
+  const args = (target.dataset.args || "").split(",").map((part) => part.trim()).filter(Boolean)
+    .map((part) => (part === "this" ? target : /^-?\d+(\.\d+)?$/.test(part) ? Number(part) : part.replace(/^'(.*)'$/, "$1")));
+  handler(...args);
+});
+
 let documentsCache = [];
 let tasksCache = [];
 let categoriesCache = [];
@@ -536,7 +550,7 @@ function realDocumentCard(documentItem) {
     </div>
 
     <div class="card-actions">
-      <button class="btn-ghost" type="button" onclick="showDetail(${documentId})">
+      <button class="btn-ghost" type="button" data-call="showDetail" data-args="${documentId}">
         Ver detalle
       </button>
 
@@ -552,10 +566,10 @@ function realDocumentCard(documentItem) {
       ${
         canReview
           ? `
-            <button class="act-btn act-primary" type="button" onclick="approveInvoice(${invoiceId}, ${documentId}, this)">
+            <button class="act-btn act-primary" type="button" data-call="approveInvoice" data-args="${invoiceId}, ${documentId}, this">
               Aprobar
             </button>
-            <button class="act-btn act-danger" type="button" onclick="rejectInvoice(${invoiceId}, ${documentId})">
+            <button class="act-btn act-danger" type="button" data-call="rejectInvoice" data-args="${invoiceId}, ${documentId}">
               Rechazar
             </button>
           `
@@ -584,7 +598,7 @@ function notificationDocumentCard(documentItem, sourceLabel) {
       </div>
     </div>
     <div class="card-actions">
-      <button class="btn-ghost" type="button" onclick="activateTab('notificaciones')">Ver notificación</button>
+      <button class="btn-ghost" type="button" data-call="activateTab" data-args="'notificaciones'">Ver notificación</button>
       <a class="btn-ghost" href="/api/documents/${documentId}/file" target="_blank" rel="noopener noreferrer">Abrir archivo</a>
     </div>
   </article>
@@ -621,7 +635,7 @@ function renderOpenRisks(documents) {
             <strong>${escapeHtml(invoice.supplier_name || doc.original_filename || "Proveedor sin identificar")}</strong>
             <span>${formatMoney(invoice.total, invoice.currency)} · ${escapeHtml(translateStatus(doc.status))}</span>
           </div>
-          <button type="button" class="btn-ghost" onclick="showDetail(${Number(doc.id)})">
+          <button type="button" class="btn-ghost" data-call="showDetail" data-args="${Number(doc.id)}">
             Revisar
           </button>
         </div>
@@ -698,11 +712,11 @@ function renderAgenda(agenda) {
     const days = Number(item.days_left);
     const when = days < 0 ? `hace ${Math.abs(days)} d` : days === 0 ? "hoy" : `en ${days} d`;
     const open = item.document_id && item.kind !== "notification"
-      ? `showDetail(${Number(item.document_id)}${item.kind === "payment" || item.kind === "collection" ? ", 'payment'" : ""})`
-      : `activateTab('${escapeHtml(item.tab)}')`;
+      ? `data-call="showDetail" data-args="${Number(item.document_id)}${item.kind === "payment" || item.kind === "collection" ? ", 'payment'" : ""}"`
+      : `data-call="activateTab" data-args="'${escapeHtml(item.tab)}'"`;
 
     return `
-      <button type="button" class="agenda-item level-${escapeHtml(item.level)}" onclick="${open}">
+      <button type="button" class="agenda-item level-${escapeHtml(item.level)}" ${open}>
         <span class="agenda-icon kind-${escapeHtml(item.kind)}">${icon(AGENDA_ICONS[item.kind] || "calendar")}</span>
         <span class="agenda-body">
           <strong>${escapeHtml(item.title)}</strong>
@@ -733,7 +747,7 @@ function renderRecommendation(recommendation) {
     </div>
     ${
       recommendation.document_id
-        ? `<button type="button" class="act-btn act-primary" onclick="showDetail(${Number(recommendation.document_id)})">Abrir documento</button>`
+        ? `<button type="button" class="act-btn act-primary" data-call="showDetail" data-args="${Number(recommendation.document_id)}">Abrir documento</button>`
         : ""
     }
   `;
@@ -791,7 +805,7 @@ function renderPayments(payments) {
           <strong>${formatMoney(item.total, item.currency)}</strong>
           <span class="status-pill ${className}">${escapeHtml(label)}</span>
         </div>
-        <button type="button" class="btn-ghost" onclick="showDetail(${Number(item.document_id)}, 'payment')">
+        <button type="button" class="btn-ghost" data-call="showDetail" data-args="${Number(item.document_id)}, 'payment'">
           Registrar pago
         </button>
       </div>
@@ -853,7 +867,7 @@ function renderTasks(tasks) {
             ${
               task.task_type === "NOTIFICATION"
                 ? `
-                  <button type="button" class="btn-ghost" onclick="activateTab('notificaciones')">
+                  <button type="button" class="btn-ghost" data-call="activateTab" data-args="'notificaciones'">
                     Ver notificación
                   </button>
                 `
@@ -861,11 +875,11 @@ function renderTasks(tasks) {
                   <button
                     type="button"
                     class="btn-ghost"
-                    onclick="openTask(${Number(task.id)}, ${Number(task.document_id)})"
+                    data-call="openTask" data-args="${Number(task.id)}, ${Number(task.document_id)}"
                   >
                     Abrir revisión
                   </button>
-                  <button type="button" class="act-btn act-ghost" onclick="resolveTask(${Number(task.id)})">
+                  <button type="button" class="act-btn act-ghost" data-call="resolveTask" data-args="${Number(task.id)}">
                     Cerrar sin cambios
                   </button>
                 `
@@ -1089,7 +1103,7 @@ function validationMessagesHtml(invoice) {
         ${invoice.duplicate_status === "STRONG"
           ? "Posible duplicado: mismo NIF y número de factura que otra ya registrada."
           : "Posible duplicado: mismo proveedor, fecha e importe que otra factura."}
-        ${original ? `<button type="button" class="link-button" onclick="showDetail(${Number(original.id)})">Ver la otra factura</button>` : ""}
+        ${original ? `<button type="button" class="link-button" data-call="showDetail" data-args="${Number(original.id)}">Ver la otra factura</button>` : ""}
       </li>
     `;
   }
@@ -1145,7 +1159,7 @@ function paymentSectionHtml(invoice, documentId) {
           ${issued ? "Cobrada" : "Pagada"} el <strong>${formatDay(invoice.paid_at)}</strong>
           ${invoice.payment_method ? ` · ${escapeHtml(PAYMENT_METHOD_LABELS[invoice.payment_method] || invoice.payment_method)}` : ""}
         </p>
-        <button type="button" class="btn-ghost" onclick="cancelPayment(${Number(invoice.id)}, ${documentId})">
+        <button type="button" class="btn-ghost" data-call="cancelPayment" data-args="${Number(invoice.id)}, ${documentId}">
           Anular ${noun}
         </button>
       </div>
@@ -1168,7 +1182,7 @@ function paymentSectionHtml(invoice, documentId) {
             `).join("")}
           </select>
         </label>
-        <button type="button" class="act-btn act-primary" onclick="markPaid(${Number(invoice.id)}, ${documentId})">
+        <button type="button" class="act-btn act-primary" data-call="markPaid" data-args="${Number(invoice.id)}, ${documentId}">
           Marcar como ${issued ? "cobrada" : "pagada"}
         </button>
       </div>
@@ -1328,28 +1342,28 @@ async function showDetail(documentId, focus = null) {
 
           <div class="card-actions detail-actions-bar">
             ${editable ? `
-              <button type="button" class="act-btn act-primary" onclick="saveInvoice(${invoiceId}, ${docId})">
+              <button type="button" class="act-btn act-primary" data-call="saveInvoice" data-args="${invoiceId}, ${docId}">
                 Guardar correcciones
               </button>
             ` : ""}
             ${canReview ? `
-              <button type="button" class="act-btn act-primary" onclick="approveInvoice(${invoiceId}, ${docId}, this)">
+              <button type="button" class="act-btn act-primary" data-call="approveInvoice" data-args="${invoiceId}, ${docId}, this">
                 Aprobar
               </button>
-              <button type="button" class="act-btn act-danger" onclick="rejectInvoice(${invoiceId}, ${docId})">
+              <button type="button" class="act-btn act-danger" data-call="rejectInvoice" data-args="${invoiceId}, ${docId}">
                 Rechazar
               </button>
             ` : ""}
             ${canReopen ? `
-              <button type="button" class="act-btn act-warning" onclick="reopenInvoice(${invoiceId}, ${docId})">
+              <button type="button" class="act-btn act-warning" data-call="reopenInvoice" data-args="${invoiceId}, ${docId}">
                 Reabrir
               </button>
             ` : ""}
             ${invoice.review_status !== "APPROVED" ? `
-              <button type="button" class="btn-ghost" onclick="reprocessDocument(${docId})">
+              <button type="button" class="btn-ghost" data-call="reprocessDocument" data-args="${docId}">
                 Reprocesar
               </button>
-              <button type="button" class="btn-ghost" onclick="convertToNotification(${docId})">
+              <button type="button" class="btn-ghost" data-call="convertToNotification" data-args="${docId}">
                 Es una notificación
               </button>
             ` : ""}
@@ -1731,7 +1745,7 @@ function renderOutlookConnector(status) {
         ${
           configured && !connected
             ? `
-              <button type="button" class="act-btn act-primary" onclick="connectOutlook()">
+              <button type="button" class="act-btn act-primary" data-call="connectOutlook">
                 Conectar Outlook
               </button>
             `
@@ -1741,10 +1755,10 @@ function renderOutlookConnector(status) {
         ${
           connected
             ? `
-              <button type="button" class="act-btn act-primary" onclick="syncOutlook(this)">
+              <button type="button" class="act-btn act-primary" data-call="syncOutlook" data-args="this">
                 Sincronizar ahora
               </button>
-              <button type="button" class="act-btn act-danger" onclick="disconnectOutlook()">
+              <button type="button" class="act-btn act-danger" data-call="disconnectOutlook">
                 Desconectar
               </button>
             `

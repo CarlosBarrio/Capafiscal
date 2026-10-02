@@ -290,6 +290,11 @@ def run_agents_for_document(database, document_id: int | None, *, force: bool = 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    from app.observability import configure_logging
+    from app.production import check_on_startup
+
+    configure_logging()
+    check_on_startup()  # en producción, una configuración insegura impide arrancar
     settings.data_dir.mkdir(
         parents=True,
         exist_ok=True,
@@ -467,18 +472,12 @@ app.add_middleware(
     "/api/health",
     tags=["Sistema"],
 )
-def health_check() -> dict[str, Any]:
-    return {
-        "success": True,
-        "application": settings.app_name,
-        "environment": settings.app_environment,
-        "database": (
-            "sqlite"
-            if settings.database_url.startswith("sqlite")
-            else "external"
-        ),
-        "demo_connectors_enabled": settings.enable_demo_connectors,
-    }
+def health_check() -> JSONResponse:
+    """Para el monitor externo: pública, sin datos de negocio; 503 si algo falla."""
+    from app.observability import health
+
+    ok, checks = health()
+    return JSONResponse(status_code=200 if ok else 503, content={"success": ok, "application": settings.app_name, "checks": checks})
 
 
 # -------------------------------------------------------------------
@@ -2198,14 +2197,48 @@ app.mount(
 
 
 # Se registra la última: envuelve a todas, también a las respuestas 401/403 de identify_request.
+CONTENT_SECURITY_POLICY = "; ".join((
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  # atributos style del HTML generado
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "frame-src 'self'",
+    "frame-ancestors 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+))
+
+
 @app.middleware("http")
 async def security_headers(request, call_next):
-    """Cabeceras básicas: no se incrusta en otras webs, no se adivinan tipos de archivo, no se filtra la URL."""
+    """
+    Cabeceras de seguridad:
+      CSP        solo se ejecuta código de /static (sin scripts ni manejadores en línea): una inyección de
+                 HTML no puede ejecutar nada. Se aplica a las páginas HTML; los PDF se muestran con el
+                 visor del navegador, que no debe verse afectado.
+      marcos     solo la propia aplicación puede incrustar sus páginas (la vista previa de documentos)
+      HSTS       con HTTPS (PUBLIC_BASE_URL=https://…), el navegador ya no vuelve a intentar HTTP
+      caché      las respuestas de la API (datos fiscales) no se guardan en cachés intermedias
+    """
+    from app.auth_routes import secure_cookies
+
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "same-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if response.headers.get("content-type", "").startswith("text/html"):
+        response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    if secure_cookies():
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     if request.url.path.startswith("/api/"):
         response.headers.setdefault("Cache-Control", "no-store")  # datos fiscales: que no queden en cachés intermedias
     return response
+
+
+from app.observability import log_requests  # noqa: E402
+
+app.middleware("http")(log_requests)  # la última registrada envuelve a todas: registra también los errores

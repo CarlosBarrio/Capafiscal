@@ -189,6 +189,19 @@ def after_sent(database: Session, message: OutboxMessage) -> None:
             invoice.sent_at = now
 
 
+def smtp_deliver(email: EmailMessage) -> None:
+    """Entrega un correo por el servidor SMTP configurado (TLS siempre)."""
+    if settings.smtp_use_ssl:
+        server: smtplib.SMTP = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=30, context=ssl.create_default_context())
+    else:
+        server = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30)
+        server.starttls(context=ssl.create_default_context())
+    with server:
+        if settings.smtp_user:
+            server.login(settings.smtp_user, settings.smtp_password)
+        server.send_message(email)
+
+
 def send_message(database: Session, message: OutboxMessage, *, actor: str = "user") -> OutboxMessage:
     if message.status == "SENT":
         raise OutboxError("El mensaje ya se envió.")
@@ -203,15 +216,7 @@ def send_message(database: Session, message: OutboxMessage, *, actor: str = "use
     email = build_email(database, message)
 
     try:
-        if settings.smtp_use_ssl:
-            server: smtplib.SMTP = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=30, context=ssl.create_default_context())
-        else:
-            server = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30)
-            server.starttls(context=ssl.create_default_context())
-        with server:
-            if settings.smtp_user:
-                server.login(settings.smtp_user, settings.smtp_password)
-            server.send_message(email)
+        smtp_deliver(email)
     except (OSError, smtplib.SMTPException) as error:
         message.status = "FAILED"
         message.error = str(error)[:500]

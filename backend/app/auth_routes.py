@@ -1,6 +1,7 @@
 """Acceso (setup, login, logout, me) y administración de clientes y usuarios."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter
@@ -43,6 +44,15 @@ class SetupPayload(BaseModel):
 class LoginPayload(BaseModel):
     email: str = Field(min_length=3, max_length=255)
     password: str = Field(min_length=1, max_length=200)
+
+
+class ForgotPayload(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+
+
+class ResetPayload(BaseModel):
+    token: str = Field(min_length=10, max_length=300)
+    password: str = Field(min_length=10, max_length=200)
 
 
 class ClientPayload(BaseModel):
@@ -103,10 +113,12 @@ def login(payload: LoginPayload, database: DatabaseDependency, response: Respons
     email = payload.email.lower().strip()
     key = (email, request.client.host if request.client else "?")
     if login_blocked(key):
+        SECURITY_LOG.warning("Acceso bloqueado por intentos fallidos desde %s", key[1])
         raise HTTPException(status_code=429, detail="Demasiados intentos fallidos. Espera 15 minutos o pide a un administrador que revise tu acceso.")
     user = database.scalar(select(User).where(User.email == email))
     if user is None or not user.active or not verify_password(payload.password, user.password_hash):
         login_failed(key)
+        SECURITY_LOG.warning("Acceso fallido (%s) desde %s", f"usuario {user.id}" if user else "correo sin cuenta", key[1])
         raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos.")
     _login_failures.pop(key, None)
     token = create_session(database, user)
@@ -183,6 +195,60 @@ def login_failed(key: tuple[str, str]) -> None:
     import time
 
     _login_failures.setdefault(key, []).append(time.time())
+
+
+SECURITY_LOG = logging.getLogger("capafiscal.security")  # accesos y cuentas: sin contraseñas, enlaces ni correos
+FORGOT_REPLY = ("Si ese correo tiene cuenta en CapaFiscal, le hemos enviado un enlace para cambiar la contraseña "
+                "(caduca en una hora). Si no llega, pide a tu administrador un enlace nuevo.")
+
+
+@router.post("/auth/forgot", tags=["Acceso"])
+def forgot_password(payload: ForgotPayload, database: DatabaseDependency, request: Request) -> dict[str, Any]:
+    """Pide el enlace de recuperación. La respuesta es la misma exista o no la cuenta."""
+    from app.password_reset import make_token
+    from app.password_reset import send_link
+
+    email = payload.email.lower().strip()
+    key = (f"reset:{email}", request.client.host if request.client else "?")
+    if not login_blocked(key):  # más de 5 peticiones en 15 minutos: no se envía nada más (y no se dice)
+        login_failed(key)
+        user = database.scalar(select(User).where(User.email == email))
+        if user is not None and user.active:
+            send_link(user, make_token(user))
+    return {"detail": FORGOT_REPLY}
+
+
+@router.post("/auth/reset", tags=["Acceso"])
+def reset_password(payload: ResetPayload, database: DatabaseDependency) -> dict[str, Any]:
+    """Elige una contraseña nueva con el enlace. Cierra todas las sesiones abiertas de esa cuenta."""
+    from app.password_reset import set_password
+    from app.password_reset import user_for_token
+
+    user = user_for_token(database, payload.token)
+    if user is None:
+        raise HTTPException(status_code=400, detail="El enlace no es válido, ha caducado o ya se usó. Pide uno nuevo.")
+    closed = set_password(database, user, payload.password)
+    SECURITY_LOG.info("Contraseña cambiada con enlace: usuario %s, %s sesiones cerradas", user.id, closed)
+    for key in [key for key in _login_failures if key[0] == user.email]:
+        _login_failures.pop(key, None)  # con la contraseña nueva se puede entrar ya
+    database.commit()
+    return {"success": True, "detail": "Contraseña cambiada. Ya puedes entrar con la nueva."}
+
+
+@router.post("/admin/users/{user_id}/reset-link", tags=["Administración"])
+def admin_reset_link(user_id: int, request: Request, database: DatabaseDependency) -> dict[str, Any]:
+    """Enlace para que el usuario elija su contraseña (sin servidor de correo, o para un alta nueva).
+    El administrador no ve ni elige la contraseña."""
+    from app.password_reset import VALID_SECONDS
+    from app.password_reset import link
+    from app.password_reset import make_token
+
+    admin = current_user(request)
+    user = database.get(User, user_id)
+    if user is None or user.organization_id != admin.organization_id:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    SECURITY_LOG.info("Enlace de cambio de contraseña generado por el administrador %s para el usuario %s", admin.id, user.id)
+    return {"link": link(make_token(user)), "valid_minutes": VALID_SECONDS // 60, "email": user.email}
 
 
 @router.get("/auth/me", tags=["Acceso"])
