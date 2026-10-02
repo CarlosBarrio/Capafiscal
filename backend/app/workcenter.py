@@ -256,6 +256,38 @@ def working(database: Session, today: date, cases: list[Any]) -> list[dict[str, 
     return rows
 
 
+def agenda_items(database: Session, today: date, taken: set[str]) -> list[dict[str, Any]]:
+    """Pagos que vencen, cobros vencidos y cumplimiento: lo que antes había que ir a buscar a cada módulo."""
+    from app.agenda_service import build_agenda
+
+    try:
+        agenda = build_agenda(database, horizon_days=14, today=today)["items"]
+    except Exception:  # la agenda no debe tumbar la lista
+        return []
+    reminded = set(database.scalars(select(OutboxMessage.entity_id).where(OutboxMessage.entity_type.in_(("invoice", "sales_invoice", "dunning")),
+                                                                        OutboxMessage.status == "SENT")).all())
+    rows = []
+    for entry in agenda:
+        days = entry["days_left"]
+        when = "vencido hace " + f"{-days} días" if days < 0 else "vence hoy" if days == 0 else f"vence en {days} días"
+        if entry["kind"] == "payment" and f"unpaid:{entry['entity_id']}" not in taken and days <= 7:
+            rows.append(item("accion", "pay", entry["entity_id"], entry["title"], f"{entry['detail']} ({when}).",
+                             action={"label": "Registrar pago", "document_id": entry["document_id"]}, amount=-(entry["amount"] or 0),
+                             score=50 if days < 0 else 35, when=entry["date"]))
+        elif entry["kind"] == "collection" and days < 0:
+            if entry["entity_id"] in reminded:
+                rows.append(item("haciendo", "collect", entry["entity_id"], entry["title"], f"{entry['detail']} Recordatorio enviado: CapaFiscal sigue la reclamación.",
+                                 action={"label": "Ver cobros", "tab": "ventas", "view": "cobros"}, amount=entry["amount"], when=entry["date"]))
+            else:
+                rows.append(item("accion", "collect", entry["entity_id"], entry["title"], f"{entry['detail']} ({when}): reclámalo.",
+                                 action={"label": "Reclamar", "tab": "ventas", "view": "cobros"}, amount=entry["amount"], score=45, when=entry["date"]))
+        elif entry["kind"] == "compliance":
+            rows.append(item("accion" if entry["level"] in ("overdue", "critical") else "falta", "compliance", entry["entity_id"], entry["title"],
+                             entry["detail"], action={"label": "Revisar", "tab": "cumplimiento"}, score=40 if entry["level"] == "overdue" else 25,
+                             when=entry["date"]))
+    return rows
+
+
 def fiscal_items(database: Session, today: date) -> list[dict[str, Any]]:
     from app.fiscal_position import positions
 
@@ -345,6 +377,7 @@ def work_center(database: Session, *, today: date | None = None, now: datetime |
     cases = assessed_open_cases(database, today)
 
     rows = treasury_items(database, today) + decisions(database, today, cases) + bank_items(database, today) + missing_documents(database, today) + working(database, today, cases) + fiscal_items(database, today)
+    rows += agenda_items(database, today, {row["id"] for row in rows})
     rows.sort(key=lambda row: (-row["score"], row["when"] or "9999"))
     groups = {key: [row for row in rows if row["group"] == key] for key, _ in GROUPS}
 

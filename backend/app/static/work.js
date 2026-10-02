@@ -3,7 +3,7 @@
 /* Centro de trabajo (Hoy): una sola lista. Decides tú / falta información / CapaFiscal lo está haciendo / resuelto. */
 (() => {
   const esc = (value) => window.escapeHtml(value);
-  const GROUP_CLASS = { accion: "state-red", falta: "state-orange", haciendo: "state-green", resuelto: "state-done" };
+  const GROUP_CLASS = { accion: "state-red", falta: "state-orange", haciendo: "state-blue", resuelto: "state-done" };
   const EMPTY = {
     accion: "Nada que decidir ahora.",
     falta: "No falta ningún dato ni documento.",
@@ -13,6 +13,7 @@
   const VISIBLE = 8;
   const REFRESH_MS = 60000;
   let data = null;
+  let metrics = null;
   let expanded = new Set();
   let timer = null;
 
@@ -56,6 +57,20 @@
       </li>`;
   }
 
+  function metricsHtml() {
+    if (!metrics) return "";
+    const done = metrics.finished;
+    const fp = metrics.false_positives;
+    return `
+      <div class="work-metrics" title="${esc(metrics.definition)}">
+        <p class="work-night"><strong>${done.total}</strong> trabajos terminados en ${metrics.days} días:
+          ${done.invoices} factura(s) pagadas o cobradas · ${done.movements} movimiento(s) conciliados · ${done.cases} expediente(s) cerrados · ${done.months} mes(es) cerrados</p>
+        <p class="board-empty">${metrics.without_human} sin intervención · ${metrics.decisions} decisión(es) tuyas ·
+          ${metrics.errors_found.anomalies + metrics.errors_found.duplicates + metrics.errors_found.invalid} error(es) detectados ·
+          falsos positivos ${fp.rate === null ? "sin datos aún" : `${Math.round(fp.rate * 100)} % (${fp.anomalies_dismissed} de ${fp.anomalies_decided} avisos descartados)`}</p>
+      </div>`;
+  }
+
   function groupHtml(group) {
     const cls = GROUP_CLASS[group.key] || "";
     const head = `<div class="card-head"><h2 class="work-group-title"><span class="board-dot"></span>${esc(group.label)}</h2><span class="card-sub">${group.count}</span></div>`;
@@ -63,7 +78,7 @@
       return `<section class="card work-group ${cls}">${head}${group.items.length
         ? `<ul class="board-counts">${group.items.map((item) => `<li><strong>${item.count}</strong> ${esc(item.title.replace(/^\d+\s/, ""))}</li>`).join("")}</ul>
            <p class="board-empty">Últimos 7 días, sin que nadie tuviera que intervenir.${data.time_saved?.minutes ? ` <span title="${esc(data.time_saved.note)}">≈ ${String(data.time_saved.hours).replace(".", ",")} h ahorradas (estimación).</span>` : ""}</p>`
-        : `<p class="board-empty">${EMPTY.resuelto}</p>`}</section>`;
+        : `<p class="board-empty">${EMPTY.resuelto}</p>`}${metricsHtml()}</section>`;
     }
     if (!group.items.length) {
       return `<section class="card work-group ${cls}">${head}<p class="board-empty">${EMPTY[group.key]}</p></section>`;
@@ -109,7 +124,7 @@
 
   async function load() {
     try {
-      data = await window.apiRequest("/work");
+      [data, metrics] = await Promise.all([window.apiRequest("/work"), window.apiRequest("/work/metrics").catch(() => null)]);
       render();
     } catch (error) {
       document.getElementById("workGroups").innerHTML = `<section class="card"><p class="danger-text">No se pudo cargar el centro de trabajo: ${esc(error.message)}</p><button type="button" class="btn-ghost" data-work-retry>Reintentar</button></section>`;
@@ -167,7 +182,7 @@
       if (go) {
         window.activateTab(go.dataset.go);
         if (go.dataset.anchor) window.setTimeout(() => document.getElementById(go.dataset.anchor)?.scrollIntoView({ block: "start" }), 300);
-        if (go.dataset.view) window.setTimeout(() => document.querySelector(`#caseViews [data-view="${go.dataset.view}"]`)?.click(), 120);
+        if (go.dataset.view) window.setTimeout(() => document.querySelector(`.tab-panel.active .segmented [data-view="${go.dataset.view}"]`)?.click(), 120);
       }
     });
     load();

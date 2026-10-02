@@ -98,9 +98,21 @@ interpreta lo que las reglas no resuelven y su salida se valida con reglas.
 - 🟠 **Falta información**: movimientos sin justificar, extracto incompleto,
   facturas habituales que no han llegado, propuestas por confirmar, impuestos
   sin toda la información.
-- 🟢 **CapaFiscal lo está haciendo**: documentación pedida (con el siguiente paso
+- 🔵 **CapaFiscal lo está haciendo**: documentación pedida (con el siguiente paso
   del Perseguidor), banco conectado, modelos con todo al día.
 - ✓ **Resuelto** en los últimos 7 días, sin intervención.
+
+Todo llega aquí: facturas, anomalías, embargos, liquidez, documentos pedidos,
+pagos que vencen, cobros vencidos (y si CapaFiscal ya los reclama),
+cumplimiento (certificado, Verifactu), banco conectado. Los módulos sirven para
+profundizar, no para descubrir qué hay que hacer.
+
+**Se mide el trabajo terminado, no los documentos procesados** (`GET /api/work/metrics`):
+factura aprobada y pagada o cobrada, movimiento conciliado o justificado,
+expediente resuelto o presentado, mes cerrado. Junto a eso: cuántos terminó
+CapaFiscal sin nadie, cuántas decisiones tomó una persona, errores detectados,
+falsos positivos (avisos descartados, reglas rechazadas, conciliaciones
+deshechas) y horas ahorradas estimadas.
 
 Cada elemento dice **qué ha comprobado CapaFiscal** y lleva su acción. Lo raro
 *para esta empresa* encabeza la factura («suele facturarte 400 €; esta es de

@@ -67,4 +67,15 @@ def test_empty_company_has_a_calm_list(client):
     data = client.get("/api/work").json()
     by_key = groups(data)
     assert by_key["accion"]["items"] == [] and data["headline"] == "Nada requiere tu decisión hoy"
-    assert kinds(by_key["falta"]) == ["bank_none"]  # lo único que falta: el banco
+    assert set(kinds(by_key["falta"])) <= {"bank_none", "compliance"}  # lo único que falta: el banco y datos de cumplimiento
+
+
+def test_metrics_count_finished_work_not_processed_documents(client):
+    ids = setup_month(client)
+    before = client.get("/api/work/metrics").json()
+    assert before["finished"]["invoices"] == 2 and before["finished"]["movements"] >= 3  # FAC-0901 y T-0902 pagadas y conciliadas; la comisión justificada
+    client.post(f"/api/invoices/{ids['pending']}/approve")
+    client.post("/api/close/2026-09/run")
+    after = client.get("/api/work/metrics").json()
+    assert after["finished"]["invoices"] == 3 and after["decisions"] >= 1 and after["without_human"] >= 1
+    assert "Terminado =" in after["definition"] and after["false_positives"]["rate"] is None

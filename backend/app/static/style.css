@@ -3069,3 +3069,6 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
     .close-resolve li { grid-template-columns: 22px minmax(0, 1fr); }
     .close-resolve li .btn-ghost { grid-column: 2; justify-self: start; }
 }
+.work-metrics { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.state-blue .board-dot { background: var(--blue); }
+.state-done .board-dot { background: var(--green); }
