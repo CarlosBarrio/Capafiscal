@@ -2506,17 +2506,33 @@ def detect_invoice_likelihood(
 
 
 # Títulos de documentos que llevan IVA y total pero no son facturas. Se reconocen por la FORMA de la línea:
-# la palabra encabeza la línea y solo la sigue su número, una fecha o un paréntesis («ALBARÁN Nº AE-55120»,
-# «PRESUPUESTO Nº P-1 (no es una factura)»). No son títulos: un campo («Albarán: 4471»), una columna
-# («Albarán  Fecha  Importe») ni una frase («Presupuesto nº 88 aceptado»).
+# la palabra encabeza la línea y la siguen, como mucho, unas pocas palabras, su número, una fecha o un paréntesis
+# («ALBARÁN Nº AE-55120», «PRESUPUESTO DE REFORMA Nº 7», «PRESUPUESTO Nº P-1 (no es una factura)»). No son
+# títulos: un campo («Albarán: 4471»), una cabecera de tabla («Albarán  Fecha  Importe») ni una referencia que no
+# encabeza la línea («Ref. presupuesto 88»). El título de factura (más abajo) es más estricto a propósito.
 TITLE_TAIL = (
     r"(?:\s+(?:n\.?[o°º]\.?|num(?:ero)?\.?|#)\s*:?)?"                 # «Nº», «Núm.», «#»
     r"(?:\s*(?=[\w/.\-]*\d)[\w/.\-]+)?"                                # el número, con al menos una cifra
     r"(?:\s+(?:de\s+)?(?:fecha\s*:?\s*)?\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})?"  # una fecha
     r"(?:\s*\([^)]*\))?\s*$"                                           # «(no es una factura)»
 )
+# Un título de no-factura admite algunas palabras más («PRESUPUESTO DE REFORMA Nº 7», «ALBARÁN DE SALIDA Nº 123»,
+# «PRESUPUESTO Nº 88 ACEPTADO»), pero SOLO si lleva la marca de número («Nº», «Núm.», «#») con su identificador:
+# sin ella, «Albarán pendiente de firmar» o «Pedido urgente» son frases, no títulos. Y nunca palabras de columna:
+# «Albarán  Fecha  Importe» es una cabecera de tabla.
+COLUMN_WORDS = (r"fecha|importe|cantidad|cant|descripcion|concepto|precio|total|unidades|uds|ud|referencia|ref|base|iva|dto"
+                r"|descuento|cliente|proveedor|codigo|articulo|factura|subtotal|neto|bruto|euros")
+TITLE_WORD = rf"(?!(?:{COLUMN_WORDS})\b)[a-z]+"
+NUMBERED_TITLE_TAIL = (
+    rf"(?:\s+{TITLE_WORD}){{0,3}}"                                   # «de reforma», «de salida»
+    r"\s+(?:n\.?[o°º]\.?|num(?:ero)?\.?|#)\s*:?"                    # la marca de número es obligatoria
+    r"\s*(?=[\w/.\-]*\d)[\w/.\-]+"                                  # y su identificador, con al menos una cifra
+    rf"(?:\s+{TITLE_WORD}){{0,2}}"                                   # «aceptado»
+    r"(?:\s+(?:de\s+)?(?:fecha\s*:?\s*)?\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})?"
+    r"(?:\s*\([^)]*\))?\s*$"
+)
 NON_INVOICE_TITLES = tuple(
-    (kind, re.compile(rf"^\s*(?:{head}){TITLE_TAIL}"))
+    (kind, re.compile(rf"^\s*(?:{head})(?:{NUMBERED_TITLE_TAIL}|{TITLE_TAIL})"))
     for kind, head in (
         ("proforma", r"(?:factura\s+)?pro\s*-?\s*forma"),
         ("presupuesto", r"presupuesto|oferta(?:\s+comercial)?|cotizacion"),

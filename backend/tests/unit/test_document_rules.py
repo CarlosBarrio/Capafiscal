@@ -23,13 +23,57 @@ INVOICES = {
     "factura con columna «Albarán Fecha Importe»": "EMPRESA EJEMPLO S.L.\nNº de factura: F-12\nAlbarán Fecha Importe\nA-1 01/09/2026 100,00\nTotal 121,00",
     "columna «Albarán» sin título de factura": "EMPRESA EJEMPLO S.L.\nAlbarán   Fecha   Importe\nA-1 01/09/2026 100,00",
     "título «F A C T U R A»": "F A C T U R A\nAlbarán 5\nTotal 10,00",
-    "documento sin título claro": "EMPRESA EJEMPLO S.L.\nPresupuesto nº 88 aceptado\nTotal 121,00",
+    "documento sin título claro": "EMPRESA EJEMPLO S.L.\nRef. presupuesto 88 aceptado\nTotal 121,00",
     "«Pedido nº» como referencia antes del título": "EMPRESA EJEMPLO S.L.\nPedido nº 4500123\nFACTURA 2026-001",
     "factura simplificada": "FACTURA SIMPLIFICADA Nº T-9\nTotal 10,00",
     "factura rectificativa": "Factura rectificativa R-1",
     "albarán-factura": "ALBARÁN-FACTURA Nº 33",
     "factura que cita albarán y presupuesto": "FACTURA Nº 12\nSegún albarán 33 y presupuesto aceptado",
 }
+
+
+TITLE_CASES = [
+    # Títulos de documentos que NO son factura (también con palabras de más)
+    ("PRESUPUESTO DE REFORMA Nº 7", "presupuesto"),
+    ("PRESUPUESTO Nº 88 ACEPTADO", "presupuesto"),
+    ("ALBARÁN DE SALIDA Nº 123", "albarán"),
+    ("ALBARÁN Nº 123", "albarán"),
+    ("PEDIDO Nº 4500123", "pedido"),
+    ("PROFORMA Nº 77", "proforma"),
+    # Facturas
+    ("FACTURA Nº 12", None),
+    ("FACTURA SIMPLIFICADA", None),
+    ("FACTURA RECTIFICATIVA Nº 5", None),
+    ("F A C T U R A Nº 12", None),
+    ("Albarán: 4471\nFACTURA Nº 12", None),
+    ("Nº de factura: F-12", None),
+    # Cabecera de tabla: las palabras de columna no forman título
+    ("Albarán Fecha Importe", None),
+]
+
+
+@pytest.mark.parametrize(("title", "kind"), TITLE_CASES)
+def test_title_rule_is_neither_too_strict_nor_too_permissive(title, kind):
+    from app.extractor import non_invoice_title
+
+    assert non_invoice_title(f"EMPRESA EJEMPLO S.L.\n{title}\nIVA 21 %\nTotal 121,00") == kind
+
+
+SENTENCES = [
+    "Presupuesto aceptado por el cliente", "Pedido entregado en su domicilio", "Albarán pendiente de firmar",
+    "Proforma enviada por correo", "Presupuesto válido 30 días", "Albarán firmado por el cliente el 01/09/2026",
+    "Pedido realizado por teléfono", "Presupuesto sin compromiso", "Albarán adjunto", "Pedido urgente",
+    "ALBARÁN PENDIENTE DE FIRMAR", "Pedido 3 cajas",
+]
+
+
+@pytest.mark.parametrize("sentence", SENTENCES)
+def test_a_sentence_that_starts_with_the_word_is_not_a_title(sentence):
+    """Sin la marca de número («Nº», «Núm.», «#»), una línea con palabras de más es una frase, no un título:
+    no convierte el documento en no-factura aunque no haya título de factura."""
+    from app.extractor import non_invoice_title
+
+    assert non_invoice_title(f"EMPRESA EJEMPLO S.L.\n{sentence}\nTotal 121,00") is None
 
 
 @pytest.mark.parametrize("name", NOT_INVOICES)
