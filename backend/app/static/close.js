@@ -51,29 +51,54 @@
     const closed = data.status === "CLOSED";
     const badge = document.getElementById("cntClose");
     if (badge) {
-      badge.textContent = data.blockers;
+      badge.textContent = (data.to_resolve || []).length || data.blockers;
       badge.classList.toggle("hidden", closed || !data.blockers);
     }
 
-    document.getElementById("closeCard").innerHTML = `
+    const SHORT = { recibidas: "Facturas recibidas", emitidas: "Facturas emitidas", extracto: "Banco", conciliacion: "Conciliación", pagos: "Pagos",
+                    documentos: "Documentos", duplicados: "Duplicados", iva: "IVA", anomalias: "Anomalías", impuestos: "Impuestos", incidencias: "Notificaciones" };
+    const checklist = `<ul class="close-checklist">${data.checks.map((item) => `<li class="is-${esc(item.status)}"><span aria-hidden="true">${MARK[item.status][0]}</span> ${esc(SHORT[item.key] || item.label)}</li>`).join("")}</ul>`;
+    const resolve = (data.to_resolve || []).map((item, index) => `
+      <li>
+        <span class="close-resolve-number">${index + 1}</span>
+        <span class="close-resolve-text">${esc(item.text)}</span>
+        ${item.action ? `<button type="button" class="btn-ghost" ${item.action.document_id ? `data-close-document="${Number(item.action.document_id)}"` : item.action.case_id ? `data-close-case="${Number(item.action.case_id)}"`
+          : `data-go="${esc(item.action.tab || "panel")}" data-anchor="${esc(item.action.anchor || "")}" data-view="${esc(item.action.view || "")}"`}>${esc(item.action.label || "Resolver")}</button>` : ""}
+      </li>`).join("");
+    const report = `<a class="btn-ghost" href="/api/close/${esc(data.period)}/report">${window.icon("download")} ${closed ? "Informe de cierre" : "Informe provisional"}</a>`;
+
+    document.getElementById("closeCard").innerHTML = closed ? `
+      <div class="close-done">
+        <span class="close-done-mark" aria-hidden="true">✓</span>
+        <div>
+          <h2 class="close-headline">${esc(name.charAt(0).toUpperCase() + name.slice(1))} cerrado</h2>
+          <p class="close-work">${data.closed ? `Por ${esc(data.closed.by || "—")} el ${esc(new Date(data.closed.at).toLocaleString("es-ES"))} · ${data.closed.percent} % resuelto${data.closed.blockers ? ` · ${data.closed.blockers} salvedad(es): «${esc(data.closed.note || "")}»` : ""}` : ""}</p>
+        </div>
+      </div>
+      ${checklist}
+      <div class="close-actions">${report}<button type="button" class="btn-ghost" data-close-action="reopen">Reabrir</button></div>
+    ` : `
       <div class="close-head">
         <div>
-          <p class="close-state">${closed ? `<span class="status-pill status-success">Cerrado</span>` : `<span class="status-pill status-neutral">Abierto</span>`}
+          <p class="close-state"><span class="status-pill status-neutral">Abierto</span>
             ${data.last_run_at ? `<span class="muted">Última comprobación de CapaFiscal ${esc(ago(data.last_run_at))}</span>` : `<span class="muted">CapaFiscal aún no ha preparado este cierre</span>`}</p>
           <h2 class="close-headline">${esc(data.headline)}</h2>
         </div>
         <div class="close-actions">
-          ${closed ? `<button type="button" class="btn-ghost" data-close-action="reopen">Reabrir</button>` : `
-            <button type="button" class="act-btn act-primary" data-close-action="run" ${busy ? "disabled" : ""}>${window.icon("play")} ${busy ? "Trabajando…" : `Preparar el cierre de ${esc(short)}`}</button>
-            ${data.ready ? `<button type="button" class="act-btn act-primary" data-close-action="close">${window.icon("lock")} Cerrar ${esc(short)}</button>`
-              : `<button type="button" class="btn-ghost" data-close-action="close-note">Cerrar con salvedades…</button>`}`}
+          <button type="button" class="${data.last_run_at ? "btn-ghost" : "act-btn act-primary"}" data-close-action="run" ${busy ? "disabled" : ""}>${window.icon("play")} ${busy ? "Trabajando…" : `Preparar el cierre de ${esc(short)}`}</button>
+          ${data.ready ? `<button type="button" class="act-btn act-primary" data-close-action="close">${window.icon("lock")} Cerrar ${esc(short)}</button>` : ""}
         </div>
       </div>
       <span class="meter close-meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${data.percent}" aria-label="Porcentaje cerrado"><span style="width:${data.percent}%"></span></span>
+      ${checklist}
+      ${resolve ? `
+        <div class="close-resolve">
+          <h3>Resolver ${data.to_resolve.length} ${data.to_resolve.length === 1 ? "bloqueo" : "bloqueos"} → cerrar ${esc(short)}</h3>
+          <ol>${resolve}</ol>
+          <div class="close-actions"><button type="button" class="link-button" data-close-action="close-note">Cerrar igualmente, con salvedades…</button>${report}</div>
+        </div>` : `<div class="close-actions">${report}</div>`}
       <p class="close-formula muted">${data.units.done} de ${data.units.total} elementos resueltos (${esc(data.units.formula)}).</p>
-      <ul class="close-summary">${data.summary.map((line) => `<li class="${line.ok ? "is-ok" : "is-warn"}">${esc(line.text)}</li>`).join("")}</ul>
       ${data.work ? `<p class="close-work muted">En la última preparación CapaFiscal concilió ${data.work.auto_matched} movimiento(s) con evidencia suficiente, abrió ${data.work.anomalies_created} anomalía(s) y cerró ${data.work.anomalies_closed}.</p>` : ""}
-      ${closed && data.closed ? `<p class="close-work">Cerrado por ${esc(data.closed.by || "—")} el ${esc(new Date(data.closed.at).toLocaleString("es-ES"))} con un ${data.closed.percent} %${data.closed.blockers ? ` y ${data.closed.blockers} salvedad(es): «${esc(data.closed.note || "")}»` : ""}.</p>` : ""}
     `;
 
     document.getElementById("closeChecksSub").textContent = data.blockers
@@ -142,6 +167,10 @@
       if (action) return act(action.dataset.closeAction);
       const other = event.target.closest("[data-period]");
       if (other) { period = other.dataset.period; return load(); }
+      const doc = event.target.closest("[data-close-document]");
+      if (doc) return window.showDetail(Number(doc.dataset.closeDocument));
+      const caseButton = event.target.closest("[data-close-case]");
+      if (caseButton) return window.openCase(Number(caseButton.dataset.closeCase));
       const go = event.target.closest("[data-go]");
       if (go) {
         window.activateTab(go.dataset.go);

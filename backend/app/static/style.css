@@ -3050,3 +3050,22 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 @media (prefers-reduced-motion: reduce) { .document-detail-dialog.sheet[open] { animation: none; } }
 @media (max-width: 720px) { .document-detail-dialog.sheet { width: 100vw; border-left: none; } }
 .work-item:focus-within { background: var(--surface-2, transparent); }
+
+/* Cierre: lista corta de comprobaciones, bloqueos numerados para resolver y mes cerrado */
+.close-checklist { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 4px 0 0; padding: 0; list-style: none; font-size: 13.5px; color: var(--ink-2); }
+.close-checklist .is-ok span { color: var(--green); font-weight: 700; }
+.close-checklist .is-warn span { color: var(--amber); font-weight: 700; }
+.close-checklist .is-block span { color: var(--red); font-weight: 700; }
+.close-checklist .is-block { color: var(--ink); font-weight: 600; }
+.close-resolve { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.close-resolve h3 { margin: 0; font-size: 14px; }
+.close-resolve ol { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.close-resolve li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13.5px; }
+.close-resolve-number { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--red-bg); color: var(--red); font-size: 12px; font-weight: 700; }
+.close-resolve-text { min-width: 0; overflow-wrap: anywhere; }
+.close-done { display: flex; gap: 14px; align-items: center; }
+.close-done-mark { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--green-bg); color: var(--green); font-size: 20px; font-weight: 700; flex-shrink: 0; }
+@media (max-width: 640px) {
+    .close-resolve li { grid-template-columns: 22px minmax(0, 1fr); }
+    .close-resolve li .btn-ghost { grid-column: 2; justify-self: start; }
+}

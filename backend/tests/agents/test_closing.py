@@ -100,3 +100,25 @@ def test_close_needs_a_note_while_blockers_remain_and_can_reopen(client):
 
 def test_bad_period_is_rejected(client):
     assert client.get("/api/close", params={"period": "septiembre"}).status_code == 422
+
+
+def test_blockers_are_listed_one_by_one_with_their_action_and_a_report_is_produced(client):
+    from app.database import SessionLocal
+    from app.models import PeriodClose
+
+    ids = setup_month(client)
+    state = client.get("/api/close", params={"period": PERIOD}).json()
+    texts = [item["text"] for item in state["to_resolve"]]
+    assert "Factura LS-0903 · LIMPIEZAS SOL S.L. sin revisar" in texts
+    assert any(text.startswith("Pago de 2.350,00 € sin justificar") for text in texts)
+    invoice = next(item for item in state["to_resolve"] if item["check"] == "recibidas")
+    assert invoice["action"]["document_id"]
+    provisional = client.get(f"/api/close/{PERIOD}/report")
+    assert provisional.status_code == 200 and provisional.content[:4] == b"%PDF"
+
+    client.post(f"/api/close/{PERIOD}/close", json={"note": "Préstamo de un socio, se justifica en octubre."})
+    report = client.get(f"/api/close/{PERIOD}/report")
+    assert report.content[:4] == b"%PDF" and "informe_cierre_2026-09.pdf" in report.headers["content-disposition"]
+    with SessionLocal() as database:
+        assert database.query(PeriodClose).count() == 1  # descargar el informe no escribe
+    assert ids

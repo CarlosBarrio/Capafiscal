@@ -84,7 +84,7 @@ def evaluate(database: Session, period: str, *, today: date | None = None) -> di
             checks.append(check(key, label, "block", f"{len(pending)} de {len(rows)} sin revisar", count=len(pending),
                                 action={"tab": "facturas", "label": "Revisar facturas"},
                                 items=[{"label": f"{item.invoice_number or 's/n'} · {item.supplier_name if key == 'recibidas' else item.customer_name or ''}",
-                                        "amount": float(item.total or 0), "invoice_id": item.id} for item in pending[:10]]))
+                                        "amount": float(item.total or 0), "invoice_id": item.id, "document_id": item.document_id} for item in pending[:10]]))
         else:
             checks.append(check(key, label, "ok", f"{len(rows)} revisada(s)" if rows else "Ninguna en el mes", count=len(rows)))
     drafts = database.scalars(select(SalesInvoice).where(SalesInvoice.status == "DRAFT", SalesInvoice.issue_date.between(start, end))).all()
@@ -156,7 +156,7 @@ def evaluate(database: Session, period: str, *, today: date | None = None) -> di
     duplicates = [item for item in invoices if item.duplicate_status not in (None, "NONE") and item.review_status != "APPROVED"]
     if duplicates:
         checks.append(check("duplicados", "Duplicados", "block", f"{len(duplicates)} posible(s) factura(s) duplicada(s) sin decidir", count=len(duplicates),
-                            action={"tab": "facturas", "label": "Revisar"}, items=[{"label": f"{item.invoice_number} · {item.supplier_name}", "invoice_id": item.id} for item in duplicates]))
+                            action={"tab": "facturas", "label": "Revisar"}, items=[{"label": f"{item.invoice_number} · {item.supplier_name}", "invoice_id": item.id, "document_id": item.document_id} for item in duplicates]))
     else:
         checks.append(check("duplicados", "Duplicados", "ok", "0 duplicados"))
 
@@ -205,6 +205,7 @@ def evaluate(database: Session, period: str, *, today: date | None = None) -> di
         checks.append(check("incidencias", "Requerimientos y notificaciones", "ok", "Ninguna abierta"))
 
     blockers = [item for item in checks if item["status"] == "block"]
+    to_resolve = blocking_items(blockers)
     percent = round(units_done / units_total * 100) if units_total else 100
     reviewed = len(received) + len(issued) - sum(1 for item in received + issued if item.review_status != "APPROVED")
     summary = [
@@ -218,10 +219,39 @@ def evaluate(database: Session, period: str, *, today: date | None = None) -> di
         "percent": percent, "units": {"done": units_done, "total": units_total,
                                       "formula": "facturas del mes revisadas + movimientos conciliados o justificados + documentos esperados recibidos"},
         "checks": checks, "blockers": len(blockers), "warnings": sum(item["status"] == "warn" for item in checks),
-        "ready": not blockers, "summary": summary,
+        "ready": not blockers, "summary": summary, "to_resolve": to_resolve,
         "headline": (f"{period_label(period).capitalize()} — {percent} % cerrado · "
-                     + (f"{len(blockers)} {'cosa bloquea' if len(blockers) == 1 else 'cosas bloquean'} el cierre" if blockers else "listo para cerrar")),
+                     + (f"{len(to_resolve)} {'cosa bloquea' if len(to_resolve) == 1 else 'cosas bloquean'} el cierre" if to_resolve else "listo para cerrar")),
     }
+
+
+# Cómo se dice cada bloqueo, en concreto («Falta la factura de X», «Pago de 1.240 € sin justificar»).
+BLOCK_TEXT = {
+    "recibidas": lambda row: f"Factura {row['label']} sin revisar",
+    "emitidas": lambda row: f"Factura emitida {row['label']} sin revisar",
+    "conciliacion": lambda row: (f"{'Cobro' if row['amount'] > 0 else 'Pago'} de {eur(abs(row['amount']))} sin justificar · {row['label']}"
+                                 if not (row.get("why") or "").startswith("No se concilia") else f"Movimiento en conflicto · {row['label']}"),
+    "documentos": lambda row: f"Falta la factura de {row['label']}",
+    "duplicados": lambda row: f"Posible factura duplicada: {row['label']}",
+    "anomalias": lambda row: f"Anomalía sin decidir: {row['label']}",
+    "incidencias": lambda row: f"Plazo vencido: {row['label']}",
+}
+
+
+def blocking_items(blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Los bloqueos, uno a uno, cada uno con su acción para resolverlo desde el cierre."""
+    result = []
+    for check_item in blockers:
+        rows = check_item["items"] or [None]
+        for row in rows:
+            if row is None:
+                text, action = check_item["detail"], dict(check_item["action"] or {})
+            else:
+                text = BLOCK_TEXT.get(check_item["key"], lambda value: value["label"])(row)
+                action = ({"label": "Abrir", "document_id": row["document_id"]} if row.get("document_id") else
+                          {"label": "Abrir", "case_id": row["case_id"]} if row.get("case_id") else dict(check_item["action"] or {}))
+            result.append({"check": check_item["key"], "text": text, "amount": row.get("amount") if row else None, "action": action})
+    return result
 
 
 def record(database: Session, period: str) -> PeriodClose | None:
@@ -310,3 +340,95 @@ def history(database: Session) -> list[dict[str, Any]]:
     return [{"period": item.period, "label": period_label(item.period), "status": item.status, "percent": item.percent,
              "closed_at": item.closed_at.isoformat() if item.closed_at else None, "closed_by": item.closed_by, "note": item.note}
             for item in database.scalars(select(PeriodClose).order_by(PeriodClose.period.desc())).all()]
+
+
+def report_pdf(database: Session, period: str, *, today: date | None = None) -> bytes:
+    """Informe de cierre: lo comprobado, las cifras del mes, lo que hizo CapaFiscal y las salvedades. Solo lee."""
+    import io
+
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from reportlab.pdfgen import canvas
+
+    from app.accounting import journal
+    from app.models import CompanyProfile
+
+    data = state(database, period, today=today)
+    start, end = parse_period(period)
+    company = database.scalar(select(CompanyProfile).limit(1))
+    closed = data["status"] == "CLOSED"
+    stored = record(database, period)
+    snapshot = {item["key"]: item for item in ((stored.snapshot or {}).get("checks") or [])} if closed and stored else {}
+    diary = journal(database, start, end)
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    margin = 20 * mm
+    y = height - margin
+
+    def line(text: str, size: float = 10, bold: bool = False, color: str = "#1c1914", gap: float = 4) -> None:
+        nonlocal y
+        font = "Helvetica-Bold" if bold else "Helvetica"
+        words, current = text.split(), ""
+        lines = []
+        for word in words:
+            trial = f"{current} {word}".strip()
+            if stringWidth(trial, font, size) > width - 2 * margin and current:
+                lines.append(current)
+                current = word
+            else:
+                current = trial
+        lines.append(current)
+        for chunk in lines:
+            if y < margin + 20:
+                pdf.showPage()
+                y = height - margin
+            pdf.setFont(font, size)
+            pdf.setFillColor(HexColor(color))
+            pdf.drawString(margin, y, chunk)
+            y -= size + gap
+
+    label = period_label(period).capitalize()
+    line(f"Informe de cierre · {label}", 18, bold=True, gap=6)
+    if company is not None:
+        line(" · ".join(part for part in (company.name, f"NIF {company.tax_id}" if company.tax_id else None) if part), 10, color="#6b6459")
+    if closed and data["closed"]:
+        when = datetime.fromisoformat(data["closed"]["at"]).strftime("%d/%m/%Y %H:%M") if data["closed"]["at"] else ""
+        line(f"Cerrado por {data['closed']['by'] or '—'} el {when} con un {data['closed']['percent']} % de elementos resueltos.", 10)
+        if data["closed"]["note"]:
+            line(f"Cerrado con salvedades ({data['closed']['blockers']}): {data['closed']['note']}", 10, color="#a4262c")
+    else:
+        line("PROVISIONAL: el mes sigue abierto.", 10, bold=True, color="#a4262c")
+    y -= 6
+    line(data["headline"], 12, bold=True)
+    line(f"{data['units']['done']} de {data['units']['total']} elementos resueltos ({data['units']['formula']}).", 9, color="#6b6459")
+    y -= 6
+    line("Comprobaciones", 12, bold=True)
+    words = {"ok": "Correcto", "warn": "Aviso", "block": "Bloquea"}
+    for item in data["checks"]:
+        shown = snapshot.get(item["key"], item)
+        line(f"{words[shown['status']]} · {item['label']}: {shown['detail']}", 10, color="#a4262c" if shown["status"] == "block" else "#1c1914")
+    y -= 6
+    line("Cifras del mes", 12, bold=True)
+    for summary_line in data["summary"]:
+        line(f"· {summary_line['text']}", 10)
+    line(f"· Borrador contable: {diary['count']} asiento(s), debe {eur(diary['totals']['debit'])} = haber {eur(diary['totals']['credit'])}"
+         + (f"; {len(diary['pending'])} elemento(s) sin contabilizar" if diary["pending"] else ""), 10)
+    if data["work"]:
+        y -= 6
+        line("Trabajo de CapaFiscal", 12, bold=True)
+        line(f"Concilió {data['work']['auto_matched']} movimiento(s) con evidencia suficiente, abrió {data['work']['anomalies_created']} "
+             f"anomalía(s) y cerró {data['work']['anomalies_closed']}.", 10)
+    if data["to_resolve"] and not closed:
+        y -= 6
+        line("Pendiente para cerrar", 12, bold=True)
+        for number, item in enumerate(data["to_resolve"], start=1):
+            line(f"{number}. {item['text']}", 10)
+    y -= 10
+    line(f"Generado por CapaFiscal el {date.today():%d/%m/%Y}. Los importes y asientos son un borrador a revisar por la gestoría; "
+         "CapaFiscal no presenta nada ante la Administración.", 8, color="#6b6459")
+    pdf.save()
+    return buffer.getvalue()

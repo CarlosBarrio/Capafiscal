@@ -66,3 +66,17 @@ def close_reopen(period: str, database: DatabaseDependency, actor_header: ActorH
         raise HTTPException(status_code=409, detail=str(error)) from error
     database.commit()
     return result
+
+
+@router.get("/{period}/report")
+def close_report(period: str, database: DatabaseDependency):
+    """Informe de cierre en PDF (provisional si el mes sigue abierto). Solo lee."""
+    from fastapi import Response
+
+    from app import closing
+
+    try:
+        content = closing.report_pdf(database, period)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return Response(content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="informe_cierre_{period}.pdf"'})
