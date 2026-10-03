@@ -209,7 +209,7 @@ def answer(database: Session, question: str) -> dict[str, Any]:
     from app.agents import llm
 
     sources = search(database, question, limit=5)
-    text = llm.answer_with_sources(question, sources)
+    text, llm_meta = llm.answer_with_sources(question, sources)
     engine = llm.engine_label() if text else "memoria (búsqueda)"
 
     if not text:
@@ -222,4 +222,5 @@ def answer(database: Session, question: str) -> dict[str, Any]:
             lines.append("Abre cada fuente para ver el texto exacto. Con ANTHROPIC_API_KEY, la respuesta se redacta a partir de ellas.")
             text = "\n".join(lines)
 
-    return {"question": question, "answer": text, "sources": sources, "engine": engine}
+    return {"question": question, "answer": text, "sources": sources, "engine": engine,
+            "llm": llm_meta if llm_meta and llm_meta.get("outcome") != "skipped" else None}

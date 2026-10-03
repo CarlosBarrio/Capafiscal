@@ -420,8 +420,9 @@ class GestorIncidencias(Agent):
             "city": company.city if company else None,
         }
         draft = build_letter(rules.get("letter"), facts, company_data, documents, ctx.today)
+        llm_calls: list[dict[str, Any]] = []
         if draft and llm.available():
-            improved = llm.draft_letter(
+            improved, llm_meta = llm.draft_letter(
                 {
                     "empresa": company_data,
                     "tramite": facts.get("procedure_label"),
@@ -434,6 +435,7 @@ class GestorIncidencias(Agent):
                 },
                 draft,
             )
+            llm_calls.append(llm_meta)
             if improved:
                 draft = improved
                 engine = llm.engine_label()
@@ -456,7 +458,8 @@ class GestorIncidencias(Agent):
 
         return StepResult(
             summary=result_summary + ".",
-            output={"documents": documents, "actions": actions, "insights": insights, "internal_deadline": internal, "has_draft": bool(draft)},
+            output={"documents": documents, "actions": actions, "insights": insights, "internal_deadline": internal, "has_draft": bool(draft),
+                    **({"llm": llm_calls} if llm_calls else {})},  # modelo, tokens, coste y resultado (queda en AgentStep.output)
             evidence=[evidence("document_check", f"{item['label']}: {item['status']}", note=item["note"]) for item in documents],
             engine=engine,
             signals={"missing_documents": sum(1 for item in missing if item["source"] in {"internal", "third"})},

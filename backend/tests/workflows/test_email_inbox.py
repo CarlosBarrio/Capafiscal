@@ -143,3 +143,108 @@ def test_imap_reads_unseen_and_marks_them_seen(client, monkeypatch):
     assert seen == [b"7"]
     events = client.get("/api/events").json()["events"]
     assert any(item["source"] == "email" and item["external_id"].startswith("imap-1@test#") for item in events)
+
+
+# ---------------------------------------------------------------------
+# El buzón como automatización (planificador): regresión del commit dentro de un savepoint.
+# Antes, run_automation envolvía el buzón en begin_nested(); el primer commit del primer correo cerraba
+# el savepoint y los demás correos fallaban: entraba uno por vuelta y la ejecución decía «Sin correos nuevos».
+# ---------------------------------------------------------------------
+
+THREE_MAILS = (("<lote-1@test>", "ingenieria_pie_legal.pdf"), ("<lote-2@test>", "limpieza_tabla_totales.pdf"),
+               ("<lote-3@test>", "autonomo_dos_paginas.pdf"))
+
+
+def mailbox(mails=THREE_MAILS, *, clean: bool = True):
+    import shutil
+
+    from app.config import settings
+
+    folder = settings.data_dir / "buzon"
+    if clean:  # la carpeta de datos es de toda la sesión de tests: cada prueba empieza con el buzón vacío
+        shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True, exist_ok=True)
+    for index, (message_id, pdf) in enumerate(mails):
+        (folder / f"correo-{index}.eml").write_bytes(build_eml(message_id, attachment=SYNTHETIC / pdf))
+    return folder
+
+
+def counts():
+    from sqlalchemy import func
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models import Document
+    from app.models import IngestedEvent
+
+    with SessionLocal() as database:
+        documents = database.scalar(select(func.count()).select_from(Document).where(Document.source == "email"))
+        events = database.scalar(select(func.count()).select_from(IngestedEvent).where(IngestedEvent.source == "email"))
+    return documents, events
+
+
+def run_inbox():
+    from app.automation_service import run_automation
+    from app.database import SessionLocal
+
+    with SessionLocal() as database:
+        run = run_automation(database, "EMAIL_INBOX", trigger="SCHEDULE")
+        database.commit()
+        return run.status, run.items, run.summary
+
+
+def test_one_scheduled_run_processes_every_waiting_email(client):
+    setup(client)
+    folder = mailbox()
+
+    status, items, summary = run_inbox()
+    assert status == "OK" and items == 3, summary
+    assert summary.startswith("3 correo(s), 3 documento(s)")
+    assert counts() == (3, 3)
+    assert not list(folder.glob("*.eml")) and len(list((folder / "procesados").glob("*.eml"))) == 3
+
+    # Segunda vuelta: nada nuevo, nada repetido
+    status, items, summary = run_inbox()
+    assert (status, items, summary) == ("NOTHING", 0, "Sin correos nuevos.")
+    assert counts() == (3, 3)
+
+
+def test_the_same_emails_delivered_again_are_not_imported_twice(client):
+    setup(client)
+    mailbox()
+    run_inbox()
+    mailbox(clean=False)  # el servidor los entrega otra vez (mismo Message-ID y mismos adjuntos)
+    status, _items, _summary = run_inbox()
+    assert status == "OK"
+    assert counts() == (3, 3)  # ni documentos ni eventos nuevos: la idempotencia se mantiene
+
+
+def test_a_failing_email_rolls_back_only_itself_and_is_retried(client, monkeypatch):
+    """Un correo que falla a mitad (después de escribir algo) deshace solo lo suyo; los demás quedan
+    guardados, el fallido sigue en el buzón, la ejecución lo dice y la vuelta siguiente lo procesa."""
+    from app.connectors.email import client as email_client
+    from app.models import Document
+
+    setup(client)
+    folder = mailbox()
+    original = email_client.import_eml
+
+    def flaky(database, raw, *, provider="importacion"):
+        if b"<lote-2@test>" in raw:
+            database.add(Document(original_filename="a-medias.pdf", stored_filename="a-medias.pdf", sha256="0" * 64, extension=".pdf",
+                                  size_bytes=1, source="email", status="RECEIVED", extraction_status="PENDING"))
+            database.flush()
+            raise RuntimeError("fallo simulado a mitad del correo")
+        return original(database, raw, provider=provider)
+
+    monkeypatch.setattr(email_client, "import_eml", flaky)
+    status, items, summary = run_inbox()
+    assert status == "OK" and items == 2
+    assert "1 correo(s) no se pudieron procesar" in summary
+    assert counts() == (2, 2)  # lo escrito a medias por el correo fallido no quedó
+    assert [path.name for path in folder.glob("*.eml")] == ["correo-1.eml"]
+
+    monkeypatch.setattr(email_client, "import_eml", original)
+    status, items, summary = run_inbox()
+    assert (status, items) == ("OK", 1) and counts() == (3, 3)
+    assert not list(folder.glob("*.eml"))

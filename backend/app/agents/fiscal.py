@@ -264,7 +264,7 @@ class AgenteFiscal(Agent):
 
     def run_notification(self, ctx: AgentContext) -> StepResult:
         database = ctx.database
-        extracted = llm.extract_notification(ctx.text) if llm.available() else None
+        extracted, llm_meta = llm.extract_notification(ctx.text) if llm.available() else (None, None)
         ctx.facts["llm_extraction"] = extracted
         references = merge_llm_references(detect_references(ctx.text), extracted)
         analyses, notes = analyse_references(database, references, ctx.facts.get("amount"))
@@ -290,7 +290,8 @@ class AgenteFiscal(Agent):
 
         return StepResult(
             summary=summary,
-            output={"references": analyses, "notes": notes},
+            # llm: modelo, tokens, coste, duración y resultado de la llamada (queda en AgentStep.output)
+            output={"references": analyses, "notes": notes, **({"llm": [llm_meta]} if llm_meta else {})},
             evidence=[
                 evidence("tax_model", f"Modelo {item['model']} {item.get('quarter') or ''}T {item.get('year') or ''}".strip(), draft_result=item.get("draft_result"), filed=item.get("filed"))
                 for item in analyses

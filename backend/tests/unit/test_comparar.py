@@ -20,15 +20,16 @@ def small_bank(tmp_path: Path) -> Path:
     return folder
 
 
-def fake_claude(*, system, content, effort, max_tokens, output_format=None, model=None):
+def fake_claude(*, system, content, effort, max_tokens, output_format=None, model=None, operation=None):
     """Lee siempre la misma factura, con un NIF que no está en el documento (las reglas deben descartarlo)."""
     from app.agents import llm
 
     meta = {"model": "simulado", "served_by": "simulado", "input_tokens": 1000, "output_tokens": 100, "cost_usd": 0.01, "fallback": None}
     if system != llm.SYSTEM_INVOICE:
         return None, {**meta, "fallback": "simulado"}
-    fields = {name: "" for name in llm.INVOICE_FIELDS}
-    fields.update(supplier_tax_id="B99999997", category="Otros gastos")
+    fields = {name: None for name in llm.INVOICE_FIELDS}
+    fields.update(is_invoice=True, document_type="factura", supplier_tax_id="B99999997", category="Otros gastos")
+    assert llm.schema_errors(fields) == []
     return json.dumps(fields), meta
 
 

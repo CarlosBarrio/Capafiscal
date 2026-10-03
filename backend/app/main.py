@@ -50,7 +50,6 @@ from app.models import AuditEvent
 from app.models import Document
 from app.models import Invoice
 from app.operations_service import assistant_answer
-from app.operations_service import build_agent_catalog
 from app.operations_service import build_monthly_impact
 from app.operations_service import build_today_dashboard
 from app.operations_service import connector_catalog
@@ -74,7 +73,6 @@ from app.reports_service import ledger_to_xlsx
 from app.reports_service import period_label
 from app.reports_service import quarter_range
 from app.schemas import ActionResponse
-from app.schemas import AgentResponse
 from app.schemas import AssistantQueryRequest
 from app.schemas import AssistantQueryResponse
 from app.schemas import AuditEventResponse
@@ -396,12 +394,30 @@ app.include_router(bank_sync_router)
 
 @app.middleware("http")
 async def identify_request(request, call_next):
-    """Quién llama y para qué cliente. Sin AUTH_REQUIRED, empresa única (o X-Client-Id para pruebas)."""
+    """Quién llama y para qué cliente. Sin AUTH_REQUIRED, empresa única (o X-Client-Id para pruebas).
+
+    También deja en request_context quién es (para la auditoría) y lo que declara la cabecera X-Actor,
+    que se guarda como «declarado» y nunca como identidad (ver deps.resolve_actor).
+    """
+    from app.deps import clean_actor
+    from app.request_context import reset_declared_actor
+    from app.request_context import set_declared_actor
+
+    token = set_declared_actor(clean_actor(request.headers.get("x-actor")))
+    try:
+        return await _identify(request, call_next)
+    finally:
+        reset_declared_actor(token)
+
+
+async def _identify(request, call_next):
     from fastapi.concurrency import run_in_threadpool
     from fastapi.responses import JSONResponse
 
     from app.auth import is_public
     from app.auth import resolve_request
+    from app.request_context import reset_user
+    from app.request_context import set_user
 
     request.state.tenant_id = None
     request.state.user = None
@@ -431,7 +447,11 @@ async def identify_request(request, call_next):
         code, message = result["error"]
         return JSONResponse(status_code=code, content={"detail": message})
     request.state.user, request.state.tenant_id = result["user"], result["tenant_id"]
-    return await call_next(request)
+    token = set_user(result["user"])  # la auditoría de esta petición sabe quién es (request_context)
+    try:
+        return await call_next(request)
+    finally:
+        reset_user(token)
 
 app.add_middleware(
     CORSMiddleware,
@@ -509,15 +529,9 @@ def dashboard_monthly_impact(
     return build_monthly_impact(database)
 
 
-@app.get(
-    "/api/agents",
-    response_model=list[AgentResponse],
-    tags=["Centro operativo"],
-)
-def list_agents(
-    database: DatabaseDependency,
-) -> list[dict[str, Any]]:
-    return build_agent_catalog(database)
+# GET /api/agents lo sirve agent_routes.agents (equipo de agentes, rutas y actividad). Aquí había una segunda
+# declaración (catálogo antiguo, build_agent_catalog) que nunca respondía: los routers incluidos van antes. El
+# catálogo antiguo sigue en el panel de hoy (build_today_dashboard → «agents»).
 
 
 @app.get(

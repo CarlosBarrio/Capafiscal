@@ -20,8 +20,10 @@ from datetime import date
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
+from contextlib import contextmanager
 from typing import Any
 from typing import Callable
+from typing import Iterator
 
 from sqlalchemy import func
 from sqlalchemy import select
@@ -51,6 +53,10 @@ class Automation:
     tab: str
     day: int = 1
     default_enabled: bool = True
+    # La tarea confirma su trabajo elemento a elemento (cada correo es una unidad de trabajo con sus propios
+    # commit): no puede ir dentro de un savepoint (el primer commit lo cerraría) ni heredar trabajo pendiente
+    # (deshacer un elemento fallido lo arrastraría). Ver run_automation.
+    own_transactions: bool = False
 
 
 # ---------------------------------------------------------------------
@@ -223,16 +229,22 @@ def job_deadlines(database: Session, now: datetime) -> tuple[int, str]:
 
 
 def job_email(database: Session, now: datetime) -> tuple[int, str]:
+    from app.connectors.assignment import blocked_reason
     from app.connectors.email.client import imap_configured
     from app.connectors.email.client import mailbox_folder
     from app.connectors.email.client import poll
 
     if not imap_configured() and not mailbox_folder().exists():
         return 0, "Sin buzón configurado (IMAP o carpeta data/buzon)."
+    reason = blocked_reason(database, "email")
+    if reason:  # multiempresa: el buzón común es de otro cliente o de ninguno; no se toca
+        return 0, reason
     result = poll(database)
+    failed = result.get("failed", 0)
+    pending = f" {failed} correo(s) no se pudieron procesar: se reintentarán en la próxima vuelta." if failed else ""
     if not result["messages"]:
-        return 0, "Sin correos nuevos."
-    return result["documents"], f"{result['messages']} correo(s), {result['documents']} documento(s)" + (f"; expedientes: {', '.join(result['cases'])}" if result["cases"] else "") + "."
+        return 0, ("Sin correos procesados." + pending) if failed else "Sin correos nuevos."
+    return result["documents"], f"{result['messages']} correo(s), {result['documents']} documento(s)" + (f"; expedientes: {', '.join(result['cases'])}" if result["cases"] else "") + "." + pending
 
 
 def job_follow_up(database: Session, now: datetime) -> tuple[int, str]:
@@ -269,7 +281,7 @@ def job_intelligence(database: Session, now: datetime) -> tuple[int, str]:
 
 AUTOMATIONS: tuple[Automation, ...] = (
     Automation("AGENT_PIPELINE", "Orquestador de expedientes", "Cada notificación nueva recorre los agentes de punta a punta: la detecta, la asigna, mira el impacto fiscal, busca antecedentes, reúne la documentación y prepara la respuesta.", "Cada 5 minutos", 0, 5, "interval", job_agents, 45, "Agente", "expedientes"),
-    Automation("EMAIL_INBOX", "Buzón de correo", "Lee los correos nuevos (IMAP o la carpeta data/buzon), guarda sus facturas y notificaciones y las pasa al orquestador como cualquier otra entrada.", "Cada 5 minutos", 0, 5, "interval", job_email, 5, "Agente", "expedientes"),
+    Automation("EMAIL_INBOX", "Buzón de correo", "Lee los correos nuevos (IMAP o la carpeta data/buzon), guarda sus facturas y notificaciones y las pasa al orquestador como cualquier otra entrada.", "Cada 5 minutos", 0, 5, "interval", job_email, 5, "Agente", "expedientes", own_transactions=True),
     Automation("ANOMALY_SCAN", "Detector de anomalías", "Cruza facturas, banco e histórico y abre un expediente cuando algo no cuadra: importes atípicos, duplicados, IVA inusual, facturas que faltan o pagos sin factura.", "Cada día · 06:45", 6, 45, "daily", job_anomalies, 15, "Agente", "expedientes"),
     Automation("DEADLINE_WATCH", "Vigilante de plazos", "15 días antes de cada 303, 130, 111 o 115 abre su expediente: borrador del modelo, facturas sin revisar, anomalías del periodo y pasos hasta presentarlo.", "Cada día · 07:10", 7, 10, "daily", job_deadlines, 10, "Agente", "expedientes"),
     Automation("FOLLOW_UP", "Perseguidor de documentación", "Recuerda a quien debe aportar documentación, con cortesía creciente, hasta que la sube; después la verifica.", "Cada día · 09:30", 9, 30, "daily", job_follow_up, 10, "Agente", "expedientes"),
@@ -415,29 +427,36 @@ def is_due(automation: Automation, setting: AutomationSetting, now: datetime) ->
 
 
 def run_automation(database: Session, code: str, *, trigger: str = "MANUAL", now: datetime | None = None, actor: str = "agent") -> AutomationRun:
+    """Ejecuta una automatización y anota la ejecución. Quien llama confirma (commit) la ejecución.
+
+    Dos tipos de tarea:
+      · normal: todo su trabajo va en un savepoint; si falla, se deshace solo su trabajo y queda la anotación.
+      · own_transactions (buzón de correo): confirma cada elemento por separado. Antes de empezar se confirma
+        lo pendiente de quien llama, para que deshacer un elemento fallido no se lleve trabajo ajeno.
+    """
     automation = BY_CODE.get(code)
     if automation is None:
         raise ValueError("Automatización desconocida.")
 
     now = now or local_now()
-    setting = get_setting(database, code)
-    run = AutomationRun(code=code, trigger=trigger, status="RUNNING", started_at=clock.now())
-    database.add(run)
-    database.flush()
-
+    started = clock.now()
     try:
-        with database.begin_nested():
+        if automation.own_transactions:
+            database.commit()
             items, summary = automation.handler(database, now)
-        run.status = "OK" if items else "NOTHING"
-        run.items = items
-        run.summary = summary
+        else:
+            with database.begin_nested():
+                items, summary = automation.handler(database, now)
+        status = "OK" if items else "NOTHING"
     except Exception as error:  # una tarea que falla no tumba las demás
         logger.exception("Fallo en la automatización %s", code)
-        run.status = "ERROR"
-        run.items = 0
-        run.summary = f"Error: {error}"
+        if automation.own_transactions:
+            database.rollback()  # solo lo no confirmado del elemento en curso: lo anterior ya está guardado
+        status, items, summary = "ERROR", 0, f"Error: {error}"
 
-    run.finished_at = clock.now()
+    setting = get_setting(database, code)
+    run = AutomationRun(code=code, trigger=trigger, status=status, items=items, summary=summary, started_at=started, finished_at=clock.now())
+    database.add(run)
     setting.last_run_at = run.finished_at
     setting.last_status = run.status
     setting.last_summary = run.summary
@@ -449,41 +468,74 @@ def run_automation(database: Session, code: str, *, trigger: str = "MANUAL", now
         actor=actor,
         event_data={"status": run.status, "items": run.items, "summary": run.summary, "trigger": trigger},
     )
+    database.flush()
     return run
 
+
+AUTOMATION_ACTOR = "automatizacion"  # lo que hace el planificador solo, sin persona detrás
 
 # Clave de los cerrojos consultivos de PostgreSQL para el planificador (un número cualquiera, fijo).
 SCHEDULER_LOCK = 4_243_303
 
 
-def claim_turn(database: Session, client_id: int) -> bool:
+@contextmanager
+def scheduler_turn(client_id: int) -> Iterator[bool]:
     """
+    El turno del planificador para un cliente.
+
     Con varios procesos (uvicorn --workers, dos instancias) cada uno tiene su planificador: sin turno, lo
     que toca se ejecutaría una vez por proceso (el resumen diario dos veces, dos recordatorios al proveedor).
-    En PostgreSQL el turno es un cerrojo consultivo de la transacción, por cliente: quien no lo consigue
-    lo deja para la siguiente vuelta; quien lo consigue decide qué toca DESPUÉS de tenerlo, así ve las
-    ejecuciones que otro acaba de anotar. Se suelta solo con el commit o el rollback.
+    En PostgreSQL el turno es un cerrojo consultivo de SESIÓN en una conexión propia, no de la transacción:
+    así cada automatización puede confirmar su trabajo (y el buzón, cada correo) sin soltar el turno a mitad.
+    Quien no lo consigue lo deja para la siguiente vuelta. Se suelta siempre al salir.
     SQLite es de un solo proceso: siempre hay turno.
     """
-    if database.get_bind().dialect.name != "postgresql":
-        return True
-    return bool(database.scalar(select(func.pg_try_advisory_xact_lock(SCHEDULER_LOCK, client_id))))
+    from app.database import engine
+
+    if engine.dialect.name != "postgresql":
+        yield True
+        return
+    with engine.connect() as connection:
+        got = bool(connection.scalar(select(func.pg_try_advisory_lock(SCHEDULER_LOCK, client_id))))
+        connection.commit()
+        try:
+            yield got
+        finally:
+            if got:
+                connection.scalar(select(func.pg_advisory_unlock(SCHEDULER_LOCK, client_id)))
+                connection.commit()
+
+
+def run_due_in_turn(database: Session, now: datetime) -> list[AutomationRun]:
+    """Con el turno ya conseguido: cada automatización que toca, en su propia transacción.
+
+    Se decide si toca justo antes de cada una (con lo ya confirmado), y se confirma al terminar: un fallo
+    en una no deshace las anteriores.
+    """
+    runs = []
+    for automation in AUTOMATIONS:
+        if not is_due(automation, read_setting(database, automation.code), now):
+            continue
+        try:
+            run = run_automation(database, automation.code, trigger="SCHEDULE", now=now, actor=AUTOMATION_ACTOR)
+            database.commit()
+            runs.append(run)
+        except Exception:
+            database.rollback()
+            logger.exception("No se pudo anotar la automatización %s", automation.code)
+    return runs
 
 
 def run_due(database: Session, now: datetime | None = None) -> list[AutomationRun]:
     now = now or local_now()
-    runs = []
-    if not claim_turn(database, 0):
-        return runs
-    for automation in AUTOMATIONS:
-        setting = read_setting(database, automation.code)
-        if is_due(automation, setting, now):
-            runs.append(run_automation(database, automation.code, trigger="SCHEDULE", now=now))
-    return runs
+    with scheduler_turn(0) as turn:
+        if not turn:
+            return []
+        return run_due_in_turn(database, now)
 
 
 def run_due_all_clients(now: datetime | None = None) -> dict[int, int]:
-    """Multiempresa: lo que toca se decide una vez y se ejecuta en la sesión aislada de cada cliente."""
+    """Multiempresa: lo que toca se decide y se ejecuta en la sesión aislada de cada cliente."""
     from sqlalchemy import select
 
     from app.database import SessionLocal
@@ -495,18 +547,15 @@ def run_due_all_clients(now: datetime | None = None) -> dict[int, int]:
         clients = list(database.scalars(select(Client.id).where(Client.active.is_(True))).all())
     done: dict[int, int] = {}
     for client_id in clients:
-        with tenant_session(client_id) as database:
-            try:
-                if not claim_turn(database, client_id):
-                    continue  # otro proceso está con este cliente
-                # Cada cliente tiene sus automatizaciones activadas y su propio «última vez».
-                due = [automation.code for automation in AUTOMATIONS if is_due(automation, read_setting(database, automation.code), now)]
-                runs = [run_automation(database, code, trigger="SCHEDULE", now=now) for code in due]
-                database.commit()
-                done[client_id] = len(runs)
-            except Exception:
-                database.rollback()
-                logger.exception("Error en las automatizaciones del cliente %s", client_id)
+        with scheduler_turn(client_id) as turn:
+            if not turn:
+                continue  # otro proceso está con este cliente
+            with tenant_session(client_id) as database:
+                try:
+                    done[client_id] = len(run_due_in_turn(database, now))
+                except Exception:
+                    database.rollback()
+                    logger.exception("Error en las automatizaciones del cliente %s", client_id)
     return done
 
 

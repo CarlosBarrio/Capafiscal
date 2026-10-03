@@ -26,13 +26,19 @@ from typing import Any
 from typing import Callable
 
 FIELDS = (
-    "is_invoice", "direction", "supplier_name", "supplier_tax_id", "customer_tax_id", "invoice_number",
+    "is_invoice", "document_type", "direction", "supplier_name", "supplier_tax_id", "customer_tax_id", "invoice_number",
     "invoice_date", "due_date", "subtotal", "tax_total", "withholding_total", "total", "category",
 )
-# Campos que un motor no produce: no se le cuentan como fallo (Claude no decide si algo es factura).
-NOT_PRODUCED = {"claude": {"is_invoice"}}
+# Campos que un motor no produce: no se le cuentan como fallo. Hoy los tres motores producen todos.
+NOT_PRODUCED: dict[str, set[str]] = {}
+# Tipos de documento que distingue CapaFiscal (las reglas: título del documento; ver extractor.non_invoice_title).
+# Claude devuelve exactamente los mismos (llm.DOCUMENT_TYPES); un test lo comprueba.
+DOCUMENT_TYPES = ("factura", "albaran", "presupuesto", "proforma", "pedido", "otro")
+# Dimensiones de los metadatos por las que se desglosa el acierto.
+META_DIMENSIONS = ("document_type", "difficulty", "ambiguous", "ocr", "multipage", "language", "visual_template", "synthetic")
 FIELD_LABELS = {
     "is_invoice": "¿Es factura?",
+    "document_type": "Tipo de documento",
     "direction": "Sentido (recibida/emitida)",
     "supplier_name": "Proveedor",
     "supplier_tax_id": "NIF proveedor",
@@ -59,6 +65,7 @@ class Case:
     tags: list[str] = field(default_factory=list)
     set: str = "A"
     known_errors: list[dict[str, Any]] = field(default_factory=list)
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -71,8 +78,11 @@ class Dataset:
 
 def load_dataset(folder: Path) -> Dataset:
     labels = json.loads((folder / "labels.json").read_text(encoding="utf-8"))
+    # ¿Sintético o real? El caso manda; si no lo dice, el dataset; si tampoco, «reales/» es real y lo demás, desconocido.
+    default_synthetic = labels.get("synthetic", False if "reales" in folder.parts else None)
     cases = [
-        Case(item["id"], folder / item["file"], item["expected"], item.get("tags", []), item.get("set", "A").upper(), item.get("errores_conocidos", []))
+        Case(item["id"], folder / item["file"], item["expected"], item.get("tags", []), item.get("set", "A").upper(), item.get("errores_conocidos", []),
+             {"synthetic": default_synthetic, **item.get("meta", {})})
         for item in labels["casos"]
         if (folder / item["file"]).exists()
     ]
@@ -125,7 +135,18 @@ def flatten(result: dict[str, Any]) -> dict[str, Any]:
     values = {name: (fields.get(name) or {}).get("value") for name in FIELDS if name not in ("direction", "is_invoice")}
     values["direction"] = result.get("direction")
     values["is_invoice"] = result.get("is_invoice")
+    values["document_type"] = document_type(result)
     return values
+
+
+def document_type(result: dict[str, Any]) -> str | None:
+    """Tipo de documento según las reglas: el título de no-factura que detectaron, o «factura», o «otro»."""
+    kind = next((signal.split(":", 1)[1] for signal in result.get("signals") or [] if signal.startswith("not_invoice:")), None)
+    if kind:
+        return kind.replace("á", "a")
+    if result.get("is_invoice") is None:
+        return None
+    return "factura" if result.get("is_invoice") else "otro"
 
 
 def engine_rules(case: Case, company: dict[str, Any], model: str | None) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -137,7 +158,7 @@ def engine_rules(case: Case, company: dict[str, Any], model: str | None) -> tupl
     result = extract_invoice(case.path, company_tax_id=ids or None, company_name=company.get("name"))
     # ¿El propio sistema se daría cuenta de que no está seguro? (lo mandaría a una persona)
     flags = needs_help(result, {item.upper() for item in ids})
-    return flatten(result), {"engine": "reglas", "flags": flags}
+    return flatten(result), {"engine": "reglas", "flags": flags, "confidence": result.get("overall_confidence")}
 
 
 def engine_claude(case: Case, company: dict[str, Any], model: str | None) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -150,7 +171,8 @@ def engine_claude(case: Case, company: dict[str, Any], model: str | None) -> tup
     data, meta = llm.extract_invoice(pdf_bytes=pdf, text=text, company=company.get("name"), model=model)
     if not data:
         return {}, {"engine": "claude", **meta}
-    values = {name: (data.get(name) or None) for name in FIELDS if name != "direction"}
+    values = {name: (data.get(name) or None) for name in FIELDS if name not in ("direction", "is_invoice")}
+    values["is_invoice"] = data.get("is_invoice") if isinstance(data.get("is_invoice"), bool) else None  # False es una respuesta
     own = normalize_tax_id(company.get("tax_id"))
     values["direction"] = "RECEIVED" if normalize_tax_id(data.get("customer_tax_id")) == own else "ISSUED" if normalize_tax_id(data.get("supplier_tax_id")) == own else None
     return values, {"engine": "claude", **meta}
@@ -167,7 +189,13 @@ def engine_hybrid(case: Case, company: dict[str, Any], model: str | None) -> tup
     from app.interpretation import needs_help
 
     flags = needs_help(refined, {item.upper() for item in ids})
-    meta = {"engine": "híbrido", **(info.get("meta") or {}), "reasons": info.get("reasons"), "fallback": info.get("fallback"), "claude_called": bool(info.get("meta")), "flags": flags}
+    rules_flags = needs_help(result, {item.upper() for item in ids})
+    # ¿Habría llamado a Claude? Hay motivos y la política de routing no lo descarta (se sabe también sin clave).
+    requested = bool(info.get("reasons")) and not info.get("skipped_by_policy")
+    meta = {"engine": "híbrido", **(info.get("meta") or {}), "reasons": info.get("reasons"), "fallback": info.get("fallback"), "claude_called": bool(info.get("meta")),
+            "claude_requested": requested, "rules_got": flatten(result), "rules_flags": rules_flags, "flags": flags, "confidence": refined.get("overall_confidence"),
+            # El tipo de documento del híbrido es el de las reglas; lo que opinó Claude se guarda para comparar.
+            "claude_document_type": (info.get("claude") or {}).get("document_type")}
     return flatten(refined), meta
 
 
@@ -190,6 +218,7 @@ OUTCOMES = {
 }
 ERROR_TYPES = {
     "is_invoice": "error_tipo_documento",
+    "document_type": "error_tipo_documento",
     "withholding_total": "error_retencion",
     "direction": "error_sentido",
     "supplier_name": "error_proveedor",
@@ -245,6 +274,133 @@ def evaluation_counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
     correct = sum(1 for row in evaluable if all(row["checks"].values()))
     return {"evaluable": len(evaluable), "not_evaluated": len(rows) - len(evaluable), "correct": correct,
             "incorrect": len(evaluable) - correct, "accuracy": round(correct / len(evaluable), 3) if evaluable else None}
+
+
+def by_meta(rows: list[dict[str, Any]]) -> dict[str, dict[str, dict[str, Any]]]:
+    """Acierto por cada dimensión de los metadatos (tipo de documento, dificultad, ambiguo, OCR, multipágina…)."""
+    result: dict[str, dict[str, dict[str, Any]]] = {}
+    for dimension in META_DIMENSIONS:
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            value = row["doc"].get(dimension)
+            if value is None and dimension != "synthetic":
+                continue
+            groups.setdefault(str(value).lower() if isinstance(value, bool) or value is None else str(value), []).append(row)
+        if groups:
+            result[dimension] = {value: evaluation_counts(subset) | {"docs": len(subset)} for value, subset in sorted(groups.items())}
+    return result
+
+
+def classification(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """¿Es factura? como clasificación binaria (positivo = factura) y confusión del tipo de documento."""
+    pairs = [(row["expected"]["is_invoice"], row["got"].get("is_invoice")) for row in rows if "is_invoice" in row["checks"]]
+    if not pairs:
+        return None
+    # Sin respuesta (fallo de la llamada, sin clave…) no es «no es factura»: no regala verdaderos negativos.
+    tp = sum(1 for want, got in pairs if want and got is True)
+    fp = sum(1 for want, got in pairs if not want and got is True)
+    fn = sum(1 for want, got in pairs if want and got is not True)
+    tn = sum(1 for want, got in pairs if not want and got is False)
+    no_answer = sum(1 for _want, got in pairs if not isinstance(got, bool))
+    precision = round(tp / (tp + fp), 3) if tp + fp else None
+    recall = round(tp / (tp + fn), 3) if tp + fn else None
+    f1 = round(2 * precision * recall / (precision + recall), 3) if precision and recall else None
+    confusion: dict[str, int] = {}
+    typed = [row for row in rows if "document_type" in row["checks"]]
+    for row in typed:
+        key = f"{row['expected']['document_type']} → {row['got'].get('document_type') or '(nada)'}"
+        confusion[key] = confusion.get(key, 0) + 1
+    type_ok = sum(1 for row in typed if row["checks"]["document_type"])
+    return {"tp": tp, "fp": fp, "fn": fn, "tn": tn, "no_answer": no_answer, "precision": precision, "recall": recall, "f1": f1,
+            "is_invoice_accuracy": round((tp + tn) / len(pairs), 3),
+            "document_type_n": len(typed), "document_type_ok": type_ok,
+            "document_type_accuracy": round(type_ok / len(typed), 3) if typed else None,
+            "document_type_confusion": dict(sorted(confusion.items(), key=lambda item: (-item[1], item[0])))}
+
+
+def attempted_call(meta: dict[str, Any]) -> bool:
+    """¿Se llegó a llamar a la IA? (sí también si la llamada falló)."""
+    if "outcome" in meta:
+        return meta["outcome"] in {"ok", "fallback", "error"}
+    return "ms" in meta or bool(meta.get("input_tokens"))
+
+
+def precision_recall(pairs: list[tuple[bool, bool]]) -> dict[str, Any]:
+    """(señalado, hacía falta) → precisión, recall y F1. None cuando el denominador es cero (no se inventa)."""
+    tp = sum(1 for flagged, needed in pairs if flagged and needed)
+    fp = sum(1 for flagged, needed in pairs if flagged and not needed)
+    fn = sum(1 for flagged, needed in pairs if not flagged and needed)
+    precision = round(tp / (tp + fp), 3) if tp + fp else None
+    recall = round(tp / (tp + fn), 3) if tp + fn else None
+    f1 = round(2 * precision * recall / (precision + recall), 3) if precision and recall else None
+    return {"docs": len(pairs), "flagged": tp + fp, "needed": tp + fn, "tp": tp, "fp": fp, "fn": fn,
+            "precision": precision, "recall": recall, "f1": f1}
+
+
+def escalation_report(rows: list[dict[str, Any]], engine: str) -> dict[str, Any] | None:
+    """Calidad de la escalada, solo con lo que se puede medir.
+
+    - A una persona (reglas e híbrido): escalado = el sistema levanta avisos (needs_help); hacía falta = el
+      documento tiene algún campo mal. Claude solo no da avisos ni confianza: no hay escalada que medir.
+    - A Claude (híbrido): escalado = el híbrido pediría a Claude (hay motivos y el routing no lo descarta, se
+      sepa o no la clave); hacía falta = las reglas, solas, tenían algún campo mal en ese documento.
+    """
+    if engine == "claude":
+        return None
+    evaluated = [row for row in rows if row["evaluated"]]
+    if not evaluated:
+        return None
+    result = {"to_person": precision_recall([(bool(row["meta"].get("flags")), not row["perfect"]) for row in evaluated])}
+    routed = [row for row in evaluated if "rules_perfect" in row]
+    if engine == "hibrido" and routed:
+        result["to_claude"] = precision_recall([(bool(row["meta"].get("claude_requested")), not row["rules_perfect"]) for row in routed])
+        result["claude_document_type_disagreements"] = sum(
+            1 for row in rows if "document_type" in row["got"] and row["meta"].get("claude_document_type") not in (None, row["got"]["document_type"]))
+    return result
+
+
+def hybrid_vs_rules(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Lo que importa del híbrido: de lo que las reglas fallaban, ¿cuánto arregla Claude? ¿Qué rompe?
+
+    Documento a documento, frente a las reglas solas sobre el mismo documento (misma ejecución). Un error
+    detectable (las reglas avisaban) que pasa a silencioso es peor que no llamar a Claude.
+    """
+    paired = [row for row in rows if row["evaluated"] and "rules_perfect" in row]
+    if not paired:
+        return None
+    rules_wrong = [row for row in paired if not row["rules_perfect"]]
+    rescued = [row for row in rules_wrong if row["perfect"]]
+    broken = [row for row in paired if row["rules_perfect"] and not row["perfect"]]
+    fields_fixed = sum(1 for row in paired for name, ok in row["checks"].items() if ok and not row["rules_checks"].get(name))
+    fields_broken = sum(1 for row in paired for name, ok in row["checks"].items() if not ok and row["rules_checks"].get(name))
+    rules_silent = [row for row in paired if not row["rules_perfect"] and not row["rules_flagged"]]
+    return {
+        "docs": len(paired),
+        "rules_wrong": len(rules_wrong),
+        "rescued": len(rescued),
+        "rescued_ids": [row["id"] for row in rescued],
+        "still_wrong": len(rules_wrong) - len(rescued),
+        "new_errors": len(broken),
+        "new_error_ids": [row["id"] for row in broken],
+        "fields_fixed": fields_fixed,
+        "fields_broken": fields_broken,
+        "rules_silent_errors": len(rules_silent),
+        "detectable_to_silent": sum(1 for row in paired if not row["rules_perfect"] and row["rules_flagged"] and row["outcome"] == "error_silencioso"),
+        "silent_fixed": sum(1 for row in rules_silent if row["perfect"]),
+        "claude_called_on": sum(1 for row in paired if row["meta"].get("claude_called")),
+    }
+
+
+def confidence_report(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """¿La confianza del motor separa aciertos de errores? Un error con confianza alta es el más peligroso."""
+    scored = [row for row in rows if row["evaluated"] and isinstance(row["meta"].get("confidence"), (int, float))]
+    if not scored:
+        return None
+    right = [row["meta"]["confidence"] for row in scored if row["perfect"]]
+    wrong = [row["meta"]["confidence"] for row in scored if not row["perfect"]]
+    return {"docs": len(scored), "avg_correct": round(sum(right) / len(right), 1) if right else None,
+            "avg_incorrect": round(sum(wrong) / len(wrong), 1) if wrong else None,
+            "incorrect_with_confidence_80_plus": sum(1 for value in wrong if value >= 80)}
 
 
 def by_tag(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
@@ -325,11 +481,18 @@ def run(dataset: Dataset, engines: list[str], *, model: str | None = None, sets:
                 outcome = "error_silencioso"
             else:
                 outcome = "con_ia" if meta.get("claude_called") else "solo_reglas"
+            extra = {}
+            if "rules_got" in meta:  # híbrido: ¿las reglas solas lo tenían bien? (para medir la escalada a Claude)
+                rules_got = meta.pop("rules_got")
+                extra["rules_checks"] = {name: same(name, case.expected.get(name), rules_got.get(name)) for name in checks}
+                extra["rules_perfect"] = evaluated and all(extra["rules_checks"].values())
+                extra["rules_flagged"] = bool(meta.pop("rules_flags", None))
             rows.append({
+                **extra,
                 "id": case.id, "set": case.set, "tags": case.tags, "ms": ms, "error": error, "meta": meta, "outcome": outcome,
                 "known_errors": case.known_errors,
                 "checks": checks, "got": {name: got.get(name) for name in checks}, "expected": {name: case.expected[name] for name in checks},
-                "evaluated": evaluated, "perfect": perfect,
+                "evaluated": evaluated, "perfect": perfect, "doc": case.meta,
             })
         per_field = {}
         for name in FIELDS:
@@ -360,6 +523,14 @@ def run(dataset: Dataset, engines: list[str], *, model: str | None = None, sets:
             "confusion": category_confusion(rows),
             "by_set": by_set(rows),
             "by_tag": by_tag(rows),
+            "by_meta": by_meta(rows),
+            "classification": classification(rows),
+            "confidence": confidence_report(rows),
+            "escalation": escalation_report(rows, engine),
+            "versus_rules": hybrid_vs_rules(rows) if engine == "hibrido" else None,
+            "escalated_to_person": sum(1 for row in rows if row["meta"].get("flags")) if engine != "claude" else None,
+            "escalated_to_claude": sum(1 for row in rows if row["meta"].get("claude_requested")) if engine == "hibrido" else None,
+            "silent_errors": sum(1 for row in rows if row["outcome"] == "error_silencioso") if engine != "claude" else None,
             "fields": per_field,
             "field_accuracy": round(sum(sum(row["checks"].values()) for row in rows) / total_checks, 3) if total_checks else None,
             "perfect": sum(row["perfect"] for row in rows),
@@ -369,10 +540,127 @@ def run(dataset: Dataset, engines: list[str], *, model: str | None = None, sets:
             "output_tokens": sum(int(row["meta"].get("output_tokens") or 0) for row in rows),
             "cost_usd": round(sum(float(row["meta"].get("cost_usd") or 0) for row in rows), 4),
             "fallbacks": sum(1 for row in rows if row["meta"].get("fallback")),
-            "claude_calls": sum(1 for row in rows if row["meta"].get("claude_called") or (engine == "claude" and not row["meta"].get("fallback"))),
+            # Llamadas intentadas (también las que fallaron). Con metadatos completos manda «outcome» (una llamada
+            # omitida, sin clave, no cuenta); con metadatos antiguos o simulados, que haya tiempo o tokens anotados.
+            "claude_calls": sum(1 for row in rows if row["meta"].get("claude_called") or (engine == "claude" and attempted_call(row["meta"]))),
             "rows": rows,
         }
     return report
+
+
+DIMENSION_LABELS = {"document_type": "Tipo de documento", "difficulty": "Dificultad", "ambiguous": "Ambiguo", "ocr": "OCR (escaneado)",
+                    "multipage": "Multipágina", "language": "Idioma", "visual_template": "Plantilla visual", "synthetic": "Sintético"}
+
+
+def meta_markdown(report: dict[str, Any], engines: list[str]) -> list[str]:
+    """Desglose por metadatos (motores lado a lado), clasificación y confianza."""
+    lines: list[str] = []
+    dims = [dim for dim in META_DIMENSIONS if any(dim in report["engines"][engine]["by_meta"] for engine in engines)]
+    if dims and engines:
+        lines += ["", "## Acierto por tipo y dificultad del documento", "",
+                  "Documentos correctos / evaluables de cada grupo (los no evaluables no cuentan).", ""]
+        lines += ["| Dimensión | Valor | " + " | ".join(engine.upper() for engine in engines) + " |", "|---|---|" + "---:|" * len(engines)]
+        for dim in dims:
+            values = sorted({value for engine in engines for value in report["engines"][engine]["by_meta"].get(dim, {})})
+            for value in values:
+                cells = []
+                for engine in engines:
+                    entry = report["engines"][engine]["by_meta"].get(dim, {}).get(value)
+                    cells.append(f"{entry['correct']}/{entry['evaluable']}" if entry and entry["evaluable"] else "–")
+                lines.append(f"| {DIMENSION_LABELS.get(dim, dim)} | {value} | " + " | ".join(cells) + " |")
+    classified = [engine for engine in engines if report["engines"][engine]["classification"]]
+    if classified:
+        lines += ["", "## Tipo de documento y ¿es factura?", "",
+                  "Misma verdad para los tres motores. Tipo: factura, presupuesto, albaran, proforma, pedido u otro. "
+                  "¿Es factura? como clasificación binaria (positivo = factura).", "",
+                  "| Métrica | " + " | ".join(engine.upper() for engine in classified) + " |", "|---|" + "---:|" * len(classified)]
+        lines.append("| Acierto del tipo de documento | " + " | ".join(
+            (f"{data['document_type_accuracy']:.0%} ({data['document_type_ok']}/{data['document_type_n']})" if data["document_type_accuracy"] is not None else "–")
+            for data in (report["engines"][engine]["classification"] for engine in classified)) + " |")
+        lines.append("| Acierto de ¿es factura? | " + " | ".join(f"{report['engines'][engine]['classification']['is_invoice_accuracy']:.0%}" for engine in classified) + " |")
+        for key, label in (("tp", "Verdaderos positivos"), ("fp", "Falsos positivos (no factura leída como factura)"),
+                           ("fn", "Falsos negativos (factura no reconocida)"), ("tn", "Verdaderos negativos"),
+                           ("no_answer", "Sin respuesta (cuenta como error)"),
+                           ("precision", "Precisión"), ("recall", "Recall"), ("f1", "F1")):
+            lines.append(f"| {label} | " + " | ".join(str(report["engines"][engine]["classification"][key] if report["engines"][engine]["classification"][key] is not None else "–") for engine in classified) + " |")
+        for engine in classified:
+            confusion = {key: count for key, count in report["engines"][engine]["classification"]["document_type_confusion"].items()
+                         if key.split(" → ")[0] != key.split(" → ")[1]}
+            if confusion:
+                lines += ["", f"Tipo de documento mal leído ({engine}): " + "; ".join(f"{key} ×{count}" for key, count in confusion.items())]
+    not_classifying = [engine for engine in engines if not report["engines"][engine]["classification"]]
+    if not_classifying:
+        lines += ["", f"Sin clasificación: {', '.join(not_classifying)} no decide el tipo de documento (no se le cuenta ni a favor ni en contra)."]
+    escalating = [engine for engine in engines if report["engines"][engine].get("escalation")]
+    if escalating:
+        lines += ["", "## Calidad de la escalada", "",
+                  "A una persona: escalado = el sistema avisa de que duda; hacía falta = el documento tiene algún campo mal.",
+                  "A Claude (híbrido): escalado = pediría a Claude; hacía falta = las reglas solas tenían algún campo mal.", "",
+                  "| Escalada | Motor | Escalados | Hacía falta | Precisión | Recall | F1 |", "|---|---|---:|---:|---:|---:|---:|"]
+        for engine in escalating:
+            for key, label in (("to_person", "A una persona"), ("to_claude", "A Claude")):
+                data = report["engines"][engine]["escalation"].get(key)
+                if data:
+                    lines.append(f"| {label} | {engine} | {data['flagged']} | {data['needed']} | " + " | ".join(
+                        str(data[name]) if data[name] is not None else "–" for name in ("precision", "recall", "f1")) + " |")
+        hybrid = report["engines"].get("hibrido", {}).get("escalation") or {}
+        if hybrid.get("claude_document_type_disagreements"):
+            lines.append(f"\nEn {hybrid['claude_document_type_disagreements']} documento(s) Claude leyó otro tipo de documento que las reglas; el híbrido se queda con el de las reglas.")
+    if "claude" in engines:
+        lines += ["", "Claude solo no da avisos ni confianza: para él no hay escalada, errores silenciosos ni confianza que medir (se indica, no se inventa)."]
+    scored = [engine for engine in engines if report["engines"][engine]["confidence"]]
+    if scored:
+        lines += ["", "## Confianza", "", "| Métrica | " + " | ".join(engine.upper() for engine in scored) + " |", "|---|" + "---:|" * len(scored)]
+        for key, label in (("avg_correct", "Confianza media en aciertos"), ("avg_incorrect", "Confianza media en errores"),
+                           ("incorrect_with_confidence_80_plus", "Errores con confianza ≥ 80")):
+            lines.append(f"| {label} | " + " | ".join(str(report["engines"][engine]["confidence"][key] if report["engines"][engine]["confidence"][key] is not None else "–") for engine in scored) + " |")
+    return lines
+
+
+def summary_markdown(report: dict[str, Any], engines: list[str]) -> list[str]:
+    """La tabla para decidir: los tres motores en las mismas filas. N/A = no se puede medir para ese motor."""
+    def value(engine: str, key: str) -> str:
+        data = report["engines"][engine]
+        if not data["available"]:
+            return "no ejecutado"
+        classification = data.get("classification") or {}
+        values = {
+            "docs": data["docs"],
+            "field_accuracy": f"{data['field_accuracy']:.0%}" if data["field_accuracy"] is not None else "–",
+            "perfect": f"{data['perfect']}/{data['evaluable']}",
+            "document_type": f"{classification['document_type_accuracy']:.0%}" if classification.get("document_type_accuracy") is not None else "–",
+            "f1": classification.get("f1") if classification.get("f1") is not None else "–",
+            "silent": data["silent_errors"] if data.get("silent_errors") is not None else "N/A",
+            "person": data["escalated_to_person"] if data.get("escalated_to_person") is not None else "N/A",
+            "claude": data["escalated_to_claude"] if data.get("escalated_to_claude") is not None else ("N/A" if engine == "claude" else "–"),
+            "calls": data["claude_calls"],
+            "cost": f"{data['cost_usd']:.4f} $",
+            "time": f"{data['ms_avg']} ms",
+        }
+        return str(values[key])
+
+    rows = (("docs", "Documentos"), ("field_accuracy", "Acierto por campo"), ("perfect", "Documentos perfectos"),
+            ("document_type", "Tipo de documento"), ("f1", "F1 ¿es factura?"), ("silent", "Errores silenciosos"),
+            ("person", "Escalados a una persona"), ("claude", "Escalados a Claude"), ("calls", "Llamadas a Claude"),
+            ("cost", "Coste"), ("time", "Tiempo medio por documento"))
+    lines = ["## Resumen", "", "| Métrica | " + " | ".join(engine.upper() for engine in engines) + " |", "|---|" + "---:|" * len(engines)]
+    lines += [f"| {label} | " + " | ".join(value(engine, key) for engine in engines) + " |" for key, label in rows]
+    lines += ["", "N/A: Claude solo no avisa ni decide escalar, así que no tiene errores silenciosos ni escalada que medir.", ""]
+    versus = (report["engines"].get("hibrido") or {}).get("versus_rules")
+    if versus and report["engines"]["hibrido"]["available"]:
+        lines += ["## Híbrido frente a reglas (documento a documento)", "",
+                  "| Pregunta | Documentos |", "|---|---:|",
+                  f"| Las reglas fallaban | {versus['rules_wrong']} de {versus['docs']} |",
+                  f"| …y el híbrido lo resuelve | {versus['rescued']} |",
+                  f"| …y sigue mal | {versus['still_wrong']} |",
+                  f"| Errores nuevos (las reglas acertaban, el híbrido no) | {versus['new_errors']} |",
+                  f"| Error detectable que pasa a silencioso | {versus['detectable_to_silent']} |",
+                  f"| Errores silenciosos de las reglas que el híbrido arregla | {versus['silent_fixed']} de {versus['rules_silent_errors']} |",
+                  f"| Campos arreglados / estropeados | {versus['fields_fixed']} / {versus['fields_broken']} |",
+                  f"| Documentos en los que entró Claude | {versus['claude_called_on']} |", ""]
+        if versus["new_error_ids"]:
+            lines += ["Errores nuevos: " + ", ".join(versus["new_error_ids"]), ""]
+    return lines
 
 
 def to_markdown(report: dict[str, Any]) -> str:
@@ -389,6 +677,7 @@ def to_markdown(report: dict[str, Any]) -> str:
         return text if report["engines"][engine]["available"] else "no ejecutado"
 
     header = "| Campo | " + " | ".join(engine.upper() for engine in engines) + " |"
+    lines += summary_markdown(report, engines)
     lines += ["## Acierto por campo", "", header, "|---|" + "---:|" * len(engines)]
     for name in FIELDS:
         cells = []
@@ -413,6 +702,8 @@ def to_markdown(report: dict[str, Any]) -> str:
     row("Tiempo por documento (media)", lambda data: f"{data['ms_avg']} ms")
     row("Tiempo por documento (p95)", lambda data: f"{data['ms_p95']} ms")
     row("Documentos en los que entra Claude", lambda data: f"{data['claude_share']:.0%}")
+    row("Llamadas a Claude", lambda data: data["claude_calls"])
+    row("Coste total", lambda data: f"{data['cost_usd']:.4f} $")
     row("Coste por documento", lambda data: f"{data['cost_per_doc_usd']:.4f} $")
     row("Coste por 1.000 documentos", lambda data: f"{data['cost_per_1000_docs_usd']:.2f} $")
     row("Tokens (entrada / salida)", lambda data: f"{data['input_tokens']} / {data['output_tokens']}")
@@ -456,6 +747,8 @@ def to_markdown(report: dict[str, Any]) -> str:
                 if any(field_name in sets_data[name]["fields"] for name in names):
                     lines.append(f"| {FIELD_LABELS[field_name]} | " + " | ".join(f"{sets_data[name]['fields'][field_name]:.0%}" if field_name in sets_data[name]["fields"] else "–" for name in names) + " |")
             lines.append("| **Documentos perfectos** | " + " | ".join(f"{sets_data[name]['perfect']}/{sets_data[name]['evaluable']}" for name in names) + " |")
+
+    lines += meta_markdown(report, available)
 
     weak_tags = {engine: {tag: data for tag, data in report["engines"][engine]["by_tag"].items() if data["imperfect"]} for engine in available}
     if any(weak_tags.values()):
@@ -522,17 +815,24 @@ def draft_labels(folder: Path, *, company: dict[str, Any] | None = None, prefill
     labels_path = folder / "labels.json"
     labels = json.loads(labels_path.read_text(encoding="utf-8")) if labels_path.exists() else {"empresa": company or {"name": "", "tax_id": ""}, "casos": []}
     known = {item["file"] for item in labels["casos"]}
-    pending = [item for item in sorted(folder.iterdir()) if item.suffix.lower() in {".pdf", ".txt"} and item.name not in known]
+    # También subcarpetas: reales/emitidas/ y reales/recibidas/ (el sentido sale de la carpeta).
+    pending = [item for item in sorted(folder.rglob("*")) if item.suffix.lower() in {".pdf", ".txt"} and item.relative_to(folder).as_posix() not in known]
     drafts = []
     for path in pending:
+        relative = path.relative_to(folder).as_posix()
         expected = {name: "" for name in FIELDS}
+        direction = {"emitidas": "ISSUED", "recibidas": "RECEIVED"}.get(path.parent.name)
+        if direction:  # lo dice la carpeta en la que lo dejaste, no las reglas
+            expected.update(direction=direction, is_invoice=True, document_type="factura")
         if prefill:
             from app.extractor import extract_invoice
 
             tax_id = labels["empresa"].get("tax_id")
             got = flatten(extract_invoice(path, company_tax_id=[tax_id] if tax_id else None, company_name=labels["empresa"].get("name")))
-            expected = {name: (got.get(name) or "") for name in FIELDS}
-        drafts.append({"id": path.stem, "file": path.name, "set": set_name, "tags": [], "revisado": False, "expected": expected})
+            expected = {name: (got.get(name) or "") for name in FIELDS} | ({"direction": direction, "is_invoice": True, "document_type": "factura"} if direction else {})
+        meta = {"synthetic": False, "document_type": "factura" if direction else "", "difficulty": "", "ambiguous": False,
+                "multipage": None, "ocr": None, "language": "es", "visual_template": "real"}
+        drafts.append({"id": path.stem, "file": relative, "set": set_name, "tags": [], "revisado": False, "meta": meta, "expected": expected})
     out = folder / "labels.borrador.json"
     out.write_text(json.dumps({"empresa": labels["empresa"], "casos": drafts}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out

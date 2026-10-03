@@ -180,6 +180,7 @@ async def case_attach(
     database: DatabaseDependency,
     uploaded_file: UploadFile = File(...),
     item_code: str | None = Form(default=None),
+    actor_header: ActorHeader = None,
 ) -> dict[str, Any]:
     from app.case_service import CaseError
     from app.case_service import event
@@ -195,7 +196,7 @@ async def case_attach(
         )
     except CaseError as error:
         raise unprocessable(error) from error
-    event(database, case, f"Documento aportado: {attachment.filename}", data={"attachment_id": attachment.id})
+    event(database, case, f"Documento aportado: {attachment.filename}", actor=normalize_actor(actor_header), data={"attachment_id": attachment.id})
     database.commit()
     return serialize_case(database, case, full=True)
 
@@ -320,12 +321,12 @@ def agents_pulse(database: DatabaseDependency) -> dict[str, Any]:
 
 
 @router.post("/agents/pulse/run", tags=["Agentes"])
-def agents_pulse_run(database: DatabaseDependency) -> dict[str, Any]:
+def agents_pulse_run(database: DatabaseDependency, actor_header: ActorHeader = None) -> dict[str, Any]:
     """«Trabajar ahora»: buzón, pendientes, plazos, seguimiento y detector, en orden."""
     from app.agents.pulse import pulse_status
     from app.agents.pulse import run_cycle
 
-    result = run_cycle(database)
+    result = run_cycle(database, actor=normalize_actor(actor_header))
     database.commit()
     return {**result, "pulse": pulse_status(database)}
 
@@ -533,8 +534,13 @@ def dehu_poll(database: DatabaseDependency) -> dict[str, Any]:
 
     from app.connectors.dehu.client import DehuUnavailable
 
+    from app.connectors.assignment import blocked_reason
+
     if not settings.dehu_inbox_dir:
         raise HTTPException(status_code=400, detail="Configura DEHU_INBOX_DIR con la carpeta de notificaciones descargadas de la DEHú.")
+    reason = blocked_reason(database, "dehu")
+    if reason:  # la carpeta es común a la instalación: solo para el cliente asignado
+        raise HTTPException(status_code=409, detail=reason)
     try:
         return poll(database, FolderTransport(Path(settings.dehu_inbox_dir)))
     except DehuUnavailable as error:
@@ -542,10 +548,10 @@ def dehu_poll(database: DatabaseDependency) -> dict[str, Any]:
 
 
 @router.get("/connectors/email", tags=["Conectores"])
-def email_connector_status() -> dict[str, Any]:
+def email_connector_status(database: DatabaseDependency) -> dict[str, Any]:
     from app.connectors.email.client import status
 
-    return status()
+    return status(database)
 
 
 @router.post("/connectors/email/import", tags=["Conectores"], status_code=201)
@@ -565,10 +571,13 @@ async def email_connector_import(database: DatabaseDependency, uploaded_file: Up
 
 @router.post("/connectors/email/poll", tags=["Conectores"])
 def email_connector_poll(database: DatabaseDependency) -> dict[str, Any]:
+    from app.connectors.assignment import SourceNotAssigned
     from app.connectors.email.client import poll
 
     try:
         result = poll(database)
+    except SourceNotAssigned as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except OSError as error:
         raise HTTPException(status_code=502, detail=f"No se pudo leer el buzón: {error}") from error
     database.commit()

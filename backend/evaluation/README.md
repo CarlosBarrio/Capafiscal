@@ -80,6 +80,138 @@ Solo se comparan los campos que pongas en `expected`.
   git**, porque el repositorio es público y las facturas llevan IBAN y datos
   personales.
 
+## Corpus de evaluación documental (`datasets/corpus/`)
+
+El banco serio para comparar **Rules, Claude e Hybrid sobre exactamente los mismos documentos**:
+
+```bash
+python evaluation/datasets/corpus/generar.py                       # regenera los PDF y labels.json
+python -m evaluation --dataset corpus --engines reglas,claude,hibrido
+```
+
+73 documentos sintéticos (SIMULACIÓN — NO OFICIAL), conjunto **B**: se miden, pero **no** se ajustan reglas
+mirándolos.
+
+| Carpeta | Qué hay |
+|---|---|
+| `albaranes/` | 6: básico, de entrega, de salida, valorado con descuentos, con referencias, nota de entrega |
+| `presupuestos/` | 7: con y sin IVA, de reforma, de servicios (título sin nº), de mantenimiento, con descuento, «Nº 88 ACEPTADO», emitido pendiente |
+| `proformas/` | 5: con datos bancarios, «FACTURA PROFORMA», bilingüe, con descuentos, con anticipo |
+| `pedidos/` | 5: ERP, de compra, orden de compra, hoja de pedido sin precios, bilingüe |
+| `otros/` | 6: confirmación de pedido, recibo, justificante de transferencia, solicitud de presupuesto, parte de trabajo, contrato |
+| `ambiguos/` | 13 casos difíciles a propósito (`ambiguous: true`): títulos encima de otros, frases que empiezan por «Albarán» o «Presupuesto» dentro de facturas, cabeceras de tabla, facturas sin título, rectificativa, albarán-factura, presupuesto en carta… |
+| `ocr/` | 8 escaneados sin capa de texto (buen escáner, escaneo pobre, foto de móvil, fax, lavado, baja resolución) |
+| `multipagina/` | 8 documentos de 2 y 3 páginas: el emisor completo solo en la primera, el total solo en la última, tablas que continúan |
+| `facturas/` | 15 facturas normales, sin trampas: 5 fáciles, 5 medias (IRPF, descuentos, 60 días, emitidas, bilingüe) y 5 difíciles (2 páginas, IRPF 7 %, IVA 4 %, serie «A/2026/000128», sin vencimiento) |
+
+Las facturas normales usan sus propias empresas ficticias (10 emisores y 3 clientes que no salen en el
+resto del corpus). Las facturas reales van aparte (ver abajo).
+
+**Plantillas visuales** (`evaluation/maquetas.py`): A corporativa, B cabecera a la derecha y colores
+suaves, C minimalista, D tipo ERP, E antigua, F bilingüe y G escaneada. Usan 11 proveedores y 8
+clientes ficticios de distintos sectores, NIF con prefijo B00 e IBAN de la entidad 0000.
+
+**Verdad** (`labels.json`, el mismo esquema de siempre):
+
+- `expected` lleva solo lo que se evalúa:
+  - en una factura, todos sus campos;
+  - en lo que no es factura, `is_invoice: false` y `document_type`
+    (`factura`, `albaran`, `presupuesto`, `proforma`, `pedido` u `otro`).
+- Un campo ausente **no se evalúa**.
+- Un documento sin ningún campo evaluable cuenta como no evaluado, nunca como acierto.
+
+**Metadatos** (`meta`): `synthetic`, `document_type` (más fino: `recibo`, `contrato`…), `difficulty`,
+`ambiguous`, `multipage`, `ocr`, `language`, `visual_template`, `pages`.
+
+**El informe añade:**
+
+- acierto por tipo de documento, dificultad, ambigüedad, OCR, multipágina, idioma y plantilla, con los motores lado a lado;
+- clasificación «¿es factura?» (precisión, recall y F1) y la confusión del tipo de documento;
+- la confianza media en aciertos y en errores, y los errores con confianza ≥ 80.
+
+**Qué devuelve Claude** (`app/agents/llm.py`, `INVOICE_SCHEMA`, salidas estructuradas):
+
+- `is_invoice` (booleano) y `document_type` (enum: `factura`, `presupuesto`, `albaran`, `proforma`, `pedido`, `otro`;
+  las mismas categorías que las reglas, sin ninguna nueva);
+- textos y fechas: cadena o `null` (fechas con formato `date`); importes y tipo de IVA: número o `null`;
+- todos los campos obligatorios y `additionalProperties: false`. `schema_errors()` comprueba la respuesta; si algo no
+  encaja se anota en `meta.schema_errors` y ese valor no se usa (`is_invoice`/`document_type` quedan en `None`).
+- `normalize_invoice()` entrega a las reglas la forma de siempre: importes como texto con punto decimal y `""` cuando falta.
+
+**Cómo se evalúa el tipo de documento:** con la misma verdad (`expected.document_type` e `is_invoice`) para los tres
+motores. Reglas: el título que detecta `non_invoice_title` (o «factura»/«otro»). Claude: su `document_type`.
+Híbrido: el de las reglas (el producto no deja que Claude cambie el tipo); lo que leyó Claude se guarda en
+`meta.claude_document_type` y el informe cuenta los desacuerdos. Si un motor no responde, «sin respuesta» cuenta
+como error: no regala verdaderos negativos.
+
+**Métricas:** acierto del tipo de documento; precisión, recall y F1 de «¿es factura?»; acierto por campo; errores
+silenciosos (reglas e híbrido); confianza (reglas e híbrido); tiempo, llamadas a Claude, tokens y coste; y la
+**calidad de la escalada**:
+
+- a una persona (reglas e híbrido): escalado = el sistema avisa (`needs_help`); hacía falta = algún campo mal;
+- a Claude (híbrido): escalado = pediría a Claude (hay motivos y el routing no lo descarta; se calcula también sin
+  clave); hacía falta = las reglas solas tenían algún campo mal.
+
+Claude solo no da avisos ni confianza: para él no hay escalada, errores silenciosos ni confianza que medir. El
+informe lo dice en vez de inventarlo.
+
+**Qué es el híbrido en esta evaluación (modo A: Claude como segunda opinión).**
+
+```
+documento → reglas → ¿dudan? (needs_help + política de routing) → sí → Claude → las reglas validan cada valor → resultado
+```
+
+Claude no decide solo: cada valor que propone tiene que aparecer en el documento (NIF, número, fechas) o cuadrar
+(base + IVA − retención = total); si no, se queda el de las reglas. No hay un umbral de «Claude está seguro»
+(modo B). Primero se mide qué pasa de verdad cuando Claude entra después de las reglas.
+
+**Resumen e híbrido frente a reglas.** El informe abre con una tabla de los tres motores (documentos, acierto por
+campo, tipo de documento, F1, errores silenciosos, escalados a una persona y a Claude, llamadas, coste y tiempo) y
+compara el híbrido con las reglas **sobre el mismo documento**: de lo que las reglas fallaban, cuánto resuelve;
+cuántos errores nuevos introduce; cuántos errores detectables (las reglas avisaban) pasan a silenciosos, y cuántos
+silenciosos arregla.
+
+**Fallos de las reglas que destapa el corpus.** Es conjunto B: se documentan y **no** se corrigen mirándolo. Una
+corrección se valida con documentos nuevos, no con estos.
+
+| Problema | Ejemplo | Posible solución (fuera del corpus) |
+|---|---|---|
+| Documentos sin título comercial (recibo, justificante, parte, contrato, confirmación de pedido) se leen como factura | `otr_recibo_0057`, `otr_contrato_mantenimiento` | Exigir título de factura o «Nº de factura» para `is_invoice`, y si no lo hay, `otro` + aviso |
+| Títulos que no están en la lista | «ORDEN DE COMPRA» (`ped_orden_compra_2026_008`) | Ampliar los títulos de pedido con variantes reales |
+| Presupuesto sin «Nº» o en formato carta | `pre_servicios_informaticos`, `amb_L_presupuesto_en_carta` | Aceptar título de presupuesto sin número cuando no hay título de factura |
+| Nº de factura tomado de otro número | código postal (`amb_A`), factura original en una rectificativa (`amb_J`), fechas pegadas (`amb_K`) | Exigir etiqueta de número cerca; descartar CP y fechas; en rectificativas, preferir el número del título |
+| Vencimiento leído como la fecha de factura | cabeceras en caja o en fila (ERP, bilingüe): `fac_media_ferreteria_descuentos`, `fac_dificil_abogados_irpf7`, `fac_media_emitida_bilingue_export`, `mp_factura_erp_descuentos` | Emparejar etiqueta y valor por columna en las cabeceras tabulares |
+| Fecha y vencimiento cruzados en una factura recapitulativa | `amb_E_cabecera_albaran_fecha_importe` | No tomar fechas de la tabla de albaranes como fecha de factura |
+| Emitida leída como recibida (bilingüe con frases sueltas) | `amb_M_factura_emitida_frases_varias` | Que mande el NIF de la empresa en la cabecera |
+| Escaneados sin texto | los 8 de `ocr/` sin Tesseract | Tesseract en el entorno (la imagen Docker lo trae) |
+
+**OCR:** los escaneados necesitan Tesseract (la imagen Docker lo incluye). Sin Tesseract el extractor no
+lee nada de ellos y el informe lo refleja tal cual.
+
+### Facturas reales (las tuyas, fuera de git)
+
+```
+evaluation/datasets/reales/
+    emitidas/      ← tus facturas emitidas
+    recibidas/     ← tus facturas recibidas
+```
+
+```bash
+python -m evaluation preparar reales --conjunto B   # el borrador recorre emitidas/ y recibidas/
+# revisa cada «expected» y pon "revisado": true en reales/labels.borrador.json
+python -m evaluation incorporar reales
+python -m evaluation --dataset reales --engines reglas,claude,hibrido
+```
+
+- El borrador marca `synthetic: false` y pone el sentido según la carpeta (ISSUED o RECEIVED).
+- Todo lo que está en `reales/` cuenta como real aunque la etiqueta no lo diga.
+- La carpeta entera está en `.gitignore`.
+- Verdad propia (`reales/labels.json`), separada del corpus sintético: nunca se mezclan en un mismo informe.
+- El borrador no se rellena con lo que leen las reglas ni Claude: la verdad se comprueba contra el documento.
+- Cada caso guarda en `verificacion` de dónde salió cada dato (capa de texto o imagen) y qué no se evalúa
+  (vencimiento si el documento no lo trae; la categoría, que es una decisión contable).
+  Etiquetar con Claude y luego evaluar a Claude con esas etiquetas sería circular.
+
 ## Ejecutar la comparación con Claude
 
 ```bash

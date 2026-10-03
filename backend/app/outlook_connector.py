@@ -375,8 +375,24 @@ async def _send_to_existing_upload(
     return payload
 
 
+MULTI_COMPANY_UNAVAILABLE = (
+    "Outlook no está disponible en multiempresa: la conexión (y su caché de tokens) es una sola para toda la "
+    "instalación, sin cliente, y los adjuntos acabarían en el cliente de quien pulse «Sincronizar». "
+    "Usa la importación de .eml o el buzón asignado (EMAIL_CLIENT_ID). Ver docs/correo_multiempresa.md."
+)
+
+
+def _require_single_company() -> None:
+    """Multiempresa: mejor sin Outlook que con el correo de un cliente dentro de otro."""
+    if app_settings.auth_required:
+        raise HTTPException(status_code=409, detail={"message": MULTI_COMPANY_UNAVAILABLE})
+
+
 @router.get("/status")
 def outlook_status() -> dict[str, Any]:
+    if app_settings.auth_required:
+        return {"configured": _configured(), "connected": False, "account": None, "available": False,
+                "message": MULTI_COMPANY_UNAVAILABLE}
     if not _configured():
         return {
             "configured": False,
@@ -415,6 +431,7 @@ def outlook_status() -> dict[str, Any]:
 
 @router.get("/login")
 def outlook_login() -> RedirectResponse:
+    _require_single_company()
     settings = _require_configuration()
 
     cache = _load_token_cache()
@@ -449,6 +466,7 @@ def outlook_login() -> RedirectResponse:
 
 @router.get("/callback")
 def outlook_callback(request: Request) -> RedirectResponse:
+    _require_single_company()
     state = request.query_params.get("state", "")
     flow = _PENDING_AUTH_FLOWS.pop(state, None)
 
@@ -505,6 +523,7 @@ def outlook_callback(request: Request) -> RedirectResponse:
 
 @router.post("/disconnect")
 def outlook_disconnect() -> dict[str, Any]:
+    _require_single_company()
     if TOKEN_CACHE_FILE.exists():
         TOKEN_CACHE_FILE.unlink()
 
@@ -521,6 +540,7 @@ async def sync_outlook(
     request: Request,
     limit: int = 25,
 ) -> dict[str, Any]:
+    _require_single_company()
     token, account = _get_access_token()
 
     limit = max(1, min(limit, 100))

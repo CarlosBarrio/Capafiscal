@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     imap_password: str = ""
     imap_folder: str = "INBOX"
     imap_use_ssl: bool = True
+    # Multiempresa: el buzón (IMAP y data/buzon) es UNO para toda la instalación. Solo se procesa para el
+    # cliente indicado aquí; sin él, en multiempresa no se procesa para nadie (los correos quedan sin leer).
+    # Nunca se reparte entre clientes: mejor sin asignar que en el cliente equivocado (app/connectors/assignment.py).
+    email_client_id: int | None = None
 
     # IA opcional (Claude). Sin clave, los agentes usan reglas y plantillas.
     anthropic_api_key: str = ""
@@ -79,6 +83,7 @@ class Settings(BaseSettings):
     auth_required: bool = False  # multiempresa: usuarios, roles y aislamiento estricto por cliente
     session_hours: int = 12
     dehu_inbox_dir: str = ""  # carpeta con notificaciones descargadas de la DEHú (PDF + .json)
+    dehu_client_id: int | None = None  # multiempresa: el único cliente para el que se lee esa carpeta (como EMAIL_CLIENT_ID)
     # Banco conectado (PSD2) a través de un agregador con licencia (API de GoCardless Bank Account Data).
     # Sin credenciales no hay conexión real: se sigue importando el extracto CSV/Excel.
     bank_data_secret_id: str = ""

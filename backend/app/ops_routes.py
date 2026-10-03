@@ -565,12 +565,12 @@ def outbox_attachment(message_id: int, index: int, database: DatabaseDependency)
 
 
 @router.post("/payroll/runs/{run_id}/email", tags=["Nóminas"])
-def payroll_email(run_id: int, database: DatabaseDependency) -> dict[str, Any]:
+def payroll_email(run_id: int, database: DatabaseDependency, actor_header: ActorHeader = None) -> dict[str, Any]:
     from app.outbox_service import OutboxError
     from app.outbox_service import prepare_payslip_emails
 
     try:
-        result = prepare_payslip_emails(database, run_id)
+        result = prepare_payslip_emails(database, run_id, created_by=normalize_actor(actor_header))
     except OutboxError as error:
         raise unprocessable(error) from error
     database.commit()
@@ -728,9 +728,7 @@ class AutomationPayload(BaseModel):
 def automations(database: DatabaseDependency) -> dict[str, Any]:
     from app.automation_service import automations_overview
 
-    data = automations_overview(database)
-    database.commit()
-    return data
+    return automations_overview(database)  # solo lee: una lectura no escribe ni confirma nada
 
 
 @router.patch("/automations/{code}", tags=["Automatizaciones"])
@@ -786,10 +784,11 @@ def advisor_pack(database: DatabaseDependency, year: int = Query(..., ge=2000, l
 
 
 @router.post("/advisor/send", tags=["Gestoría"])
-def advisor_send(database: DatabaseDependency, year: int = Query(..., ge=2000, le=2100), quarter: int = Query(..., ge=1, le=4)) -> dict[str, Any]:
+def advisor_send(database: DatabaseDependency, year: int = Query(..., ge=2000, le=2100), quarter: int = Query(..., ge=1, le=4),
+                 actor_header: ActorHeader = None) -> dict[str, Any]:
     from app.advisor_service import prepare_advisor_email
     from app.outbox_service import serialize_message
 
-    message = prepare_advisor_email(database, year=year, quarter=quarter)
+    message = prepare_advisor_email(database, year=year, quarter=quarter, created_by=normalize_actor(actor_header))
     database.commit()
     return serialize_message(message)

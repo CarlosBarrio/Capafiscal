@@ -25,19 +25,23 @@ def postgres_only():
         pytest.skip("El turno entre procesos es de PostgreSQL; SQLite funciona con un solo proceso.")
 
 
-def test_only_one_process_gets_the_turn_until_it_commits(client):
+def test_only_one_process_gets_the_turn_until_it_releases_it(client):
+    """El turno es un cerrojo de sesión en una conexión propia: los commit del trabajo no lo sueltan
+    (el buzón confirma correo a correo); solo se suelta al salir."""
     postgres_only()
-    from app.automation_service import claim_turn
+    from app.automation_service import scheduler_turn
     from app.database import SessionLocal
 
-    with SessionLocal() as first, SessionLocal() as second:
-        assert claim_turn(first, 7)
-        assert not claim_turn(second, 7)  # el mismo cliente: espera a la siguiente vuelta
-        assert claim_turn(second, 8)  # otro cliente: en paralelo
-        first.commit()  # el turno se suelta con la transacción
-        second.rollback()
-        assert claim_turn(second, 7)
-        second.rollback()
+    with scheduler_turn(7) as first:
+        assert first
+        with SessionLocal() as work:  # el trabajo confirma por su cuenta: el turno sigue siendo de quien lo tiene
+            work.commit()
+        with scheduler_turn(7) as second:
+            assert not second  # el mismo cliente: espera a la siguiente vuelta
+        with scheduler_turn(8) as other:
+            assert other  # otro cliente: en paralelo
+    with scheduler_turn(7) as again:
+        assert again  # soltado al salir
 
 
 def test_simultaneous_ticks_run_each_due_automation_once(client):

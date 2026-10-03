@@ -73,7 +73,7 @@ def summarize(title: str, text: str, areas: list[str]) -> dict[str, Any] | None:
     prompt = (f"Áreas del despacho: {', '.join(areas) or 'sin indicar'}.\n\n<titulo>{title}</titulo>\n<texto>\n{text[:MAX_CHARS]}\n</texto>\n\n"
               "Devuelve: qué cambia, a quién afecta, cuándo entra en vigor (cada afirmación con su cita literal) "
               "y hasta 5 puntos concretos que un profesional debería revisar.")
-    answer, meta = llm._complete(system=SYSTEM, content=prompt, effort="low", max_tokens=3000, output_format=SCHEMA)
+    answer, meta = llm._complete(system=SYSTEM, content=prompt, effort="low", max_tokens=3000, output_format=SCHEMA, operation="resumen_boe")
     if not answer:
         return {"engine": "reglas", "fallback": meta.get("fallback"), "meta": meta}
     try:

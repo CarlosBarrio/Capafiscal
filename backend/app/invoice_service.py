@@ -92,14 +92,24 @@ def add_audit_event(
     actor: str = "system",
     event_data: dict[str, Any] | None = None,
 ) -> AuditEvent:
+    from app.request_context import authenticated_user
+    from app.request_context import declared_actor
+
+    data = dict(event_data or {})
+    # Integridad: dentro de una petición autenticada queda SIEMPRE quién la hizo, aunque el actor del evento
+    # sea un motor («claude», «extractor»…). Lo que el cliente declara (X-Actor) va aparte y no es identidad.
+    user = authenticated_user()
+    if user is not None:
+        data["authenticated_user"] = {"id": user["id"], "email": user["email"]}
+    declared = declared_actor()
+    if declared and (user is None or declared != user["email"]):
+        data["declared_actor"] = declared
     event = AuditEvent(
         action=action,
         entity_type=entity_type,
         entity_id=str(entity_id),
         actor=actor,
-        event_data=serialize_audit_value(
-            event_data or {}
-        ),
+        event_data=serialize_audit_value(data),
     )
 
     database.add(event)
@@ -863,9 +873,24 @@ def process_document(
     file_path: Path,
     actor: str = "system",
 ) -> Invoice | None:
+    """Lee un documento y guarda el resultado. Confirma (commit) su propio trabajo, en fases:
+
+        A  estado PROCESSING + ExtractionRun + auditoría → commit
+        B  lecturas que necesita la interpretación (NIF y nombre de la empresa, correcciones habituales)
+           → commit: no queda ninguna transacción abierta
+        C  lectura del documento (OCR) y, si hace falta, Claude: SIN transacción (pueden tardar decenas de
+           segundos; en SQLite una transacción abierta bloquearía cualquier otra escritura)
+        D/E  validar (interpretation.merge ya lo hizo) y guardar en una transacción nueva → commit
+
+    Si algo falla, el documento queda FAILED con el motivo (como antes). Si Claude falla, refine() vuelve
+    a las reglas y lo anota; el documento sigue su camino de revisión como siempre.
+    Quien llama no debe tener trabajo pendiente: se confirma en la fase A.
+    """
     started = time.perf_counter()
     stage = "lectura"
     interpretation: dict[str, Any] = {}
+
+    # Fase A: estado y registro de la ejecución, confirmados antes de empezar a leer.
     document.status = "PROCESSING"
     document.extraction_status = "RUNNING"
     document.failure_reason = None
@@ -895,34 +920,46 @@ def process_document(
             ),
         },
     )
+    database.commit()
 
     try:
         from app.company_service import company_name
         from app.company_service import company_tax_ids
-
-        result = extract_invoice(
-            file_path,
-            company_tax_id=sorted(company_tax_ids(database)),
-            company_name=company_name(database),
-        )
-
-        # Si las reglas no bastan y hay IA configurada, Claude interpreta
-        # y las reglas validan cada valor antes de aceptarlo.
         from app.interpretation import refine
         from app.learning import correction_hints
 
+        # Fase B: lo que hace falta leer de la base de datos, antes de las operaciones lentas.
+        tax_ids = company_tax_ids(database)
+        name = company_name(database)
+        database.commit()  # cierra la transacción de lectura
+
+        # Fase C (1/2): lectura del documento con reglas (puede incluir OCR), sin transacción.
+        result = extract_invoice(
+            file_path,
+            company_tax_id=sorted(tax_ids),
+            company_name=name,
+        )
+
         # Lo que las personas corrigen a menudo en este proveedor no se da por bueno solo con reglas.
         rules_supplier = ((result.get("fields") or {}).get("supplier_tax_id") or {}).get("value")
+        hints = correction_hints(database, rules_supplier)
+        database.commit()  # cierra la lectura antes de llamar a Claude
+
+        # Fase C (2/2): si las reglas no bastan y hay IA configurada, Claude interpreta y las reglas
+        # validan cada valor (interpretation.merge). Sin ninguna transacción abierta.
         stage = "interpretación"
         result = refine(
             file_path,
             result,
-            company_tax_ids=company_tax_ids(database),
-            company_name=company_name(database),
-            extra_reasons=correction_hints(database, rules_supplier),
+            company_tax_ids=tax_ids,
+            company_name=name,
+            extra_reasons=hints,
         )
         interpretation = result.get("interpretation") or {}
+
+        # Fases D y E: transacción nueva para guardar el resultado ya validado.
         if interpretation.get("meta"):
+            meta = interpretation["meta"]
             add_audit_event(
                 database,
                 action="document.interpretation",
@@ -933,10 +970,14 @@ def process_document(
                     "reasons": interpretation.get("reasons"),
                     "changed": interpretation.get("changed"),
                     "fallback": interpretation.get("fallback"),
-                    "model": interpretation["meta"].get("served_by") or interpretation["meta"].get("model"),
-                    "input_tokens": interpretation["meta"].get("input_tokens"),
-                    "output_tokens": interpretation["meta"].get("output_tokens"),
-                    "cost_usd": interpretation["meta"].get("cost_usd"),
+                    "model": meta.get("served_by") or meta.get("model"),
+                    "input_tokens": meta.get("input_tokens"),
+                    "output_tokens": meta.get("output_tokens"),
+                    "total_tokens": meta.get("total_tokens"),
+                    "cost_usd": meta.get("cost_usd"),
+                    "ms": meta.get("ms"),
+                    "operation_id": meta.get("operation_id"),
+                    "outcome": meta.get("outcome"),
                 },
             )
 
@@ -986,6 +1027,9 @@ def process_document(
 
     except Exception as error:
         log_processing(document, started=started, stage=stage, outcome="error", interpretation=interpretation, error=error)
+        # Lo que quedó a medias de la fase de guardado se deshace; el documento y su ExtractionRun ya estaban
+        # confirmados en la fase A y se marcan como fallidos en una transacción limpia.
+        database.rollback()
         document.status = "FAILED"
         document.extraction_status = "FAILED"
         document.failure_reason = str(error)

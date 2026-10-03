@@ -72,24 +72,31 @@ def test_company_names_are_not_rejected_for_containing_a_label_inside_a_word():
         assert not looks_like_company_name(label), label
 
 
-def test_claude_is_not_scored_on_fields_it_does_not_produce(tmp_path, monkeypatch):
-    """Claude no decide si un documento es factura: ese campo no se le cuenta (ni a favor ni en contra)."""
+def test_claude_is_scored_on_document_type_with_the_same_truth(tmp_path, monkeypatch):
+    """Claude devuelve is_invoice y document_type: se le evalúan contra la misma verdad que a las reglas."""
     from app.agents import llm
 
+    def fake(**kwargs):
+        return {**{key: "" for key in llm.INVOICE_FIELDS}, "is_invoice": False, "document_type": "presupuesto"}, {"model": "simulado"}
+
     monkeypatch.setattr(llm, "available", lambda: True)
-    monkeypatch.setattr(llm, "extract_invoice", lambda **kwargs: ({key: "" for key in llm.INVOICE_FIELDS}, {"model": "simulado"}))
+    monkeypatch.setattr(llm, "extract_invoice", fake)
     dataset = load_dataset(CATALOG)
     dataset.cases = [case for case in dataset.cases if case.id == "ambiguo_presupuesto"]
     claude = run(dataset, ["claude"])["engines"]["claude"]
-    assert claude["rows"][0]["checks"] == {}
+    assert claude["rows"][0]["checks"] == {"is_invoice": True}  # este catálogo no etiqueta el tipo; el corpus, sí
+    assert claude["classification"]["tn"] == 1
 
 
 def test_rows_without_any_check_are_not_evaluated_and_leave_the_denominator(monkeypatch):
-    """all({}) es True: sin esta regla, los 6 documentos que no son factura contarían como aciertos de Claude
-    sin haberse evaluado nada. Reglas e híbrido sí los evalúan (¿es factura?) y no cambian."""
+    """all({}) es True: sin esta regla, un motor que no produjera el tipo de documento sacaría los 6 documentos
+    que no son factura como aciertos sin haberse evaluado nada. Reglas e híbrido sí los evalúan y no cambian.
+    (Hoy Claude sí devuelve el tipo; se simula un motor que no lo produce para que la regla siga protegida.)"""
+    import evaluation.core as core
     from app.agents import llm
     from evaluation.core import to_markdown
 
+    monkeypatch.setattr(core, "NOT_PRODUCED", {"claude": {"is_invoice", "document_type"}})
     monkeypatch.setattr(llm, "available", lambda: True)
     monkeypatch.setattr(llm, "extract_invoice", lambda **kwargs: ({key: "" for key in llm.INVOICE_FIELDS}, {"model": "simulado"}))
     report = run(load_dataset(CATALOG), ["reglas", "claude", "hibrido"])

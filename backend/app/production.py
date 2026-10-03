@@ -43,6 +43,13 @@ def problems(settings: Any | None = None) -> list[tuple[str, str]]:
                      "Con varias instancias, define la misma APP_SECRET_KEY en todas.")
     if not settings.app_encryption_key and settings.outlook_client_id:
         add(CRITICAL, "Outlook configurado sin APP_ENCRYPTION_KEY: los tokens del correo quedarían sin cifrar.")
+    if settings.auth_required and (settings.imap_host or settings.imap_user) and settings.email_client_id is None:
+        add(WARNING, "Multiempresa con IMAP configurado y sin EMAIL_CLIENT_ID: el buzón es común y no se procesa para "
+                     "ningún cliente (los correos quedan sin leer). Asígnalo a un cliente o quita IMAP_*.")
+    if settings.auth_required and settings.dehu_inbox_dir and settings.dehu_client_id is None:
+        add(WARNING, "Multiempresa con DEHU_INBOX_DIR y sin DEHU_CLIENT_ID: la carpeta de la DEHú no se lee para ningún cliente.")
+    if settings.auth_required and settings.outlook_client_id:
+        add(WARNING, "Outlook está configurado pero no funciona en multiempresa (una sola conexión para toda la instalación).")
     if not os.environ.get("BACKUP_PASSPHRASE"):
         add(WARNING, "Sin BACKUP_PASSPHRASE: las copias de seguridad irían sin cifrar.")
     if not settings.smtp_host:

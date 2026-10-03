@@ -1,0 +1,2207 @@
+{
+  "descripcion": "SIMULACIÓN — NO OFICIAL. Corpus sintético de evaluación documental. Generado por generar.py: no editar a mano.",
+  "synthetic": true,
+  "empresa": {
+    "name": "Ibernova Servicios, S.L.",
+    "tax_id": "B00900100"
+  },
+  "casos": [
+    {
+      "id": "alb_basico_12345",
+      "file": "albaranes/alb_basico_12345.pdf",
+      "set": "B",
+      "tags": [
+        "albarán",
+        "firma"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "easy",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "albaran",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "albaran"
+      }
+    },
+    {
+      "id": "alb_entrega_2026_00481",
+      "file": "albaranes/alb_entrega_2026_00481.pdf",
+      "set": "B",
+      "tags": [
+        "albarán",
+        "obra"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "easy",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 1,
+        "document_type": "albaran",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "albaran"
+      }
+    },
+    {
+      "id": "alb_salida_7812",
+      "file": "albaranes/alb_salida_7812.pdf",
+      "set": "B",
+      "tags": [
+        "albarán",
+        "erp"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "D",
+        "base_template": "D",
+        "pages": 1,
+        "document_type": "albaran",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "albaran"
+      }
+    },
+    {
+      "id": "alb_valorado_descuentos",
+      "file": "albaranes/alb_valorado_descuentos.pdf",
+      "set": "B",
+      "tags": [
+        "albarán",
+        "descuentos",
+        "importes sin IVA"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "albaran",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "albaran"
+      }
+    },
+    {
+      "id": "alb_referencias_producto",
+      "file": "albaranes/alb_referencias_producto.pdf",
+      "set": "B",
+      "tags": [
+        "albarán",
+        "referencias"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "easy",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "C",
+        "base_template": "C",
+        "pages": 1,
+        "document_type": "albaran",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "albaran"
+      }
+    },
+    {
+      "id": "alb_nota_entrega_antigua",
+      "file": "albaranes/alb_nota_entrega_antigua.pdf",
+      "set": "B",
+      "tags": [
+        "albarán",
+        "nota de entrega",
+        "antiguo"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "E",
+        "base_template": "E",
+        "pages": 1,
+        "document_type": "albaran",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "albaran"
+      }
+    },
+    {
+      "id": "pre_2026_001_con_iva",
+      "file": "presupuestos/pre_2026_001_con_iva.pdf",
+      "set": "B",
+      "tags": [
+        "presupuesto",
+        "con IVA"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "presupuesto",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "presupuesto"
+      }
+    },
+    {
+      "id": "pre_reforma_7",
+      "file": "presupuestos/pre_reforma_7.pdf",
+      "set": "B",
+      "tags": [
+        "presupuesto",
+        "condiciones",
+        "aceptación pendiente"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 1,
+        "document_type": "presupuesto",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "presupuesto"
+      }
+    },
+    {
+      "id": "pre_servicios_informaticos",
+      "file": "presupuestos/pre_servicios_informaticos.pdf",
+      "set": "B",
+      "tags": [
+        "presupuesto",
+        "título largo sin nº en el título"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "C",
+        "base_template": "C",
+        "pages": 1,
+        "document_type": "presupuesto",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "presupuesto"
+      }
+    },
+    {
+      "id": "pre_mantenimiento_sin_iva",
+      "file": "presupuestos/pre_mantenimiento_sin_iva.pdf",
+      "set": "B",
+      "tags": [
+        "presupuesto",
+        "sin IVA"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "C",
+        "base_template": "C",
+        "pages": 1,
+        "document_type": "presupuesto",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "presupuesto"
+      }
+    },
+    {
+      "id": "pre_suministro_descuento",
+      "file": "presupuestos/pre_suministro_descuento.pdf",
+      "set": "B",
+      "tags": [
+        "presupuesto",
+        "descuentos",
+        "erp"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "D",
+        "base_template": "D",
+        "pages": 1,
+        "document_type": "presupuesto",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "presupuesto"
+      }
+    },
+    {
+      "id": "pre_88_aceptado",
+      "file": "presupuestos/pre_88_aceptado.pdf",
+      "set": "B",
+      "tags": [
+        "presupuesto",
+        "aceptado",
+        "sello"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "E",
+        "base_template": "E",
+        "pages": 1,
+        "document_type": "presupuesto",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "presupuesto"
+      }
+    },
+    {
+      "id": "pre_pendiente_emitido",
+      "file": "presupuestos/pre_pendiente_emitido.pdf",
+      "set": "B",
+      "tags": [
+        "presupuesto",
+        "emitido",
+        "bilingüe"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es-en",
+        "visual_template": "F",
+        "base_template": "F",
+        "pages": 1,
+        "document_type": "presupuesto",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "presupuesto"
+      }
+    },
+    {
+      "id": "prof_2026_001_banco",
+      "file": "proformas/prof_2026_001_banco.pdf",
+      "set": "B",
+      "tags": [
+        "proforma",
+        "datos bancarios"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "proforma",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "proforma"
+      }
+    },
+    {
+      "id": "prof_factura_proforma_77",
+      "file": "proformas/prof_factura_proforma_77.pdf",
+      "set": "B",
+      "tags": [
+        "proforma",
+        "IVA 10",
+        "título con FACTURA"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 1,
+        "document_type": "proforma",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "proforma"
+      }
+    },
+    {
+      "id": "prof_comercial_bilingue_2026_15",
+      "file": "proformas/prof_comercial_bilingue_2026_15.pdf",
+      "set": "B",
+      "tags": [
+        "proforma",
+        "bilingüe"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es-en",
+        "visual_template": "F",
+        "base_template": "F",
+        "pages": 1,
+        "document_type": "proforma",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "proforma"
+      }
+    },
+    {
+      "id": "prof_descuentos_erp",
+      "file": "proformas/prof_descuentos_erp.pdf",
+      "set": "B",
+      "tags": [
+        "proforma",
+        "descuentos",
+        "erp"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "D",
+        "base_template": "D",
+        "pages": 1,
+        "document_type": "proforma",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "proforma"
+      }
+    },
+    {
+      "id": "prof_condiciones_anticipo",
+      "file": "proformas/prof_condiciones_anticipo.pdf",
+      "set": "B",
+      "tags": [
+        "proforma",
+        "condiciones"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "C",
+        "base_template": "C",
+        "pages": 1,
+        "document_type": "proforma",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "proforma"
+      }
+    },
+    {
+      "id": "ped_4500123_erp",
+      "file": "pedidos/ped_4500123_erp.pdf",
+      "set": "B",
+      "tags": [
+        "pedido",
+        "erp"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "easy",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "D",
+        "base_template": "D",
+        "pages": 1,
+        "document_type": "pedido",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "pedido"
+      }
+    },
+    {
+      "id": "ped_compra_pc_2026_18",
+      "file": "pedidos/ped_compra_pc_2026_18.pdf",
+      "set": "B",
+      "tags": [
+        "pedido",
+        "compra"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "easy",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "pedido",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "pedido"
+      }
+    },
+    {
+      "id": "ped_orden_compra_2026_008",
+      "file": "pedidos/ped_orden_compra_2026_008.pdf",
+      "set": "B",
+      "tags": [
+        "pedido",
+        "orden de compra"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 1,
+        "document_type": "pedido",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "pedido"
+      }
+    },
+    {
+      "id": "ped_hoja_pedido_311",
+      "file": "pedidos/ped_hoja_pedido_311.pdf",
+      "set": "B",
+      "tags": [
+        "pedido",
+        "sin precios",
+        "antiguo"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "E",
+        "base_template": "E",
+        "pages": 1,
+        "document_type": "pedido",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "pedido"
+      }
+    },
+    {
+      "id": "ped_purchase_order_po_7781",
+      "file": "pedidos/ped_purchase_order_po_7781.pdf",
+      "set": "B",
+      "tags": [
+        "pedido",
+        "bilingüe"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es-en",
+        "visual_template": "F",
+        "base_template": "F",
+        "pages": 1,
+        "document_type": "pedido",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "pedido"
+      }
+    },
+    {
+      "id": "otr_confirmacion_pedido",
+      "file": "otros/otr_confirmacion_pedido.pdf",
+      "set": "B",
+      "tags": [
+        "confirmación de pedido"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "confirmacion_pedido",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "pedido"
+      }
+    },
+    {
+      "id": "otr_recibo_0057",
+      "file": "otros/otr_recibo_0057.pdf",
+      "set": "B",
+      "tags": [
+        "recibo"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "E",
+        "base_template": "E",
+        "pages": 1,
+        "document_type": "recibo",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "otro"
+      }
+    },
+    {
+      "id": "otr_justificante_transferencia",
+      "file": "otros/otr_justificante_transferencia.pdf",
+      "set": "B",
+      "tags": [
+        "justificante de pago",
+        "banco"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "C",
+        "base_template": "C",
+        "pages": 1,
+        "document_type": "justificante_pago",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "otro"
+      }
+    },
+    {
+      "id": "otr_solicitud_presupuesto",
+      "file": "otros/otr_solicitud_presupuesto.pdf",
+      "set": "B",
+      "tags": [
+        "solicitud de presupuesto"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 1,
+        "document_type": "solicitud_presupuesto",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "otro"
+      }
+    },
+    {
+      "id": "otr_parte_trabajo",
+      "file": "otros/otr_parte_trabajo.pdf",
+      "set": "B",
+      "tags": [
+        "parte de trabajo"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "D",
+        "base_template": "D",
+        "pages": 1,
+        "document_type": "hoja_servicio",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "otro"
+      }
+    },
+    {
+      "id": "otr_contrato_mantenimiento",
+      "file": "otros/otr_contrato_mantenimiento.pdf",
+      "set": "B",
+      "tags": [
+        "contrato"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "E",
+        "base_template": "E",
+        "pages": 1,
+        "document_type": "contrato",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "otro"
+      }
+    },
+    {
+      "id": "amb_A_albaran_luego_factura",
+      "file": "ambiguos/amb_A_albaran_luego_factura.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "ALBARÁN Nº encima de FACTURA"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "C",
+        "base_template": "C",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Suministros Industriales Calmerón, S.A.",
+        "supplier_tax_id": "B00900761",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "12",
+        "invoice_date": "2026-09-04",
+        "subtotal": "252.80",
+        "tax_total": "53.09",
+        "total": "305.89",
+        "due_date": "2026-10-04"
+      }
+    },
+    {
+      "id": "amb_B_presupuesto_con_impuestos",
+      "file": "ambiguos/amb_B_presupuesto_con_impuestos.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "presupuesto con IVA y total"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "presupuesto",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "presupuesto"
+      }
+    },
+    {
+      "id": "amb_C_factura_albaran_pendiente",
+      "file": "ambiguos/amb_C_factura_albaran_pendiente.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "frase con albarán"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Comercial Quintamar, S.L.",
+        "supplier_tax_id": "B00900985",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "CQ-2026-0571",
+        "invoice_date": "2026-09-07",
+        "subtotal": "326.25",
+        "tax_total": "68.51",
+        "total": "394.76",
+        "due_date": "2026-10-07"
+      }
+    },
+    {
+      "id": "amb_D_sin_titulo_numero_de_factura",
+      "file": "ambiguos/amb_D_sin_titulo_numero_de_factura.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "sin título",
+        "IRPF"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "C",
+        "base_template": "C",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Consultoría Albaterra, S.L.P.",
+        "supplier_tax_id": "B00900431",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "F-12",
+        "invoice_date": "2026-09-08",
+        "subtotal": "1880.00",
+        "tax_total": "394.80",
+        "total": "1992.80",
+        "withholding_total": "282.00",
+        "due_date": "2026-10-08"
+      }
+    },
+    {
+      "id": "amb_E_cabecera_albaran_fecha_importe",
+      "file": "ambiguos/amb_E_cabecera_albaran_fecha_importe.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "cabecera de tabla «Albarán Fecha Importe»"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "D",
+        "base_template": "D",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Transportes Riberduero, S.L.",
+        "supplier_tax_id": "B00900654",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "TR-2026-0812",
+        "invoice_date": "2026-09-30",
+        "subtotal": "2220.30",
+        "tax_total": "466.26",
+        "total": "2686.56",
+        "due_date": "2026-10-30"
+      }
+    },
+    {
+      "id": "amb_F_factura_presupuesto_valido",
+      "file": "ambiguos/amb_F_factura_presupuesto_valido.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "frase «Presupuesto válido 30 días»"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Mantenimientos Ortegal Norte, S.L.",
+        "supplier_tax_id": "B00900878",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "MO-2026-221",
+        "invoice_date": "2026-09-10",
+        "subtotal": "865.00",
+        "tax_total": "181.65",
+        "total": "1046.65",
+        "due_date": "2026-10-10"
+      }
+    },
+    {
+      "id": "amb_G_factura_presupuesto_aceptado",
+      "file": "ambiguos/amb_G_factura_presupuesto_aceptado.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "frase «Presupuesto aceptado por el cliente»"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Datavértice Sistemas, S.L.",
+        "supplier_tax_id": "B00900324",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "DV-2026-1043",
+        "invoice_date": "2026-09-11",
+        "subtotal": "3393.00",
+        "tax_total": "712.53",
+        "total": "4105.53",
+        "due_date": "2026-10-11"
+      }
+    },
+    {
+      "id": "amb_H_pedido_encima_de_factura",
+      "file": "ambiguos/amb_H_pedido_encima_de_factura.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "Pedido nº encima de FACTURA"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Suministros Industriales Calmerón, S.A.",
+        "supplier_tax_id": "B00900761",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "SC-2026-3381",
+        "invoice_date": "2026-09-12",
+        "subtotal": "558.40",
+        "tax_total": "117.26",
+        "total": "675.66",
+        "due_date": "2026-10-12"
+      }
+    },
+    {
+      "id": "amb_I_albaran_factura_se_emitira",
+      "file": "ambiguos/amb_I_albaran_factura_se_emitira.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "albarán que menciona la factura"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "C",
+        "base_template": "C",
+        "pages": 1,
+        "document_type": "albaran",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "albaran"
+      }
+    },
+    {
+      "id": "amb_J_rectificativa_cita_factura_original",
+      "file": "ambiguos/amb_J_rectificativa_cita_factura_original.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "rectificativa",
+        "importes negativos"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "E",
+        "base_template": "E",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Comercial Quintamar, S.L.",
+        "supplier_tax_id": "B00900985",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "R-2026-005",
+        "invoice_date": "2026-09-15",
+        "subtotal": "-207.00",
+        "tax_total": "-43.47",
+        "total": "-250.47",
+        "due_date": "2026-10-15"
+      }
+    },
+    {
+      "id": "amb_K_albaran_factura_33",
+      "file": "ambiguos/amb_K_albaran_factura_33.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "albarán-factura"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "D",
+        "base_template": "D",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Papelería y Oficina Lumbrera, S.L.",
+        "supplier_tax_id": "B00901090",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "33",
+        "invoice_date": "2026-09-16",
+        "subtotal": "1163.90",
+        "tax_total": "244.42",
+        "total": "1408.32",
+        "due_date": "2026-10-16"
+      }
+    },
+    {
+      "id": "amb_L_presupuesto_en_carta",
+      "file": "ambiguos/amb_L_presupuesto_en_carta.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "presupuesto en formato carta, sin título"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "E",
+        "base_template": "E",
+        "pages": 1,
+        "document_type": "presupuesto",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "presupuesto"
+      }
+    },
+    {
+      "id": "amb_M_factura_emitida_frases_varias",
+      "file": "ambiguos/amb_M_factura_emitida_frases_varias.pdf",
+      "set": "B",
+      "tags": [
+        "ambiguo",
+        "emitida",
+        "frases que empiezan por albarán/pedido"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": true,
+        "ocr": false,
+        "language": "es-en",
+        "visual_template": "F",
+        "base_template": "F",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "ISSUED",
+        "supplier_name": "Ibernova Servicios, S.L.",
+        "supplier_tax_id": "B00900100",
+        "customer_tax_id": "B00901546",
+        "invoice_number": "IB-2026-0144",
+        "invoice_date": "2026-09-18",
+        "subtotal": "26350.00",
+        "tax_total": "5533.50",
+        "total": "31883.50",
+        "due_date": "2026-10-18"
+      }
+    },
+    {
+      "id": "ocr_factura_buen_escaner",
+      "file": "ocr/ocr_factura_buen_escaner.pdf",
+      "set": "B",
+      "tags": [
+        "OCR",
+        "factura",
+        "IRPF"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": true,
+        "language": "es",
+        "visual_template": "G",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "factura",
+        "scan_profile": "buen_escaner",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Consultoría Albaterra, S.L.P.",
+        "supplier_tax_id": "B00900431",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "CA-2026-0301",
+        "invoice_date": "2026-09-02",
+        "subtotal": "3930.00",
+        "tax_total": "825.30",
+        "total": "4165.80",
+        "withholding_total": "589.50",
+        "due_date": "2026-10-02"
+      }
+    },
+    {
+      "id": "ocr_factura_escaneo_pobre",
+      "file": "ocr/ocr_factura_escaneo_pobre.pdf",
+      "set": "B",
+      "tags": [
+        "OCR",
+        "factura",
+        "IVA 10"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": true,
+        "language": "es",
+        "visual_template": "G",
+        "base_template": "E",
+        "pages": 1,
+        "document_type": "factura",
+        "scan_profile": "escaneo_pobre",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Hostelería Fuenclara, S.L.",
+        "supplier_tax_id": "B00900548",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "FC-26/0912",
+        "invoice_date": "2026-09-06",
+        "subtotal": "5468.50",
+        "tax_total": "546.85",
+        "total": "6015.35",
+        "due_date": "2026-10-06"
+      }
+    },
+    {
+      "id": "ocr_factura_foto_movil",
+      "file": "ocr/ocr_factura_foto_movil.pdf",
+      "set": "B",
+      "tags": [
+        "OCR",
+        "factura",
+        "fotografiado"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": true,
+        "language": "es",
+        "visual_template": "G",
+        "base_template": "C",
+        "pages": 1,
+        "document_type": "factura",
+        "scan_profile": "foto_movil",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Transportes Riberduero, S.L.",
+        "supplier_tax_id": "B00900654",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "RD-2026-4410",
+        "invoice_date": "2026-09-09",
+        "subtotal": "3209.20",
+        "tax_total": "673.93",
+        "total": "3883.13",
+        "due_date": "2026-10-09"
+      }
+    },
+    {
+      "id": "ocr_albaran_fax",
+      "file": "ocr/ocr_albaran_fax.pdf",
+      "set": "B",
+      "tags": [
+        "OCR",
+        "albarán"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": true,
+        "language": "es",
+        "visual_template": "G",
+        "base_template": "D",
+        "pages": 1,
+        "document_type": "albaran",
+        "scan_profile": "fax",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "albaran"
+      }
+    },
+    {
+      "id": "ocr_presupuesto_escaneado",
+      "file": "ocr/ocr_presupuesto_escaneado.pdf",
+      "set": "B",
+      "tags": [
+        "OCR",
+        "presupuesto"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": true,
+        "language": "es",
+        "visual_template": "G",
+        "base_template": "B",
+        "pages": 1,
+        "document_type": "presupuesto",
+        "scan_profile": "buen_escaner",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "presupuesto"
+      }
+    },
+    {
+      "id": "ocr_proforma_lavada",
+      "file": "ocr/ocr_proforma_lavada.pdf",
+      "set": "B",
+      "tags": [
+        "OCR",
+        "proforma",
+        "bilingüe"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": true,
+        "language": "es-en",
+        "visual_template": "G",
+        "base_template": "F",
+        "pages": 1,
+        "document_type": "proforma",
+        "scan_profile": "lavado",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "proforma"
+      }
+    },
+    {
+      "id": "ocr_pedido_baja_resolucion",
+      "file": "ocr/ocr_pedido_baja_resolucion.pdf",
+      "set": "B",
+      "tags": [
+        "OCR",
+        "pedido"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": true,
+        "language": "es",
+        "visual_template": "G",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "pedido",
+        "scan_profile": "baja_resolucion",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "pedido"
+      }
+    },
+    {
+      "id": "ocr_factura_multipagina_escaneada",
+      "file": "ocr/ocr_factura_multipagina_escaneada.pdf",
+      "set": "B",
+      "tags": [
+        "OCR",
+        "factura",
+        "multipágina"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": true,
+        "language": "es",
+        "visual_template": "G",
+        "base_template": "B",
+        "pages": 2,
+        "document_type": "factura",
+        "scan_profile": "escaneo_pobre",
+        "multipage": true
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Datavértice Sistemas, S.L.",
+        "supplier_tax_id": "B00900324",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "DV-2026-1101",
+        "invoice_date": "2026-09-20",
+        "subtotal": "95423.70",
+        "tax_total": "20038.98",
+        "total": "115462.68",
+        "due_date": "2026-10-20"
+      }
+    },
+    {
+      "id": "mp_factura_3_paginas",
+      "file": "multipagina/mp_factura_3_paginas.pdf",
+      "set": "B",
+      "tags": [
+        "multipágina",
+        "total solo en la última página",
+        "proveedor solo en la primera"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 3,
+        "document_type": "factura",
+        "multipage": true
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Suministros Industriales Calmerón, S.A.",
+        "supplier_tax_id": "B00900761",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "SC-2026-3402",
+        "invoice_date": "2026-09-03",
+        "subtotal": "10611.85",
+        "tax_total": "2228.49",
+        "total": "12840.34",
+        "due_date": "2026-10-03"
+      }
+    },
+    {
+      "id": "mp_factura_erp_descuentos",
+      "file": "multipagina/mp_factura_erp_descuentos.pdf",
+      "set": "B",
+      "tags": [
+        "multipágina",
+        "erp",
+        "descuentos"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "D",
+        "base_template": "D",
+        "pages": 2,
+        "document_type": "factura",
+        "multipage": true
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Comercial Quintamar, S.L.",
+        "supplier_tax_id": "B00900985",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "CQ-2026-0601",
+        "invoice_date": "2026-09-06",
+        "subtotal": "4461.50",
+        "tax_total": "936.92",
+        "total": "5398.42",
+        "due_date": "2026-10-06"
+      }
+    },
+    {
+      "id": "mp_factura_bilingue_emitida",
+      "file": "multipagina/mp_factura_bilingue_emitida.pdf",
+      "set": "B",
+      "tags": [
+        "multipágina",
+        "bilingüe",
+        "emitida"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es-en",
+        "visual_template": "F",
+        "base_template": "F",
+        "pages": 2,
+        "document_type": "factura",
+        "multipage": true
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "ISSUED",
+        "supplier_name": "Ibernova Servicios, S.L.",
+        "supplier_tax_id": "B00900100",
+        "customer_tax_id": "B00901769",
+        "invoice_number": "IB-2026-0150",
+        "invoice_date": "2026-09-09",
+        "subtotal": "41362.50",
+        "tax_total": "8686.13",
+        "total": "50048.63",
+        "due_date": "2026-10-09"
+      }
+    },
+    {
+      "id": "mp_factura_irpf_servicios",
+      "file": "multipagina/mp_factura_irpf_servicios.pdf",
+      "set": "B",
+      "tags": [
+        "multipágina",
+        "IRPF"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 2,
+        "document_type": "factura",
+        "multipage": true
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Consultoría Albaterra, S.L.P.",
+        "supplier_tax_id": "B00900431",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "CA-2026-0330",
+        "invoice_date": "2026-09-30",
+        "subtotal": "63615.00",
+        "tax_total": "13359.15",
+        "total": "67431.90",
+        "withholding_total": "9542.25",
+        "due_date": "2026-10-30"
+      }
+    },
+    {
+      "id": "mp_albaran_3_paginas",
+      "file": "multipagina/mp_albaran_3_paginas.pdf",
+      "set": "B",
+      "tags": [
+        "multipágina",
+        "albarán",
+        "muchas líneas"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "C",
+        "base_template": "C",
+        "pages": 3,
+        "document_type": "albaran",
+        "multipage": true
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "albaran"
+      }
+    },
+    {
+      "id": "mp_presupuesto_condiciones",
+      "file": "multipagina/mp_presupuesto_condiciones.pdf",
+      "set": "B",
+      "tags": [
+        "multipágina",
+        "presupuesto",
+        "condiciones"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 2,
+        "document_type": "presupuesto",
+        "multipage": true
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "presupuesto"
+      }
+    },
+    {
+      "id": "mp_pedido_2_paginas",
+      "file": "multipagina/mp_pedido_2_paginas.pdf",
+      "set": "B",
+      "tags": [
+        "multipágina",
+        "pedido"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 2,
+        "document_type": "pedido",
+        "multipage": true
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "pedido"
+      }
+    },
+    {
+      "id": "mp_proforma_2_paginas",
+      "file": "multipagina/mp_proforma_2_paginas.pdf",
+      "set": "B",
+      "tags": [
+        "multipágina",
+        "proforma"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "E",
+        "base_template": "E",
+        "pages": 2,
+        "document_type": "proforma",
+        "multipage": true
+      },
+      "expected": {
+        "is_invoice": false,
+        "document_type": "proforma"
+      }
+    },
+    {
+      "id": "fac_facil_limpieza_2026_0091",
+      "file": "facturas/fac_facil_limpieza_2026_0091.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "servicios"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "easy",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Limpiezas Brillamar, S.L.",
+        "supplier_tax_id": "B00902205",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "2026-0091",
+        "invoice_date": "2026-09-01",
+        "subtotal": "443.10",
+        "tax_total": "93.05",
+        "total": "536.15",
+        "due_date": "2026-10-01"
+      }
+    },
+    {
+      "id": "fac_facil_oficina_eno_3312",
+      "file": "facturas/fac_facil_oficina_eno_3312.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "material de oficina"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "easy",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Distribuciones Escribanía Norte, S.L.",
+        "supplier_tax_id": "B00902312",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "ENO-3312",
+        "invoice_date": "2026-09-03",
+        "subtotal": "267.10",
+        "tax_total": "56.09",
+        "total": "323.19",
+        "due_date": "2026-10-03"
+      }
+    },
+    {
+      "id": "fac_facil_cafeteria_iva10",
+      "file": "facturas/fac_facil_cafeteria_iva10.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "IVA 10 %"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "easy",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "C",
+        "base_template": "C",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Cafetería Los Soportales del Puente, S.L.",
+        "supplier_tax_id": "B00902429",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "T-2026-0457",
+        "invoice_date": "2026-09-05",
+        "subtotal": "2824.40",
+        "tax_total": "282.44",
+        "total": "3106.84"
+      }
+    },
+    {
+      "id": "fac_facil_emitida_gimnasio",
+      "file": "facturas/fac_facil_emitida_gimnasio.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "emitida"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "easy",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "ISSUED",
+        "supplier_name": "Ibernova Servicios, S.L.",
+        "supplier_tax_id": "B00900100",
+        "customer_tax_id": "B00903203",
+        "invoice_number": "IB-2026-0161",
+        "invoice_date": "2026-09-08",
+        "subtotal": "825.00",
+        "tax_total": "173.25",
+        "total": "998.25",
+        "due_date": "2026-10-08"
+      }
+    },
+    {
+      "id": "fac_facil_mensajeria_vx_88120",
+      "file": "facturas/fac_facil_mensajeria_vx_88120.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "transporte"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "easy",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "E",
+        "base_template": "E",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Mensajería Vencejo Exprés, S.L.",
+        "supplier_tax_id": "B00902536",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "VX-88120",
+        "invoice_date": "2026-09-09",
+        "subtotal": "194.15",
+        "tax_total": "40.77",
+        "total": "234.92",
+        "due_date": "2026-10-09"
+      }
+    },
+    {
+      "id": "fac_media_diseno_irpf15",
+      "file": "facturas/fac_media_diseno_irpf15.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "IRPF",
+        "profesional"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Estudio Gráfico Caligrama, S.L.P.",
+        "supplier_tax_id": "B00902643",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "CAL-26/045",
+        "invoice_date": "2026-09-10",
+        "subtotal": "3655.00",
+        "tax_total": "767.55",
+        "total": "3874.30",
+        "withholding_total": "548.25",
+        "due_date": "2026-10-10"
+      }
+    },
+    {
+      "id": "fac_media_ferreteria_descuentos",
+      "file": "facturas/fac_media_ferreteria_descuentos.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "descuentos",
+        "referencias",
+        "erp"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "D",
+        "base_template": "D",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Ferretería Industrial Yunque, S.L.",
+        "supplier_tax_id": "B00902759",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "FY-0003391",
+        "invoice_date": "2026-09-11",
+        "subtotal": "1935.10",
+        "tax_total": "406.37",
+        "total": "2341.47",
+        "due_date": "2026-11-10"
+      }
+    },
+    {
+      "id": "fac_media_emitida_irpf_farmacia",
+      "file": "facturas/fac_media_emitida_irpf_farmacia.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "emitida",
+        "IRPF"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "E",
+        "base_template": "E",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "ISSUED",
+        "supplier_name": "Ibernova Servicios, S.L.",
+        "supplier_tax_id": "B00900100",
+        "customer_tax_id": "B00903310",
+        "invoice_number": "IB-2026-0163",
+        "invoice_date": "2026-09-14",
+        "subtotal": "2855.00",
+        "tax_total": "599.55",
+        "total": "3026.30",
+        "withholding_total": "428.25",
+        "due_date": "2026-10-14"
+      }
+    },
+    {
+      "id": "fac_media_redes_10_lineas",
+      "file": "facturas/fac_media_redes_10_lineas.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "informática",
+        "vencimiento 60 días"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "C",
+        "base_template": "C",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Redes y Cableados Lindero, S.L.",
+        "supplier_tax_id": "B00902866",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "LIN-2026-0718",
+        "invoice_date": "2026-09-15",
+        "subtotal": "7384.90",
+        "tax_total": "1550.83",
+        "total": "8935.73",
+        "due_date": "2026-11-14"
+      }
+    },
+    {
+      "id": "fac_media_emitida_bilingue_export",
+      "file": "facturas/fac_media_emitida_bilingue_export.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "emitida",
+        "bilingüe"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "medium",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es-en",
+        "visual_template": "F",
+        "base_template": "F",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "ISSUED",
+        "supplier_name": "Ibernova Servicios, S.L.",
+        "supplier_tax_id": "B00900100",
+        "customer_tax_id": "B00903427",
+        "invoice_number": "IB-2026-0165",
+        "invoice_date": "2026-09-16",
+        "subtotal": "4215.00",
+        "tax_total": "885.15",
+        "total": "5100.15",
+        "due_date": "2026-10-16"
+      }
+    },
+    {
+      "id": "fac_dificil_obras_2_paginas",
+      "file": "facturas/fac_dificil_obras_2_paginas.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "multipágina",
+        "construcción"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "A",
+        "base_template": "A",
+        "pages": 2,
+        "document_type": "factura",
+        "multipage": true
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Reformas Alféizar, S.L.",
+        "supplier_tax_id": "B00903195",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "RA-2026-0204",
+        "invoice_date": "2026-09-17",
+        "subtotal": "6131.30",
+        "tax_total": "1287.57",
+        "total": "7418.87",
+        "due_date": "2026-10-17"
+      }
+    },
+    {
+      "id": "fac_dificil_abogados_irpf7",
+      "file": "facturas/fac_dificil_abogados_irpf7.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "IRPF 7 %",
+        "profesional",
+        "erp"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "D",
+        "base_template": "D",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Bufete Encinar y Asociados, S.L.P.",
+        "supplier_tax_id": "B00902973",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "BE/2026/0377",
+        "invoice_date": "2026-09-18",
+        "subtotal": "3400.00",
+        "tax_total": "714.00",
+        "total": "3876.00",
+        "withholding_total": "238.00",
+        "due_date": "2026-10-18"
+      }
+    },
+    {
+      "id": "fac_dificil_libreria_iva4",
+      "file": "facturas/fac_dificil_libreria_iva4.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "IVA 4 %"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "B",
+        "base_template": "B",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Librería Técnica Marginalia, S.L.",
+        "supplier_tax_id": "B00903088",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "M-2026-1120",
+        "invoice_date": "2026-09-21",
+        "subtotal": "1221.00",
+        "tax_total": "48.84",
+        "total": "1269.84",
+        "due_date": "2026-10-21"
+      }
+    },
+    {
+      "id": "fac_dificil_serie_barras_descuentos",
+      "file": "facturas/fac_dificil_serie_barras_descuentos.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "serie con barras",
+        "descuentos"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es",
+        "visual_template": "E",
+        "base_template": "E",
+        "pages": 1,
+        "document_type": "factura",
+        "multipage": false
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "RECEIVED",
+        "supplier_name": "Distribuciones Escribanía Norte, S.L.",
+        "supplier_tax_id": "B00902312",
+        "customer_tax_id": "B00900100",
+        "invoice_number": "A/2026/000128",
+        "invoice_date": "2026-09-22",
+        "subtotal": "1051.75",
+        "tax_total": "220.87",
+        "total": "1272.62",
+        "due_date": "2026-10-22"
+      }
+    },
+    {
+      "id": "fac_dificil_emitida_larga_sin_vencimiento",
+      "file": "facturas/fac_dificil_emitida_larga_sin_vencimiento.pdf",
+      "set": "B",
+      "tags": [
+        "factura normal",
+        "emitida",
+        "multipágina",
+        "bilingüe",
+        "sin vencimiento"
+      ],
+      "meta": {
+        "synthetic": true,
+        "difficulty": "hard",
+        "ambiguous": false,
+        "ocr": false,
+        "language": "es-en",
+        "visual_template": "F",
+        "base_template": "F",
+        "pages": 2,
+        "document_type": "factura",
+        "multipage": true
+      },
+      "expected": {
+        "is_invoice": true,
+        "document_type": "factura",
+        "direction": "ISSUED",
+        "supplier_name": "Ibernova Servicios, S.L.",
+        "supplier_tax_id": "B00900100",
+        "customer_tax_id": "B00903427",
+        "invoice_number": "IB-2026-0170",
+        "invoice_date": "2026-09-25",
+        "subtotal": "25215.00",
+        "tax_total": "5295.15",
+        "total": "30510.15"
+      }
+    }
+  ]
+}
