@@ -45,6 +45,37 @@ interfaz existente → detectar un problema concreto → aplicar la skill → m�
 - Una petición GET no escribe en la base de datos (en SQLite, dos lecturas que escriben a la
   vez acaban en «database is locked»).
 
+## Mapa del proyecto
+
+FastAPI + SQLAlchemy 2 (SQLite o PostgreSQL) y frontend en JS/CSS sin framework. Todo bajo `backend/`.
+
+- **Entrada de documentos:** `app/main.py` (rutas principales y subida) → `invoice_service.py`
+  (`process_document` por fases; el LLM va fuera de la transacción) → `extractor.py` (lectura por
+  reglas, OCR) + `extraction_rules.py` (reglas aprendidas de facturas reales) → `interpretation.py`
+  (`needs_help`: cuándo avisar a una persona o pedir a Claude) + `routing.py` (si merece la pena llamarlo).
+- **Circuito:** `accounting.py` (asientos) · `reconciliation.py` (banco ↔ facturas) · `tax_service.py`
+  y `fiscal_position.py` (303/130/111/115) · `treasury.py` · `closing.py` (cierre del mes) ·
+  `workcenter.py` (Centro de trabajo: la lista única).
+- **Agentes:** `app/agents/` (`orchestrator.py`, `detector.py`, `director.py`, `perseguidor.py`,
+  `llm.py` = única puerta a Claude, con coste y metadatos). Expedientes: `case_service.py`.
+- **Fuentes:** `app/connectors/` (correo, DEHú; `assignment.py` reparte en multiempresa),
+  `mail_*.py`, `outlook_connector.py`, `bank_*.py`. Inteligencia (BOE): `app/intelligence/`.
+- **Transversal:** `models.py`, `schemas.py`, `tenancy.py` (aislamiento por cliente), `deps.py`,
+  `request_context.py` (actor de auditoría), `config.py`, `production.py`, `migrations/` (Alembic).
+- **Frontend:** `app/static/` — `index.html`, `style.css` (tokens), `shell.js` (navegación),
+  `app.js` (facturas, Hoy) y un JS por pantalla (`taxes.js`, `cases.js`, `close.js`…).
+  `portal.html` es el portal de subida para proveedores. Lenguaje visual: `DESIGN.md`; producto: `PRODUCT.md`.
+- **Evaluación:** `evaluation/` (`core.py` reglas/Claude/híbrido por campo, `casos.py` banco B,
+  `README.md` con comandos). Datos: `evaluation/datasets/` (`corpus/` sintético, `b_sintetico/`,
+  `catalogo/`, `reales/` fuera de git). Informes en `evaluation/informes/` (no se suben).
+- **Tests:** `tests/unit` (reglas del extractor, evaluador), `tests/integration` (API, multiempresa,
+  LLM), `tests/workflows` (correo, cierre…), `tests/agents`, `tests/golden` (regresiones).
+- **No leer salvo que se pida** (volcados grandes que solo gastan contexto): `CAPAFISCAL_CODIGO_PARTES/`,
+  `codigo_extraccion_actual.txt`, `openapi_actual.json`, `legacy/`, `.claude/skills/*/reference/`.
+- Docs: `docs/` (roadmap, banco real, correo multiempresa, seguridad y copias).
+- OCR: Tesseract (`tesseract-ocr-spa`) lo trae la imagen Docker; sin él, los escaneados no se leen
+  y el emisor que solo está en imágenes queda vacío y a revisión.
+
 ## Comprobaciones
 
 ```bash
