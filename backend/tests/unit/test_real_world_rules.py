@@ -44,8 +44,8 @@ def test_implausible_amounts_are_detected():
 
 
 def test_rotated_text_both_extraction_styles():
-    letters = "\n".join(["7", "4", "6", "3", "8", "3", "9", "0", "-B", ":.F", ".I.C", "-", "a", "tircs", "nI"])
-    assert "C.I.F.:B-09383647" in rules.restore_rotated_text("cabecera\n" + letters + "\npie normal de la factura")
+    letters = "\n".join(["9", "0", "0", "1", "0", "9", "0", "0", "-B", ":.F", ".I.C", "-", "a", "tircs", "nI"])
+    assert "C.I.F.:B-00901009" in rules.restore_rotated_text("cabecera\n" + letters + "\npie normal de la factura")
     words = "\n".join(["C.I.F.: C.I.F.:", "Inscripción Inscripción", "Hoja Hoja", "Folio Folio", "Mercantil Mercantil", "Registro Registro", "el el", "en en", "Inscrita Inscrita"])
     restored = rules.restore_rotated_text("cabecera\n" + words + "\nfin del documento con texto normal")
     assert "Inscrita en el Registro Mercantil Folio Hoja Inscripción C.I.F.:" in restored
