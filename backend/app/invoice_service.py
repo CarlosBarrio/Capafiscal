@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from app import clock
+import logging
+import time
 from datetime import date
 from datetime import datetime
-from datetime import timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
+from app.extractor import EXTRACTOR_NAME
+from app.extractor import CATEGORY_ACCOUNTS
+from app.extractor import EXTRACTOR_VERSION
 from app.extractor import extract_invoice
 from app.extractor import normalize_amount
 from app.extractor import normalize_tax_id
@@ -22,11 +27,12 @@ from app.models import Document
 from app.models import ExtractionRun
 from app.models import Invoice
 from app.models import InvoiceTaxLine
+from app.models import SupplierRule
 from app.schemas import InvoiceUpdate
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return clock.now()
 
 
 def parse_iso_date(
@@ -42,6 +48,15 @@ def parse_iso_date(
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+def format_eur(value: Decimal) -> str:
+    text = f"{value:,.2f}"
+
+    return (
+        text.replace(",", "X").replace(".", ",").replace("X", ".")
+        + " €"
+    )
 
 
 def serialize_audit_value(
@@ -77,14 +92,24 @@ def add_audit_event(
     actor: str = "system",
     event_data: dict[str, Any] | None = None,
 ) -> AuditEvent:
+    from app.request_context import authenticated_user
+    from app.request_context import declared_actor
+
+    data = dict(event_data or {})
+    # Integridad: dentro de una petición autenticada queda SIEMPRE quién la hizo, aunque el actor del evento
+    # sea un motor («claude», «extractor»…). Lo que el cliente declara (X-Actor) va aparte y no es identidad.
+    user = authenticated_user()
+    if user is not None:
+        data["authenticated_user"] = {"id": user["id"], "email": user["email"]}
+    declared = declared_actor()
+    if declared and (user is None or declared != user["email"]):
+        data["declared_actor"] = declared
     event = AuditEvent(
         action=action,
         entity_type=entity_type,
         entity_id=str(entity_id),
         actor=actor,
-        event_data=serialize_audit_value(
-            event_data or {}
-        ),
+        event_data=serialize_audit_value(data),
     )
 
     database.add(event)
@@ -144,7 +169,7 @@ def validate_invoice_values(
         )
 
     if invoice_date is not None:
-        today = date.today()
+        today = clock.today()
 
         if invoice_date > today:
             messages.append(
@@ -198,8 +223,8 @@ def validate_invoice_values(
                     "message": (
                         "Los importes no cuadran. "
                         f"El total esperado es "
-                        f"{expected_total:.2f} y el total "
-                        f"extraído es {total:.2f}."
+                        f"{format_eur(expected_total)} y el total "
+                        f"extraído es {format_eur(total)}."
                     ),
                     "difference": format(
                         difference,
@@ -511,8 +536,54 @@ def persist_extraction_result(
 
     document.extraction_status = "COMPLETED"
 
+    if document.kind == "NOTIFICATION":
+        # Ya clasificado como notificación (por el agente o el usuario).
+        from app.notification_service import detect_and_register
+
+        detect_and_register(
+            database,
+            document=document,
+            text=result.get("raw_text") or "",
+        )
+        return None
+
+    from app.notification_service import administrative_record
+    from app.notification_service import looks_like_administrative_act
+
+    raw_text = result.get("raw_text") or ""
+    if administrative_record(raw_text) or looks_like_administrative_act(raw_text):
+        # Un apremio o una liquidación tienen importe y fecha y pueden
+        # parecer facturas: si viene de un organismo, es notificación.
+        from app.notification_service import detect_and_register
+
+        if document.invoice is not None and document.invoice.review_status != "APPROVED":
+            database.delete(document.invoice)
+            document.invoice = None
+            database.flush()
+
+        document.status = "NEEDS_REVIEW"
+        notification = detect_and_register(
+            database,
+            document=document,
+            text=result.get("raw_text") or "",
+        )
+
+        if notification is not None:
+            return None
+
     if not result.get("is_invoice"):
         document.status = "NEEDS_REVIEW"
+
+        from app.notification_service import detect_and_register
+
+        notification = detect_and_register(
+            database,
+            document=document,
+            text=result.get("raw_text") or "",
+        )
+
+        if notification is not None:
+            return None
 
         add_audit_event(
             database,
@@ -631,6 +702,8 @@ def persist_extraction_result(
         "category",
     )
 
+    invoice.direction = result.get("direction") or "RECEIVED"
+
     invoice.confidence = int(
         result.get(
             "overall_confidence",
@@ -640,6 +713,13 @@ def persist_extraction_result(
     invoice.field_confidences = (
         field_confidences(result)
     )
+    invoice.field_confidences["direction"] = {
+        "confidence": result.get("direction_confidence", 50),
+        "source": "company_tax_id_position",
+        "evidence": None,
+    }
+
+    apply_supplier_rule(database, invoice)
 
     database.flush()
 
@@ -687,6 +767,105 @@ def persist_extraction_result(
     return invoice
 
 
+def counterparty_tax_id(invoice: Invoice) -> str | None:
+    if invoice.direction == "ISSUED":
+        return invoice.customer_tax_id
+
+    return invoice.supplier_tax_id
+
+
+def apply_supplier_rule(
+    database: Session,
+    invoice: Invoice,
+) -> bool:
+    """Aplica la categoría aprendida para la contraparte, si existe."""
+    tax_id = counterparty_tax_id(invoice)
+
+    if not tax_id:
+        return False
+
+    rule = database.scalar(
+        select(SupplierRule).where(SupplierRule.tax_id == tax_id)
+    )
+
+    if rule is None or rule.category not in CATEGORY_ACCOUNTS:
+        return False
+
+    invoice.category = rule.category
+    invoice.field_confidences = {
+        **(invoice.field_confidences or {}),
+        "category": {
+            "confidence": 97,
+            "source": "supplier_rule",
+            "evidence": (
+                "Categoría aprendida de tus correcciones anteriores "
+                f"para {tax_id}."
+            ),
+        },
+    }
+    rule.times_applied = (rule.times_applied or 0) + 1
+
+    return True
+
+
+def learn_supplier_rule(
+    database: Session,
+    invoice: Invoice,
+    actor: str,
+) -> None:
+    tax_id = counterparty_tax_id(invoice)
+
+    if not tax_id or not invoice.category:
+        return
+
+    rule = database.scalar(
+        select(SupplierRule).where(SupplierRule.tax_id == tax_id)
+    )
+
+    if rule is None:
+        rule = SupplierRule(tax_id=tax_id, category=invoice.category)
+        database.add(rule)
+    elif rule.category == invoice.category:
+        return
+    else:
+        rule.category = invoice.category
+
+    rule.learned_from_invoice_id = invoice.id
+
+    add_audit_event(
+        database,
+        action="supplier_rule.learned",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        actor=actor,
+        event_data={
+            "tax_id": tax_id,
+            "category": invoice.category,
+        },
+    )
+
+
+DOCUMENT_LOG = logging.getLogger("capafiscal.documents")
+
+
+def log_processing(document: Document, *, started: float, stage: str, outcome: str, interpretation: dict[str, Any] | None = None,
+                   error: BaseException | None = None) -> None:
+    """Una línea por documento: qué motor, cuánto tardó, si llamó a Claude y en qué etapa falló.
+    Sin nombre de archivo ni contenido (pueden llevar datos personales) y nunca claves."""
+    meta = (interpretation or {}).get("meta") or {}
+    fields = {
+        "document_id": document.id, "extension": document.extension, "outcome": outcome, "stage": stage,
+        "engine": "reglas+claude" if meta else "reglas", "claude_calls": 1 if meta else 0,
+        "claude_fallback": (interpretation or {}).get("fallback"), "cost_usd": meta.get("cost_usd"),
+        "ms": int((time.perf_counter() - started) * 1000),
+    }
+    if error is not None:
+        fields["error"] = type(error).__name__
+    level = logging.WARNING if outcome == "error" else logging.INFO
+    DOCUMENT_LOG.log(level, "documento %s · %s · %s · %s ms%s", document.id, outcome, fields["engine"], fields["ms"],
+                     f" · falló en {stage} ({fields['error']})" if error is not None else "", extra={"fields": fields})
+
+
 def process_document(
     database: Session,
     *,
@@ -694,16 +873,32 @@ def process_document(
     file_path: Path,
     actor: str = "system",
 ) -> Invoice | None:
+    """Lee un documento y guarda el resultado. Confirma (commit) su propio trabajo, en fases:
+
+        A  estado PROCESSING + ExtractionRun + auditoría → commit
+        B  lecturas que necesita la interpretación (NIF y nombre de la empresa, correcciones habituales)
+           → commit: no queda ninguna transacción abierta
+        C  lectura del documento (OCR) y, si hace falta, Claude: SIN transacción (pueden tardar decenas de
+           segundos; en SQLite una transacción abierta bloquearía cualquier otra escritura)
+        D/E  validar (interpretation.merge ya lo hizo) y guardar en una transacción nueva → commit
+
+    Si algo falla, el documento queda FAILED con el motivo (como antes). Si Claude falla, refine() vuelve
+    a las reglas y lo anota; el documento sigue su camino de revisión como siempre.
+    Quien llama no debe tener trabajo pendiente: se confirma en la fase A.
+    """
+    started = time.perf_counter()
+    stage = "lectura"
+    interpretation: dict[str, Any] = {}
+
+    # Fase A: estado y registro de la ejecución, confirmados antes de empezar a leer.
     document.status = "PROCESSING"
     document.extraction_status = "RUNNING"
     document.failure_reason = None
 
     extraction_run = ExtractionRun(
         document=document,
-        extractor_name=(
-            "capafiscal.generic_invoice"
-        ),
-        extractor_version="2.0.0",
+        extractor_name=EXTRACTOR_NAME,
+        extractor_version=EXTRACTOR_VERSION,
         status="RUNNING",
     )
 
@@ -725,19 +920,68 @@ def process_document(
             ),
         },
     )
+    database.commit()
 
     try:
-        configured_tax_ids = (
-            settings.company_tax_ids
-            or settings.company_tax_id
-        )
+        from app.company_service import company_name
+        from app.company_service import company_tax_ids
+        from app.interpretation import refine
+        from app.learning import correction_hints
 
+        # Fase B: lo que hace falta leer de la base de datos, antes de las operaciones lentas.
+        tax_ids = company_tax_ids(database)
+        name = company_name(database)
+        database.commit()  # cierra la transacción de lectura
+
+        # Fase C (1/2): lectura del documento con reglas (puede incluir OCR), sin transacción.
         result = extract_invoice(
             file_path,
-            company_tax_id=configured_tax_ids,
-            company_name=settings.company_name,
+            company_tax_id=sorted(tax_ids),
+            company_name=name,
         )
 
+        # Lo que las personas corrigen a menudo en este proveedor no se da por bueno solo con reglas.
+        rules_supplier = ((result.get("fields") or {}).get("supplier_tax_id") or {}).get("value")
+        hints = correction_hints(database, rules_supplier)
+        database.commit()  # cierra la lectura antes de llamar a Claude
+
+        # Fase C (2/2): si las reglas no bastan y hay IA configurada, Claude interpreta y las reglas
+        # validan cada valor (interpretation.merge). Sin ninguna transacción abierta.
+        stage = "interpretación"
+        result = refine(
+            file_path,
+            result,
+            company_tax_ids=tax_ids,
+            company_name=name,
+            extra_reasons=hints,
+        )
+        interpretation = result.get("interpretation") or {}
+
+        # Fases D y E: transacción nueva para guardar el resultado ya validado.
+        if interpretation.get("meta"):
+            meta = interpretation["meta"]
+            add_audit_event(
+                database,
+                action="document.interpretation",
+                entity_type="document",
+                entity_id=document.id,
+                actor="claude",
+                event_data={
+                    "reasons": interpretation.get("reasons"),
+                    "changed": interpretation.get("changed"),
+                    "fallback": interpretation.get("fallback"),
+                    "model": meta.get("served_by") or meta.get("model"),
+                    "input_tokens": meta.get("input_tokens"),
+                    "output_tokens": meta.get("output_tokens"),
+                    "total_tokens": meta.get("total_tokens"),
+                    "cost_usd": meta.get("cost_usd"),
+                    "ms": meta.get("ms"),
+                    "operation_id": meta.get("operation_id"),
+                    "outcome": meta.get("outcome"),
+                },
+            )
+
+        stage = "guardado"
         invoice = persist_extraction_result(
             database,
             document=document,
@@ -777,10 +1021,15 @@ def process_document(
         )
 
         database.commit()
+        log_processing(document, started=started, stage=stage, outcome=document.extraction_status.lower(), interpretation=interpretation)
 
         return invoice
 
     except Exception as error:
+        log_processing(document, started=started, stage=stage, outcome="error", interpretation=interpretation, error=error)
+        # Lo que quedó a medias de la fase de guardado se deshace; el documento y su ExtractionRun ya estaban
+        # confirmados en la fase A y se marcan como fallidos en una transacción limpia.
+        database.rollback()
         document.status = "FAILED"
         document.extraction_status = "FAILED"
         document.failure_reason = str(error)
@@ -836,6 +1085,7 @@ def invoice_snapshot(
         "currency": invoice.currency,
         "concept": invoice.concept,
         "category": invoice.category,
+        "direction": invoice.direction,
         "tax_lines": [
             {
                 "tax_type": line.tax_type,
@@ -948,6 +1198,17 @@ def update_invoice(
 
     after = invoice_snapshot(invoice)
 
+    from app.learning import record_invoice_corrections
+
+    if record_invoice_corrections(database, invoice, before, after, actor):
+        from app.learning import propose_rules
+
+        database.flush()
+        propose_rules(database)  # el patrón se convierte en propuesta aquí, no al consultar la lista
+
+    if before.get("category") != after.get("category"):
+        learn_supplier_rule(database, invoice, actor)
+
     changed_fields = {
         field_name: {
             "before": before.get(field_name),
@@ -998,6 +1259,9 @@ def approve_invoice(
             "posible duplicado antes de aprobar."
         )
 
+    from app.learning import record_invoice_review
+
+    record_invoice_review(database, invoice, "aprobado", actor)
     invoice.review_status = "APPROVED"
     invoice.approved_at = utc_now()
     invoice.rejected_at = None
@@ -1038,6 +1302,9 @@ def reject_invoice(
     reason: str,
     actor: str = "user",
 ) -> Invoice:
+    from app.learning import record_invoice_review
+
+    record_invoice_review(database, invoice, "rechazado", actor, reason)
     invoice.review_status = "REJECTED"
     invoice.rejected_at = utc_now()
     invoice.approved_at = None
@@ -1077,3 +1344,90 @@ def normalize_invoice_number(
     normalized = " ".join(normalized.split())
 
     return normalized or None
+
+
+def reopen_invoice(
+    database: Session,
+    *,
+    invoice: Invoice,
+    reason: str,
+    actor: str = "user",
+) -> Invoice:
+    if invoice.review_status not in {"APPROVED", "REJECTED"}:
+        raise ValueError(
+            "Solo pueden reabrirse facturas aprobadas o rechazadas."
+        )
+
+    previous_status = invoice.review_status
+
+    invoice.review_status = "PENDING"
+    invoice.approved_at = None
+    invoice.rejected_at = None
+    invoice.rejection_reason = None
+
+    update_document_status(
+        invoice.document,
+        invoice,
+    )
+
+    add_audit_event(
+        database,
+        action="invoice.reopened",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        actor=actor,
+        event_data={
+            "document_id": invoice.document_id,
+            "previous_status": previous_status,
+            "reason": reason,
+        },
+    )
+
+    database.commit()
+    database.refresh(invoice)
+
+    return invoice
+
+
+def set_invoice_payment(
+    database: Session,
+    *,
+    invoice: Invoice,
+    paid: bool,
+    paid_at: date | None,
+    payment_method: str | None,
+    actor: str = "user",
+) -> Invoice:
+    if paid and invoice.review_status != "APPROVED":
+        raise ValueError(
+            "Solo pueden marcarse como pagadas las facturas aprobadas."
+        )
+
+    if paid:
+        invoice.paid_at = paid_at or clock.today()
+        invoice.payment_method = payment_method
+        action = "invoice.paid"
+    else:
+        invoice.paid_at = None
+        invoice.payment_method = None
+        action = "invoice.payment_cancelled"
+
+    add_audit_event(
+        database,
+        action=action,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        actor=actor,
+        event_data={
+            "document_id": invoice.document_id,
+            "paid_at": invoice.paid_at,
+            "payment_method": invoice.payment_method,
+            "total": invoice.total,
+        },
+    )
+
+    database.commit()
+    database.refresh(invoice)
+
+    return invoice
+

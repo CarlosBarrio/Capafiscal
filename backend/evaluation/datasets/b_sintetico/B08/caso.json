@@ -1,0 +1,58 @@
+{
+  "case_id": "B08",
+  "conjunto": "B",
+  "bloque": "embargos",
+  "titulo": "Embargo de salario",
+  "descripcion": "El embargado es una persona de la plantilla, no un proveedor: retención en nómina (art. 607 LEC), sin relación de créditos.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "embargo_salario.pdf",
+      "tipo": "embargo",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    },
+    "empleados": [
+      {
+        "first_name": "Pedro",
+        "last_name": "Ficticio Gómez",
+        "tax_id": "00054321H",
+        "hire_date": "2024-02-01"
+      }
+    ]
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "embargo_salario.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "embargo",
+        "procedure": "EMBARGO_SALARIOS",
+        "affected": {
+          "type": "employee",
+          "tax_id": "00054321H"
+        },
+        "debt_amount": 3410.55,
+        "requires_human": true,
+        "requested_documents_excluded": [
+          "RELACION_CREDITOS"
+        ],
+        "insight_contains": [
+          "607"
+        ]
+      }
+    }
+  ],
+  "expected": {}
+}

@@ -1,0 +1,156 @@
+{
+ "status": {
+  "code": "200",
+  "text": "ok"
+ },
+ "data": {
+  "sumario": {
+   "metadatos": {
+    "publicacion": "BOE",
+    "fecha_publicacion": "20260929"
+   },
+   "diario": [
+    {
+     "numero": "999",
+     "sumario_diario": {
+      "identificador": "BOE-S-2026-999"
+     },
+     "seccion": [
+      {
+       "codigo": "1",
+       "nombre": "I. Disposiciones generales",
+       "departamento": [
+        {
+         "codigo": "1",
+         "nombre": "JEFATURA DEL ESTADO",
+         "epigrafe": {
+          "nombre": "Sociedades",
+          "item": {
+           "identificador": "BOE-A-2026-90001",
+           "control": "SIM",
+           "titulo": "Ley 99/2026, de 28 de septiembre, de reforma de las sociedades de capital (SIMULACIÓN).",
+           "url_pdf": {
+            "texto": "https://www.boe.es/boe/dias/2026/09/29/pdfs/BOE-A-2026-90001.pdf"
+           },
+           "url_html": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-90001",
+           "url_xml": "https://www.boe.es/diario_boe/xml.php?id=BOE-A-2026-90001"
+          }
+         }
+        },
+        {
+         "codigo": "2",
+         "nombre": "MINISTERIO DE TRABAJO Y ECONOMÍA SOCIAL",
+         "epigrafe": [
+          {
+           "nombre": "Jornada de trabajo",
+           "item": [
+            {
+             "identificador": "BOE-A-2026-90002",
+             "control": "SIM",
+             "titulo": "Real Decreto 999/2026, de 28 de septiembre, por el que se regula el registro de jornada (SIMULACIÓN).",
+             "url_pdf": {
+              "texto": "https://www.boe.es/boe/dias/2026/09/29/pdfs/BOE-A-2026-90002.pdf"
+             },
+             "url_html": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-90002",
+             "url_xml": "https://www.boe.es/diario_boe/xml.php?id=BOE-A-2026-90002"
+            },
+            {
+             "identificador": "BOE-A-2026-90007",
+             "control": "SIM",
+             "titulo": "Corrección de errores del Real Decreto 998/2026, sobre el registro de jornada (SIMULACIÓN).",
+             "url_pdf": {
+              "texto": "https://www.boe.es/boe/dias/2026/09/29/pdfs/BOE-A-2026-90007.pdf"
+             },
+             "url_html": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-90007",
+             "url_xml": "https://www.boe.es/diario_boe/xml.php?id=BOE-A-2026-90007"
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "codigo": "3",
+         "nombre": "MINISTERIO DE HACIENDA",
+         "epigrafe": [
+          {
+           "nombre": "Impuesto sobre el Valor Añadido",
+           "item": [
+            {
+             "identificador": "BOE-A-2026-90003",
+             "control": "SIM",
+             "titulo": "Orden HAC/999/2026, de 25 de septiembre, por la que se modifica el modelo 303 del impuesto (SIMULACIÓN).",
+             "url_pdf": {
+              "texto": "https://www.boe.es/boe/dias/2026/09/29/pdfs/BOE-A-2026-90003.pdf"
+             },
+             "url_html": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-90003",
+             "url_xml": "https://www.boe.es/diario_boe/xml.php?id=BOE-A-2026-90003"
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "codigo": "4",
+         "nombre": "COMUNIDAD AUTÓNOMA DE CATALUÑA",
+         "item": [
+          {
+           "identificador": "BOE-A-2026-90004",
+           "control": "SIM",
+           "titulo": "Ley 98/2026, de 20 de septiembre, de empleo público de Cataluña (SIMULACIÓN).",
+           "url_pdf": {
+            "texto": "https://www.boe.es/boe/dias/2026/09/29/pdfs/BOE-A-2026-90004.pdf"
+           },
+           "url_html": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-90004",
+           "url_xml": "https://www.boe.es/diario_boe/xml.php?id=BOE-A-2026-90004"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "codigo": "2B",
+       "nombre": "II. Autoridades y personal. - B. Oposiciones y concursos",
+       "departamento": {
+        "codigo": "2",
+        "nombre": "MINISTERIO DE TRABAJO Y ECONOMÍA SOCIAL",
+        "item": {
+         "identificador": "BOE-A-2026-90005",
+         "control": "SIM",
+         "titulo": "Resolución por la que se convoca proceso selectivo de inspección de trabajo (SIMULACIÓN).",
+         "url_pdf": {
+          "texto": "https://www.boe.es/boe/dias/2026/09/29/pdfs/BOE-A-2026-90005.pdf"
+         },
+         "url_html": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-90005",
+         "url_xml": "https://www.boe.es/diario_boe/xml.php?id=BOE-A-2026-90005"
+        }
+       }
+      },
+      {
+       "codigo": "3",
+       "nombre": "III. Otras disposiciones",
+       "departamento": [
+        {
+         "codigo": "2",
+         "nombre": "MINISTERIO DE TRABAJO Y ECONOMÍA SOCIAL",
+         "epigrafe": {
+          "nombre": "Convenios colectivos de trabajo",
+          "item": {
+           "identificador": "BOE-A-2026-90006",
+           "control": "SIM",
+           "titulo": "Resolución de 15 de septiembre de 2026, por la que se registra y publica el Convenio colectivo de talleres de ejemplo (SIMULACIÓN).",
+           "url_pdf": {
+            "texto": "https://www.boe.es/boe/dias/2026/09/29/pdfs/BOE-A-2026-90006.pdf"
+           },
+           "url_html": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-90006",
+           "url_xml": "https://www.boe.es/diario_boe/xml.php?id=BOE-A-2026-90006"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

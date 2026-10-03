@@ -1,0 +1,126 @@
+{
+  "nota": "SIMULACIÓN — NO OFICIAL. Generado por generar.py: no editar a mano.",
+  "empresa": {
+    "name": "EMPRESA EJEMPLO S.L.",
+    "tax_id": "B00100016"
+  },
+  "casos": [
+    {
+      "id": "D01-REQ-ACCESO",
+      "tags": [
+        "requerimiento",
+        "plazo",
+        "fecha de acceso"
+      ],
+      "expected": {
+        "organismo": "AEAT",
+        "tipo": "REQUERIMIENTO",
+        "expediente": "202609SIM0001111A",
+        "puesta_disposicion": "2026-09-25",
+        "notificada": "2026-09-28",
+        "fecha_limite": "2026-10-13",
+        "documentacion": [
+          "LIBRO_RECIBIDAS"
+        ],
+        "accion": "ACTION_REQUIRED",
+        "expediente_creado": true
+      }
+    },
+    {
+      "id": "D02-REQ-DOCUMENTOS",
+      "tags": [
+        "requerimiento",
+        "documentación solicitada"
+      ],
+      "expected": {
+        "organismo": "AEAT",
+        "tipo": "REQUERIMIENTO",
+        "expediente": "202609SIM0002222B",
+        "notificada": "2026-09-30",
+        "fecha_limite": "2026-10-15",
+        "documentacion": [
+          "EXTRACTOS",
+          "LIBRO_EMITIDAS",
+          "LIBRO_RECIBIDAS"
+        ],
+        "accion": "ACTION_REQUIRED",
+        "expediente_creado": true
+      }
+    },
+    {
+      "id": "D03-PUESTA-SIN-ACCESO",
+      "tags": [
+        "puesta a disposición",
+        "sin acceso",
+        "solo metadatos"
+      ],
+      "expected": {
+        "organismo": "AEAT",
+        "tipo": "REQUERIMIENTO",
+        "puesta_disposicion": "2026-09-14",
+        "fecha_limite": "2026-10-08",
+        "accion": "ACTION_REQUIRED",
+        "expediente_creado": true
+      }
+    },
+    {
+      "id": "D04-INFORMATIVA",
+      "tags": [
+        "informativa",
+        "sin plazo"
+      ],
+      "expected": {
+        "organismo": "AEAT",
+        "tipo": "COMUNICACION",
+        "notificada": "2026-09-29",
+        "fecha_limite": null,
+        "documentacion": [],
+        "accion": "INFORMATIONAL"
+      }
+    },
+    {
+      "id": "D05-PROPUESTA",
+      "tags": [
+        "propuesta de liquidación",
+        "plazo calculable"
+      ],
+      "expected": {
+        "organismo": "AEAT",
+        "tipo": "PROPUESTA_LIQUIDACION",
+        "expediente": "202609SIM0003333C",
+        "notificada": "2026-10-01",
+        "fecha_limite": "2026-10-16",
+        "accion": "ACTION_REQUIRED",
+        "expediente_creado": true
+      }
+    },
+    {
+      "id": "D06-APREMIO",
+      "tags": [
+        "apremio",
+        "plazo calculable",
+        "solo metadatos"
+      ],
+      "expected": {
+        "organismo": "TGSS",
+        "tipo": "APREMIO",
+        "notificada": "2026-10-05",
+        "fecha_limite": "2026-10-20",
+        "accion": "ACTION_REQUIRED",
+        "expediente_creado": true
+      }
+    },
+    {
+      "id": "D07-AMBIGUO",
+      "tags": [
+        "ambiguo",
+        "solo metadatos"
+      ],
+      "expected": {
+        "organismo": "AYUNTAMIENTO",
+        "accion_no_es": "INFORMATIONAL",
+        "expediente_creado": true
+      }
+    }
+  ]
+}

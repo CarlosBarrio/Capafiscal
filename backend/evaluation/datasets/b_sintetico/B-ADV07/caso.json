@@ -1,0 +1,48 @@
+{
+  "case_id": "B-ADV07",
+  "conjunto": "B",
+  "bloque": "adversarial",
+  "titulo": "Fecha ambigua 4/5/26",
+  "descripcion": "Formato corto: en España es día/mes (4 de mayo de 2026), no mes/día.",
+  "etiquetas": [
+    "adversarial",
+    "ambiguo"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "factura_fecha_corta.pdf",
+      "tipo": "factura",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "factura_fecha_corta.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_name": "Limpiezas Imaginarias Ubierna S.L.",
+          "supplier_tax_id": "B00400044",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "LIU-0504",
+          "invoice_date": "2026-05-04",
+          "subtotal": "180.00",
+          "tax_total": "37.80",
+          "total": "217.80"
+        }
+      }
+    }
+  ],
+  "expected": {}
+}

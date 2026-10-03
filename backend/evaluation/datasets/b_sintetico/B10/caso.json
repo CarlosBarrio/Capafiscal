@@ -1,0 +1,46 @@
+{
+  "case_id": "B10",
+  "conjunto": "B",
+  "bloque": "seguridad_social",
+  "titulo": "TGSS: reclamación de deuda",
+  "descripcion": "Reclamación de cuotas no ingresadas: es un pago con plazo, no un requerimiento de documentación.",
+  "etiquetas": [
+    "limpio",
+    "ambiguo"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "tgss_reclamacion_deuda.pdf",
+      "tipo": "reclamacion_deuda",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "tgss_reclamacion_deuda.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "requerimiento",
+        "procedure": "LIQUIDACION",
+        "procedure_not": [
+          "REQUERIMIENTO"
+        ],
+        "issuer": "TGSS",
+        "debt_amount": 3528.22,
+        "deadline": "2026-09-30",
+        "requires_human": true
+      }
+    }
+  ],
+  "expected": {}
+}

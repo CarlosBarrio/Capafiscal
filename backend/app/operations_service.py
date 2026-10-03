@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from app import clock
+import re
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -15,6 +17,7 @@ from app.models import AuditEvent
 from app.models import Document
 from app.models import Invoice
 from app.models import Task
+from app.task_service import PRIORITY_ORDER
 
 
 UTC = timezone.utc
@@ -79,7 +82,7 @@ class RiskItem:
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return clock.now()
 
 
 def decimal_to_number(value: Decimal | None) -> float | None:
@@ -345,7 +348,7 @@ def build_document_risks(
         )
 
     if invoice.invoice_date is not None:
-        today = datetime.now().date()
+        today = clock.today()
 
         if invoice.invoice_date > today:
             risks.append(
@@ -366,6 +369,44 @@ def build_document_risks(
     return risks
 
 
+def build_extra_risks(database: Session) -> list[RiskItem]:
+    """Riesgos de notificaciones, plazos fiscales y cumplimiento."""
+    from app.agenda_service import build_agenda
+
+    severity_by_level = {
+        "overdue": "CRITICAL",
+        "critical": "CRITICAL",
+        "high": "HIGH",
+    }
+    risks: list[RiskItem] = []
+
+    for item in build_agenda(database, horizon_days=10)["items"]:
+        severity = severity_by_level.get(item["level"])
+
+        if severity is None:
+            continue
+
+        risks.append(
+            RiskItem(
+                code=item["code"],
+                severity=severity,
+                title=item["title"],
+                explanation=item["detail"],
+                recommended_action=item["action"],
+                entity_type=item["entity_type"],
+                entity_id=item["entity_id"],
+                document_id=item.get("document_id"),
+                amount=(
+                    Decimal(str(item["amount"]))
+                    if item.get("amount") is not None
+                    else None
+                ),
+            )
+        )
+
+    return risks
+
+
 def list_open_risks(
     database: Session,
     *,
@@ -380,17 +421,25 @@ def list_open_risks(
             "APPROVED",
             "REJECTED",
             "EXPORTED",
-        }:
+            "RESOLVED",
+        } or document.kind == "NOTIFICATION":
             continue
 
         risks.extend(build_document_risks(document))
 
-    risks.sort(
-        key=lambda risk: (
+    risks.extend(build_extra_risks(database))
+
+    def sort_key(risk: RiskItem) -> tuple[int, int, datetime]:
+        # SQLite devuelve fechas sin zona: se comparan todas sin zona.
+        created = risk.created_at.replace(tzinfo=None) if risk.created_at else datetime.max
+
+        return (
             RISK_SEVERITY_ORDER.get(risk.severity, 99),
-            risk.created_at or utc_now(),
+            0 if risk.created_at is None else 1,
+            created,
         )
-    )
+
+    risks.sort(key=sort_key)
 
     return [
         risk.to_dict()
@@ -415,7 +464,7 @@ def build_agent_catalog(
     documents_today = sum(
         1
         for document in documents
-        if document.created_at.date() == datetime.now().date()
+        if document.created_at.date() == clock.today()
     )
 
     processed_documents = sum(
@@ -554,7 +603,7 @@ def build_today_dashboard(
     risks = list_open_risks(database, limit=20)
     agents = build_agent_catalog(database)
 
-    today = datetime.now().date()
+    today = clock.today()
 
     documents_today = [
         document
@@ -583,12 +632,20 @@ def build_today_dashboard(
             )
         )
         .order_by(
-            Task.priority.asc(),
+            PRIORITY_ORDER,
             Task.created_at.asc(),
         )
         .limit(8)
     )
     tasks = list(database.scalars(open_tasks_statement).all())
+
+    open_tasks_count = int(
+        database.scalar(
+            select(func.count(Task.id))
+            .where(Task.status.in_(OPEN_TASK_STATUSES))
+        )
+        or 0
+    )
 
     recommendation: dict[str, Any]
 
@@ -648,8 +705,8 @@ def build_today_dashboard(
             "documents_today": len(documents_today),
             "processed_today": len(processed_today),
             "pending_documents": len(pending_documents),
-            "open_risks": len(risks),
-            "open_tasks": len(tasks),
+            "open_risks": len(list_open_risks(database, limit=500)),
+            "open_tasks": open_tasks_count,
         },
         "recommendation": recommendation,
         "risks": risks[:5],
@@ -739,9 +796,11 @@ def build_monthly_impact(
         if task.status == "RESOLVED"
     ]
 
+    from app.company_service import hourly_cost as configured_hourly_cost
+
     minutes_per_processed_document = 7
     minutes_per_risk_prevented = 12
-    hourly_cost = Decimal("25.00")
+    hourly_cost = configured_hourly_cost(database)
 
     saved_minutes = (
         len(processed) * minutes_per_processed_document
@@ -764,7 +823,8 @@ def build_monthly_impact(
         "calculation_note": (
             "Estimación operativa: 7 minutos por documento procesado "
             "y 12 minutos adicionales por incidencia detectada, "
-            "valorados a 25 €/hora. No representa ahorro garantizado."
+            f"valorados a {float(hourly_cost):.0f} €/hora (configurable en "
+            "Mi empresa). No representa ahorro garantizado."
         ),
     }
 
@@ -873,6 +933,68 @@ def connector_catalog(
     ]
 
 
+QUARTER_WORDS = {
+    "primer": 1,
+    "1er": 1,
+    "segundo": 2,
+    "tercer": 3,
+    "cuarto": 4,
+}
+
+
+def parse_question_period(
+    normalized_question: str,
+) -> tuple[int, int | None]:
+    """
+    Extrae año y trimestre de la pregunta. Por defecto, el trimestre
+    en curso del año actual.
+    """
+    today = clock.today()
+    year_match = re.search(r"\b(20\d{2})\b", normalized_question)
+    year = int(year_match.group(1)) if year_match else today.year
+
+    quarter: int | None = None
+
+    quarter_match = re.search(
+        r"\b([1-4])\s*(?:t|º?\s*trimestre)\b",
+        normalized_question,
+    )
+
+    if quarter_match:
+        quarter = int(quarter_match.group(1))
+    else:
+        for word, number in QUARTER_WORDS.items():
+            if f"{word} trimestre" in normalized_question:
+                quarter = number
+                break
+
+    if quarter is None and "anual" not in normalized_question:
+        if "trimestre anterior" in normalized_question:
+            current_quarter = (today.month - 1) // 3 + 1
+            quarter = current_quarter - 1 or 4
+            if current_quarter == 1 and not year_match:
+                year -= 1
+        else:
+            quarter = (today.month - 1) // 3 + 1
+
+    return year, quarter
+
+
+def format_eur(value: float | Decimal | None) -> str:
+    amount = float(value or 0)
+    text = f"{amount:,.2f}"
+    return text.replace(",", "X").replace(".", ",").replace("X", ".") + " €"
+
+
+def format_day(value: str | None) -> str:
+    if not value:
+        return "—"
+
+    year, month, day = value[:10].split("-")
+
+    return f"{day}/{month}/{year}"
+
+
 def assistant_answer(
     database: Session,
     question: str,
@@ -893,6 +1015,371 @@ def assistant_answer(
             ),
         }
 
+    from app.bank_service import build_business_health
+    from app.notification_service import list_notifications
+    from app.reports_service import build_payments_overview
+    from app.reports_service import build_supplier_list
+    from app.reports_service import build_vat_report
+    from app.tax_service import build_tax_calendar
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "equipo", "plantilla", "empleado", "trabajador", "vacaciones",
+            "nomina", "nómina", "sueldo", "personal", "organigrama",
+        )
+    ):
+        from app.team_service import build_team_overview
+
+        overview = build_team_overview(database)
+
+        if not overview["headcount"] and not overview["incoming"]:
+            return {
+                "answer": "Aún no hay personas dadas de alta en Equipo.",
+                "sources": [],
+                "mode": "internal_data",
+                "warning": "Añade tu plantilla en la sección Equipo.",
+            }
+
+        answer = (
+            f"Tienes {overview['headcount']} persona(s) en plantilla "
+            f"({str(overview['fte']).replace('.', ',')} jornadas completas)"
+            + (f" y {overview['incoming']} incorporación(es) próxima(s)" if overview["incoming"] else "")
+            + f". Coste anual estimado: {format_eur(overview['annual_cost'])}."
+        )
+
+        if overview["absent_today"]:
+            answer += " Hoy no están: " + ", ".join(
+                f"{item['employee_name']} ({item['kind_label'].lower()})"
+                for item in overview["absent_today"]
+            ) + "."
+
+        if overview["alerts"]:
+            first = overview["alerts"][0]
+            answer += (
+                f" Pendiente urgente: {first['title'].lower()} de {first['employee_name']}."
+            )
+
+        return {
+            "answer": answer,
+            "sources": [],
+            "mode": "internal_data",
+            "warning": "Costes estimados con los parámetros de cotización configurados.",
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "notificacion",
+            "notificación",
+            "requerimiento",
+            "hacienda",
+            "apremio",
+            "embargo",
+            "multa",
+            "sancion",
+            "sanción",
+            "seguridad social",
+            "dehu",
+            "dehú",
+        )
+    ):
+        open_notifications = list_notifications(database, only_open=True)
+
+        if not open_notifications:
+            return {
+                "answer": "No tienes notificaciones administrativas abiertas.",
+                "sources": [],
+                "mode": "internal_data",
+                "warning": "Solo se consideran notificaciones registradas en CapaFiscal.",
+            }
+
+        first = open_notifications[0]
+        answer = (
+            f"Tienes {len(open_notifications)} notificación(es) abierta(s). "
+            f"La más urgente: {first['title']}"
+        )
+
+        if first["deadline"]:
+            answer += f", con plazo orientativo hasta el {format_day(first['deadline'])}"
+
+            if first["days_left"] is not None and first["days_left"] < 0:
+                answer += " (ya vencido: actúa cuanto antes)"
+
+        answer += "."
+
+        return {
+            "answer": answer,
+            "sources": [
+                {
+                    "type": "notification",
+                    "document_id": item["document_id"],
+                    "label": (
+                        f"{item['title']}"
+                        + (f" · vence {format_day(item['deadline'])}" if item["deadline"] else "")
+                    ),
+                }
+                for item in open_notifications[:5]
+            ],
+            "mode": "internal_data",
+            "warning": (
+                "Plazos orientativos calculados por reglas; confírmalos con "
+                "tu asesor y la fecha real de notificación."
+            ),
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in ("calendario", "presentar", "proximo modelo", "próximo modelo", "plazos fiscales", "que modelos", "qué modelos")
+    ):
+        today = clock.today()
+        upcoming = [
+            entry
+            for entry in build_tax_calendar(database, year=today.year)["entries"]
+            + build_tax_calendar(database, year=today.year + 1)["entries"]
+            if entry["status"] in {"OVERDUE", "DUE_SOON", "UPCOMING"}
+        ][:6]
+
+        if not upcoming:
+            return {
+                "answer": "No hay modelos pendientes de presentar en el calendario.",
+                "sources": [],
+                "mode": "internal_data",
+                "warning": "Calendario general de la AEAT; revisa obligaciones específicas.",
+            }
+
+        listing = "; ".join(
+            f"{entry['model']} {entry['period_label']} hasta el {format_day(entry['due_date'])}"
+            + (f" (≈ {format_eur(entry['estimate'])})" if entry.get("estimate") else "")
+            for entry in upcoming[:4]
+        )
+
+        return {
+            "answer": f"Próximas obligaciones: {listing}.",
+            "sources": [],
+            "mode": "internal_data",
+            "warning": "Importes estimados con facturas aprobadas; no son autoliquidaciones.",
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in ("beneficio", "negocio", "margen", "cobrar", "cobros", "me deben", "facturado", "ingresos", "tesoreria", "tesorería", "caja")
+    ):
+        year, quarter = parse_question_period(normalized_question)
+        health = build_business_health(
+            database,
+            year=year,
+            quarter=quarter,
+        )
+        answer = (
+            f"{health['period']}: ingresos {format_eur(health['income'])}, gastos "
+            f"{format_eur(health['expenses'])} y resultado {format_eur(health['result'])}."
+            f" Pendiente de cobro: {format_eur(health['receivables_total'])}"
+            + (f" ({format_eur(health['receivables_overdue'])} vencido)" if health["receivables_overdue"] else "")
+            + f"; pendiente de pago: {format_eur(health['payables_total'])}."
+        )
+
+        if health["bank_balance"] is not None:
+            answer += f" Saldo en banco: {format_eur(health['bank_balance'])}."
+
+        if health["insights"]:
+            answer += " " + " ".join(health["insights"][:2])
+
+        return {
+            "answer": answer,
+            "sources": [],
+            "mode": "internal_data",
+            "warning": health["note"],
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "pago",
+            "pagar",
+            "pagad",
+            "vencid",
+            "vence",
+            "vencimiento",
+            "deuda",
+            "debo",
+        )
+    ):
+        payments = build_payments_overview(database)
+
+        if not payments["unpaid_count"]:
+            return {
+                "answer": (
+                    "No hay facturas aprobadas pendientes de pago."
+                ),
+                "sources": [],
+                "mode": "internal_data",
+                "warning": (
+                    "Solo se consideran facturas aprobadas sin fecha "
+                    "de pago registrada."
+                ),
+            }
+
+        answer = (
+            f"Tienes {payments['unpaid_count']} factura(s) aprobada(s) "
+            f"sin pagar por {format_eur(payments['unpaid_total'])}."
+        )
+
+        if payments["overdue_count"]:
+            answer += (
+                f" {payments['overdue_count']} están vencidas "
+                f"({format_eur(payments['overdue_total'])})."
+            )
+
+        if payments["due_soon_count"]:
+            answer += (
+                f" {payments['due_soon_count']} vence(n) en los próximos "
+                f"7 días ({format_eur(payments['due_soon_total'])})."
+            )
+
+        return {
+            "answer": answer,
+            "sources": [
+                {
+                    "type": "invoice",
+                    "document_id": item["document_id"],
+                    "invoice_id": item["invoice_id"],
+                    "label": (
+                        f"{item['supplier_name'] or 'Proveedor'} · "
+                        f"{format_eur(item['total'])}"
+                        + (
+                            f" · vence {format_day(item['due_date'])}"
+                            if item["due_date"]
+                            else ""
+                        )
+                    ),
+                }
+                for item in payments["items"][:6]
+            ],
+            "mode": "internal_data",
+            "warning": (
+                "Los pagos se registran manualmente en CapaFiscal; "
+                "no se consulta el banco."
+            ),
+        }
+
+    if any(
+        keyword in normalized_question
+        for keyword in (
+            "trimestre",
+            "303",
+            "modelo",
+            "liquidacion",
+            "liquidación",
+        )
+    ) or re.search(r"\b[1-4]t\b", normalized_question):
+        year, quarter = parse_question_period(normalized_question)
+        report = build_vat_report(
+            database,
+            year=year,
+            quarter=quarter,
+        )
+
+        rates_text = "; ".join(
+            f"{item['label']}: base {format_eur(item['base'])}, "
+            f"cuota {format_eur(item['tax'])}"
+            for item in report["by_rate"]
+        )
+
+        answer = (
+            f"{report['period']}: {report['approved_invoices']} "
+            f"factura(s) recibida(s) aprobada(s), base "
+            f"{format_eur(report['total_base'])} e IVA soportado "
+            f"{format_eur(report['total_tax'])}."
+        )
+
+        if rates_text:
+            answer += f" Desglose por tipo: {rates_text}."
+
+        if report["total_withholding"]:
+            answer += (
+                f" Retenciones practicadas: "
+                f"{format_eur(report['total_withholding'])}."
+            )
+
+        if quarter:
+            from app.tax_service import build_model_303
+
+            model_303 = build_model_303(database, year=year, quarter=quarter)
+            answer += (
+                f" IVA repercutido en ventas: {format_eur(report['issued_tax'])}. "
+                f"Resultado estimado del modelo 303: "
+                f"{format_eur(model_303['result'])} ({model_303['outcome'].lower()})."
+            )
+
+        if report["warnings"]:
+            answer += " " + " ".join(report["warnings"])
+
+        return {
+            "answer": answer,
+            "sources": [],
+            "mode": "internal_data",
+            "warning": report["note"],
+        }
+
+    suppliers = build_supplier_list(database)
+
+    for supplier in suppliers:
+        name_words = [
+            word
+            for word in re.findall(
+                r"[a-záéíóúñ0-9]+",
+                (supplier["name"] or "").lower(),
+            )
+            if len(word) >= 4
+            and word not in {"s.a.", "espana", "españa", "clientes",
+                             "comercial", "servicios", "energia"}
+        ]
+
+        matches_name = bool(name_words) and name_words[0] in (
+            normalized_question
+        )
+        matches_tax_id = bool(supplier["tax_id"]) and (
+            supplier["tax_id"].lower() in normalized_question
+        )
+
+        if not (matches_name or matches_tax_id):
+            continue
+
+        answer = (
+            f"{supplier['name'] or supplier['tax_id']}: "
+            f"{supplier['approved_invoices']} factura(s) aprobada(s) por "
+            f"{format_eur(supplier['total_approved'])} "
+            f"(IVA {format_eur(supplier['tax_approved'])})."
+        )
+
+        if supplier["pending_invoices"]:
+            answer += (
+                f" Además hay {supplier['pending_invoices']} "
+                "pendiente(s) de revisión."
+            )
+
+        if supplier["unpaid_amount"]:
+            answer += (
+                f" Pendiente de pago: "
+                f"{format_eur(supplier['unpaid_amount'])}."
+            )
+
+        if supplier["last_invoice_date"]:
+            answer += (
+                f" Última factura: "
+                f"{format_day(supplier['last_invoice_date'])}."
+            )
+
+        return {
+            "answer": answer,
+            "sources": [],
+            "mode": "internal_data",
+            "warning": (
+                "Datos de facturas registradas en CapaFiscal."
+            ),
+        }
+
     documents = load_documents_with_invoices(database)
     risks = list_open_risks(database, limit=100)
 
@@ -902,10 +1389,12 @@ def assistant_answer(
         if document.invoice is not None
     ]
 
+    # Solo gastos: las emitidas se consultan en impuestos y negocio.
     approved_invoices = [
         invoice
         for invoice in invoices
         if invoice.review_status == "APPROVED"
+        and invoice.direction != "ISSUED"
     ]
 
     open_tasks_statement = (
@@ -1161,7 +1650,8 @@ def assistant_answer(
         "answer": (
             "Todavía no tengo una respuesta específica para esa "
             "consulta. Puedo ayudarte con: riesgos, tareas, facturas, "
-            "gasto aprobado, IVA soportado o un resumen de situación."
+            "gasto aprobado, IVA soportado de un trimestre, pagos "
+            "pendientes, un proveedor concreto o un resumen de situación."
         ),
         "sources": [],
         "mode": "internal_data",

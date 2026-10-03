@@ -1,0 +1,76 @@
+{
+  "case_id": "B17",
+  "conjunto": "B",
+  "bloque": "memoria",
+  "titulo": "Factura duplicada FAC-2026-145",
+  "descripcion": "La misma factura llega dos veces en archivos distintos (otro PDF, mismo contenido fiscal). El Detector debe avisar.",
+  "etiquetas": [
+    "expediente"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "FAC-2026-145.pdf",
+      "tipo": "factura",
+      "nota": ""
+    },
+    {
+      "archivo": "FAC-2026-145_copia.pdf",
+      "tipo": "factura",
+      "nota": "Segundo envío de la misma factura"
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "FAC-2026-145.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_name": "Transportes Simulados Esla S.L.",
+          "supplier_tax_id": "B00300038",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "FAC-2026-145",
+          "invoice_date": "2026-09-12",
+          "subtotal": "1240.00",
+          "tax_total": "260.40",
+          "total": "1500.40"
+        },
+        "duplicate": false
+      }
+    },
+    {
+      "tipo": "subida",
+      "archivo": "FAC-2026-145_copia.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_name": "Transportes Simulados Esla S.L.",
+          "supplier_tax_id": "B00300038",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "FAC-2026-145",
+          "invoice_date": "2026-09-12",
+          "subtotal": "1240.00",
+          "tax_total": "260.40",
+          "total": "1500.40"
+        },
+        "duplicate": true,
+        "expected_findings": [
+          "POSIBLE_DUPLICADO"
+        ],
+        "requires_human": true
+      }
+    }
+  ],
+  "expected": {}
+}

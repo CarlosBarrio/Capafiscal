@@ -1,0 +1,70 @@
+{
+  "case_id": "B07",
+  "conjunto": "B",
+  "bloque": "embargos",
+  "titulo": "Embargo sin pago pendiente",
+  "descripcion": "El proveedor embargado está pagado al día: hay que contestar que no existen créditos.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "embargo_sin_deuda.pdf",
+      "tipo": "embargo",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    },
+    "facturas": [
+      {
+        "supplier_name": "Limpiezas Imaginarias Ubierna S.L.",
+        "supplier_tax_id": "B00400044",
+        "invoice_number": "LIU-0712",
+        "invoice_date": "2026-07-31",
+        "subtotal": "400.00",
+        "tax_total": "84.00",
+        "total": "484.00",
+        "paid_at": "2026-08-05"
+      },
+      {
+        "supplier_name": "Limpiezas Imaginarias Ubierna S.L.",
+        "supplier_tax_id": "B00400044",
+        "invoice_number": "LIU-0831",
+        "invoice_date": "2026-08-31",
+        "subtotal": "400.00",
+        "tax_total": "84.00",
+        "total": "484.00",
+        "paid_at": "2026-09-04"
+      }
+    ]
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "embargo_sin_deuda.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "embargo",
+        "procedure": "EMBARGO_CREDITOS",
+        "affected": {
+          "type": "supplier",
+          "tax_id": "B00400044"
+        },
+        "debt_amount": 1540.0,
+        "credit_amount": 0.0,
+        "requires_human": true,
+        "expected_findings": [
+          "no_pending_payment"
+        ]
+      }
+    }
+  ],
+  "expected": {}
+}

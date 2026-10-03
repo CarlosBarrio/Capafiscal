@@ -1,0 +1,8 @@
+{
+  "identifier": "D01-REQ-ACCESO",
+  "issuer": "Agencia Estatal de Administración Tributaria",
+  "subject": "Requerimiento de información",
+  "holder_tax_id": "B00100016",
+  "available_at": "2026-09-25",
+  "accessed_at": "2026-09-28"
+}

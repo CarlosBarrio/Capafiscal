@@ -1,0 +1,79 @@
+{
+  "case_id": "B23",
+  "conjunto": "B",
+  "bloque": "correo",
+  "titulo": "RE: Factura septiembre con original y rectificativa",
+  "descripcion": "Un hilo de respuesta con dos adjuntos: la factura original y su rectificativa.",
+  "etiquetas": [
+    "expediente",
+    "contradictorio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "TSE-2026-09B.pdf",
+      "tipo": "factura",
+      "nota": ""
+    },
+    {
+      "archivo": "TSE-R-2026-004.pdf",
+      "tipo": "factura_rectificativa",
+      "nota": ""
+    },
+    {
+      "archivo": "re_factura_septiembre.eml",
+      "tipo": "correo",
+      "nota": "Adjuntos: TSE-2026-09B.pdf, TSE-R-2026-004.pdf"
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "correo",
+      "archivo": "re_factura_septiembre.eml",
+      "expected_adjuntos": [
+        {
+          "type": "INVOICE",
+          "invoice": {
+            "direction": "RECEIVED",
+            "supplier_name": "Transportes Simulados Esla S.L.",
+            "supplier_tax_id": "B00300038",
+            "customer_tax_id": "B00100016",
+            "invoice_number": "TSE-2026-09B",
+            "invoice_date": "2026-09-25",
+            "subtotal": "640.00",
+            "tax_total": "134.40",
+            "total": "774.40"
+          },
+          "duplicate": false
+        },
+        {
+          "type": "INVOICE",
+          "invoice": {
+            "direction": "RECEIVED",
+            "supplier_name": "Transportes Simulados Esla S.L.",
+            "supplier_tax_id": "B00300038",
+            "customer_tax_id": "B00100016",
+            "invoice_number": "TSE-R-2026-004",
+            "invoice_date": "2026-09-29",
+            "subtotal": "-140.00",
+            "tax_total": "-29.40",
+            "total": "-169.40"
+          },
+          "duplicate": false,
+          "findings_excluded": [
+            "POSIBLE_DUPLICADO"
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": {}
+}

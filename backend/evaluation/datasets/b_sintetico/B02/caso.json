@@ -1,0 +1,49 @@
+{
+  "case_id": "B02",
+  "conjunto": "B",
+  "bloque": "aeat",
+  "titulo": "Requerimiento que menciona «factura» muchas veces",
+  "descripcion": "La palabra «factura» aparece unas 18 veces porque el requerimiento pide facturas concretas. Sigue siendo un requerimiento, no una factura.",
+  "etiquetas": [
+    "ambiguo",
+    "adversarial"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "requerimiento_facturas.pdf",
+      "tipo": "requerimiento",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "requerimiento_facturas.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "requerimiento",
+        "procedure": "COMPROBACION_LIMITADA",
+        "issuer": "AEAT",
+        "reference": "202609SIM0002345B",
+        "deadline": "2026-10-05",
+        "requires_human": true,
+        "requested_documents": [
+          "FACTURAS",
+          "JUSTIFICANTE_PAGO",
+          "LIBRO_RECIBIDAS"
+        ],
+        "not_invoice": true
+      }
+    }
+  ],
+  "expected": {}
+}

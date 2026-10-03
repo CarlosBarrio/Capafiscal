@@ -1,0 +1,91 @@
+{
+  "case_id": "B06",
+  "conjunto": "B",
+  "bloque": "embargos",
+  "titulo": "Embargo de pagos sucesivos",
+  "descripcion": "Servicio mensual de 1.250 €; deuda 6.200 €. Hay que retener cada pago mensual hasta completar la deuda, no solo el pendiente de hoy.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "embargo_pagos_sucesivos.pdf",
+      "tipo": "embargo",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    },
+    "facturas": [
+      {
+        "supplier_name": "Transportes Simulados Esla S.L.",
+        "supplier_tax_id": "B00300038",
+        "invoice_number": "TSE-2026-06",
+        "invoice_date": "2026-06-30",
+        "subtotal": "1033.06",
+        "tax_total": "216.94",
+        "total": "1250.00",
+        "paid_at": "2026-07-10"
+      },
+      {
+        "supplier_name": "Transportes Simulados Esla S.L.",
+        "supplier_tax_id": "B00300038",
+        "invoice_number": "TSE-2026-07",
+        "invoice_date": "2026-07-30",
+        "subtotal": "1033.06",
+        "tax_total": "216.94",
+        "total": "1250.00",
+        "paid_at": "2026-08-10"
+      },
+      {
+        "supplier_name": "Transportes Simulados Esla S.L.",
+        "supplier_tax_id": "B00300038",
+        "invoice_number": "TSE-2026-08",
+        "invoice_date": "2026-08-30",
+        "subtotal": "1033.06",
+        "tax_total": "216.94",
+        "total": "1250.00",
+        "paid_at": "2026-09-10"
+      },
+      {
+        "supplier_name": "Transportes Simulados Esla S.L.",
+        "supplier_tax_id": "B00300038",
+        "invoice_number": "TSE-2026-09",
+        "invoice_date": "2026-09-30",
+        "subtotal": "1033.06",
+        "tax_total": "216.94",
+        "total": "1250.00",
+        "paid_at": null
+      }
+    ]
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "embargo_pagos_sucesivos.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "embargo",
+        "procedure": "EMBARGO_CREDITOS",
+        "affected": {
+          "type": "supplier",
+          "tax_id": "B00300038"
+        },
+        "debt_amount": 6200.0,
+        "credit_amount": 1250.0,
+        "deadline": "2026-10-07",
+        "requires_human": true,
+        "expected_findings": [
+          "successive_payments"
+        ]
+      }
+    }
+  ],
+  "expected": {}
+}

@@ -1,0 +1,126 @@
+{
+  "case_id": "B16",
+  "conjunto": "B",
+  "bloque": "memoria",
+  "titulo": "Requerimiento con facturas y 303 presentado (falta la factura 003)",
+  "descripcion": "El requerimiento pide tres facturas concretas y el 303 del 2T. Solo existen la 001 y la 002: el Perseguidor debe pedir la 003.",
+  "etiquetas": [
+    "expediente"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "factura_SFD-2026-001.pdf",
+      "tipo": "factura",
+      "nota": ""
+    },
+    {
+      "archivo": "factura_SFD-2026-002.pdf",
+      "tipo": "factura",
+      "nota": ""
+    },
+    {
+      "archivo": "requerimiento_facturas_303.pdf",
+      "tipo": "requerimiento",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    },
+    "presentaciones": [
+      {
+        "model": "303",
+        "year": 2026,
+        "period": 2,
+        "filed_at": "2026-07-17",
+        "amount": "1984.37"
+      }
+    ]
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "factura_SFD-2026-001.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_name": "Suministros Ficticios Duero S.L.",
+          "supplier_tax_id": "B00200022",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "SFD-2026-001",
+          "invoice_date": "2026-04-08",
+          "subtotal": "820.00",
+          "tax_total": "172.20",
+          "total": "992.20"
+        }
+      }
+    },
+    {
+      "tipo": "subida",
+      "archivo": "factura_SFD-2026-002.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_name": "Suministros Ficticios Duero S.L.",
+          "supplier_tax_id": "B00200022",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "SFD-2026-002",
+          "invoice_date": "2026-04-29",
+          "subtotal": "935.00",
+          "tax_total": "196.35",
+          "total": "1131.35"
+        }
+      }
+    },
+    {
+      "tipo": "subida",
+      "archivo": "requerimiento_facturas_303.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "requerimiento",
+        "procedure": "COMPROBACION_LIMITADA",
+        "deadline": "2026-10-13",
+        "requires_human": true,
+        "requested_documents": [
+          "FACTURAS",
+          "MODELOS"
+        ],
+        "expected_findings": [
+          "PERIODO_PRESENTADO"
+        ],
+        "tax_reference": {
+          "model": "303",
+          "year": 2026,
+          "quarter": 2
+        },
+        "expected_agents": [
+          "memoria",
+          "perseguidor"
+        ],
+        "document_status": {
+          "FACTURAS": [
+            "partial",
+            "missing",
+            "requested"
+          ]
+        },
+        "insight_contains": [
+          "SFD-2026-003"
+        ]
+      }
+    }
+  ],
+  "expected": {
+    "memory": {
+      "question": "¿Tenemos la factura SFD-2026-002 de Suministros Ficticios Duero?",
+      "source_contains": "SFD-2026-002"
+    }
+  }
+}

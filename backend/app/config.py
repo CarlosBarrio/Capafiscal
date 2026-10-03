@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     reset_data_on_startup: bool = False
     app_name: str = "CapaFiscal"
     app_environment: str = "development"
-    debug: bool = True
+    debug: bool = False  # True solo en desarrollo: muestra el detalle de los errores
 
     database_url: str = (
         f"sqlite:///{DEFAULT_DATABASE_PATH.as_posix()}"
@@ -37,6 +37,64 @@ class Settings(BaseSettings):
 
     amount_tolerance: float = 0.02
     minimum_auto_confidence: int = 80
+
+    # Conector de Outlook (Microsoft Graph).
+    outlook_client_id: str = ""
+    outlook_client_secret: str = ""
+    outlook_tenant_id: str = "common"
+    outlook_redirect_uri: str = (
+        "http://127.0.0.1:8000/api/connectors/outlook/callback"
+    )
+    app_encryption_key: str = ""
+    app_secret_key: str = ""  # firma de los enlaces de recuperación de contraseña (si falta, se genera y guarda en DATA_DIR)
+
+    # Envío de correo (bandeja de salida). Sin SMTP, los mensajes se
+    # descargan como borrador .eml y se abren en Outlook o Thunderbird.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_ssl: bool = False
+    # Fuera de producción solo se entrega a un servidor local (Mailpit, MailHog…): nunca sale correo real.
+    # Para probar contra un servidor real en desarrollo hay que pedirlo expresamente.
+    smtp_allow_external: bool = False
+
+    # Correo entrante (conector de correo): buzón IMAP del que se leen
+    # facturas y notificaciones. Sin IMAP, se puede usar la carpeta
+    # data/buzon (deja ahí los .eml) o importar un .eml desde la pantalla.
+    imap_host: str = ""
+    imap_port: int = 993
+    imap_user: str = ""
+    imap_password: str = ""
+    imap_folder: str = "INBOX"
+    imap_use_ssl: bool = True
+    # Multiempresa: el buzón (IMAP y data/buzon) es UNO para toda la instalación. Solo se procesa para el
+    # cliente indicado aquí; sin él, en multiempresa no se procesa para nadie (los correos quedan sin leer).
+    # Nunca se reparte entre clientes: mejor sin asignar que en el cliente equivocado (app/connectors/assignment.py).
+    email_client_id: int | None = None
+
+    # IA opcional (Claude). Sin clave, los agentes usan reglas y plantillas.
+    anthropic_api_key: str = ""
+    # Inteligencia: carpeta con sumarios/documentos del BOE descargados a mano (sin red hacia boe.es).
+    intel_boe_folder: Path | None = None
+    intel_window_days: int = 30  # días de publicaciones que se miran en cada radar
+    agent_model: str = "claude-opus-5-5"
+    auth_required: bool = False  # multiempresa: usuarios, roles y aislamiento estricto por cliente
+    session_hours: int = 12
+    dehu_inbox_dir: str = ""  # carpeta con notificaciones descargadas de la DEHú (PDF + .json)
+    dehu_client_id: int | None = None  # multiempresa: el único cliente para el que se lee esa carpeta (como EMAIL_CLIENT_ID)
+    # Banco conectado (PSD2) a través de un agregador con licencia (API de GoCardless Bank Account Data).
+    # Sin credenciales no hay conexión real: se sigue importando el extracto CSV/Excel.
+    bank_data_secret_id: str = ""
+    bank_data_secret_key: str = ""
+    bank_data_url: str = "https://bankaccountdata.gocardless.com/api/v2"
+    bank_data_folder: Path | None = None  # respuestas guardadas del agregador (pruebas y demostraciones sin red)
+    # Dirección pública para los enlaces de subida de documentos.
+    public_base_url: str = "http://127.0.0.1:8000"
+
+    # Automatizaciones programadas del agente (se desactivan en los tests).
+    enable_scheduler: bool = True
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_DIR / ".env",

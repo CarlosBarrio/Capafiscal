@@ -1,0 +1,16 @@
+# Proxy inverso de producción: HTTPS con certificado automático (Let's Encrypt) para {$DOMAIN}.
+# Caddy redirige HTTP → HTTPS. Las cabeceras de seguridad (CSP, HSTS, X-Frame-Options…) las pone CapaFiscal.
+{$DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 20MB # MAX_UPLOAD_SIZE es 15 MB; el resto es margen del formulario
+	}
+	reverse_proxy capafiscal:8000 {
+		health_uri /api/health
+		health_interval 60s
+	}
+	log {
+		output stdout
+		format json
+	}
+}

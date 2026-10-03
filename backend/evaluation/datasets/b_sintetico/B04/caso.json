@@ -1,0 +1,45 @@
+{
+  "case_id": "B04",
+  "conjunto": "B",
+  "bloque": "aeat",
+  "titulo": "Requerimiento sin fecha de notificación",
+  "descripcion": "No trae diligencia de notificación: el plazo no se puede calcular con certeza. Lo correcto es no inventarlo o marcarlo como estimado y pedir la fecha.",
+  "etiquetas": [
+    "ambiguo"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "requerimiento_sin_notificacion.pdf",
+      "tipo": "requerimiento",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "requerimiento_sin_notificacion.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "requerimiento",
+        "procedure": "COMPROBACION_LIMITADA",
+        "issuer": "AEAT",
+        "deadline_pending_confirmation": true,
+        "requires_human": true,
+        "requested_documents": [
+          "LIBRO_EMITIDAS",
+          "CONTRATOS"
+        ]
+      }
+    }
+  ],
+  "expected": {}
+}

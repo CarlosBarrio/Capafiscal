@@ -1,0 +1,39 @@
+{
+  "case_id": "B14",
+  "conjunto": "B",
+  "bloque": "normales",
+  "titulo": "Notificación a un NIF desconocido",
+  "descripcion": "Va dirigida a una empresa que no es la nuestra (NIF B99999997, válido pero desconocido). No hay que inventar el cliente: a revisión.",
+  "etiquetas": [
+    "ambiguo"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "requerimiento_nif_desconocido.pdf",
+      "tipo": "requerimiento",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "requerimiento_nif_desconocido.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "issuer": "AEAT",
+        "requires_human": true,
+        "addressee_unknown": "B99999997"
+      }
+    }
+  ],
+  "expected": {}
+}

@@ -1,0 +1,369 @@
+{
+  "descripcion": "Banco de expedientes sintéticos con verdad de referencia. SIMULACIÓN — NO OFICIAL.",
+  "casos": [
+    {
+      "case_id": "B01",
+      "bloque": "aeat",
+      "titulo": "Comprobación limitada IVA 2T 2026",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B02",
+      "bloque": "aeat",
+      "titulo": "Requerimiento que menciona «factura» muchas veces",
+      "etiquetas": [
+        "ambiguo",
+        "adversarial"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B03",
+      "bloque": "aeat",
+      "titulo": "Propuesta de liquidación provisional",
+      "etiquetas": [
+        "limpio",
+        "ambiguo"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B04",
+      "bloque": "aeat",
+      "titulo": "Requerimiento sin fecha de notificación",
+      "etiquetas": [
+        "ambiguo"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B05",
+      "bloque": "embargos",
+      "titulo": "Embargo de créditos: crédito mayor que la deuda",
+      "etiquetas": [
+        "limpio",
+        "expediente"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B06",
+      "bloque": "embargos",
+      "titulo": "Embargo de pagos sucesivos",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B07",
+      "bloque": "embargos",
+      "titulo": "Embargo sin pago pendiente",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B08",
+      "bloque": "embargos",
+      "titulo": "Embargo de salario",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B09",
+      "bloque": "seguridad_social",
+      "titulo": "TGSS: requerimiento de documentación",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B10",
+      "bloque": "seguridad_social",
+      "titulo": "TGSS: reclamación de deuda",
+      "etiquetas": [
+        "limpio",
+        "ambiguo"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B11",
+      "bloque": "seguridad_social",
+      "titulo": "TGSS: comunicación laboral sin impacto fiscal",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B12",
+      "bloque": "normales",
+      "titulo": "Certificado sin acción",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B13",
+      "bloque": "normales",
+      "titulo": "Justificante de presentación del 303",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B14",
+      "bloque": "normales",
+      "titulo": "Notificación a un NIF desconocido",
+      "etiquetas": [
+        "ambiguo"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B15",
+      "bloque": "memoria",
+      "titulo": "Requerimiento con facturas y 303 presentado",
+      "etiquetas": [
+        "expediente"
+      ],
+      "documentos": 4,
+      "entradas": 4
+    },
+    {
+      "case_id": "B16",
+      "bloque": "memoria",
+      "titulo": "Requerimiento con facturas y 303 presentado (falta la factura 003)",
+      "etiquetas": [
+        "expediente"
+      ],
+      "documentos": 3,
+      "entradas": 3
+    },
+    {
+      "case_id": "B17",
+      "bloque": "memoria",
+      "titulo": "Factura duplicada FAC-2026-145",
+      "etiquetas": [
+        "expediente"
+      ],
+      "documentos": 2,
+      "entradas": 2
+    },
+    {
+      "case_id": "B18",
+      "bloque": "facturas",
+      "titulo": "Factura rectificativa",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 2,
+      "entradas": 2
+    },
+    {
+      "case_id": "B19",
+      "bloque": "facturas",
+      "titulo": "Factura con retención de IRPF",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B20",
+      "bloque": "facturas",
+      "titulo": "Factura en tres páginas",
+      "etiquetas": [
+        "multipagina"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B21",
+      "bloque": "correo",
+      "titulo": "Correo con factura",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 2,
+      "entradas": 1
+    },
+    {
+      "case_id": "B22",
+      "bloque": "correo",
+      "titulo": "El mismo correo reenviado",
+      "etiquetas": [
+        "expediente"
+      ],
+      "documentos": 3,
+      "entradas": 2
+    },
+    {
+      "case_id": "B23",
+      "bloque": "correo",
+      "titulo": "RE: Factura septiembre con original y rectificativa",
+      "etiquetas": [
+        "expediente",
+        "contradictorio"
+      ],
+      "documentos": 3,
+      "entradas": 1
+    },
+    {
+      "case_id": "B-ADV01",
+      "bloque": "adversarial",
+      "titulo": "Embargo que enumera facturas",
+      "etiquetas": [
+        "adversarial",
+        "ambiguo"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B-ADV02",
+      "bloque": "adversarial",
+      "titulo": "«liquidación» dentro de «autoliquidación»",
+      "etiquetas": [
+        "adversarial"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B-ADV03",
+      "bloque": "adversarial",
+      "titulo": "Requerimiento escaneado",
+      "etiquetas": [
+        "adversarial",
+        "ocr"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B-ADV04",
+      "bloque": "adversarial",
+      "titulo": "Datos registrales en texto girado",
+      "etiquetas": [
+        "adversarial"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B-ADV05",
+      "bloque": "adversarial",
+      "titulo": "Factura en dos páginas",
+      "etiquetas": [
+        "adversarial",
+        "multipagina"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B-ADV06",
+      "bloque": "adversarial",
+      "titulo": "NIF del proveedor parcialmente ilegible",
+      "etiquetas": [
+        "adversarial",
+        "ocr"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B-ADV07",
+      "bloque": "adversarial",
+      "titulo": "Fecha ambigua 4/5/26",
+      "etiquetas": [
+        "adversarial",
+        "ambiguo"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B-ADV08",
+      "bloque": "adversarial",
+      "titulo": "Proveedor solo en el pie legal",
+      "etiquetas": [
+        "adversarial"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B-ADV09",
+      "bloque": "adversarial",
+      "titulo": "Importes con dígitos separados",
+      "etiquetas": [
+        "adversarial"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B-ADV10",
+      "bloque": "adversarial",
+      "titulo": "Texto con errores de OCR",
+      "etiquetas": [
+        "adversarial",
+        "ocr"
+      ],
+      "documentos": 1,
+      "entradas": 1
+    },
+    {
+      "case_id": "B-BANCO01",
+      "bloque": "apoyo",
+      "titulo": "Extracto con descuadres",
+      "etiquetas": [
+        "expediente"
+      ],
+      "documentos": 1,
+      "entradas": 2
+    },
+    {
+      "case_id": "B-PLAZOS01",
+      "bloque": "apoyo",
+      "titulo": "Plazos 303, 130, 111 y 115 del 3T",
+      "etiquetas": [
+        "limpio"
+      ],
+      "documentos": 4,
+      "entradas": 4
+    }
+  ],
+  "total_casos": 35,
+  "total_documentos": 50,
+  "conjunto": "B"
+}

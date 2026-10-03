@@ -1,0 +1,10 @@
+data/
+uploads/
+backup/
+tests/
+*.txt
+!requirements.txt
+__pycache__/
+*.pyc
+.venv/
+venv/

@@ -1,0 +1,14 @@
+{
+  "id": "embargo_001",
+  "descripcion": "Diligencia de embargo de créditos de un proveedor al que se le deben facturas: hay que retenerlas y contestar.",
+  "entrada": {
+    "tipo": "notification",
+    "texto": "embargo",
+    "facturas": [{"supplier": "SUMINISTROS LOPEZ S.L.", "tax_id": "B23456783", "number": "SL-77", "total": 1234.56, "days_ago": 10}]
+  },
+  "ruta_esperada": "embargo",
+  "agentes_esperados": ["vigilante", "expedientes", "memoria", "gestor", "director"],
+  "resultado_esperado": {"expediente": true, "kind": "NOTIFICATION", "procedure": "EMBARGO_CREDITOS", "level_in": ["critical", "high"], "insight": "NO se lo pagues"},
+  "evidencias_esperadas": ["B23456783"],
+  "accion_esperada": "Retener los pagos o importes afectados desde hoy"
+}

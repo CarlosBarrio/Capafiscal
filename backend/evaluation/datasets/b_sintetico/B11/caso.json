@@ -1,0 +1,41 @@
+{
+  "case_id": "B11",
+  "conjunto": "B",
+  "bloque": "seguridad_social",
+  "titulo": "TGSS: comunicación laboral sin impacto fiscal",
+  "descripcion": "Resolución informativa de alta. No afecta a ningún modelo fiscal ni requiere actuación.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "tgss_comunicacion_alta.pdf",
+      "tipo": "comunicacion",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "tgss_comunicacion_alta.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "issuer": "TGSS",
+        "procedure": "COMUNICACION",
+        "fiscal_applies": false,
+        "requires_human": false,
+        "deadline": null
+      }
+    }
+  ],
+  "expected": {}
+}

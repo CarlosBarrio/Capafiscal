@@ -1,0 +1,22 @@
+FACTURA
+Número de factura: 2026/0145
+Fecha de factura: 03/09/2026
+Fecha de vencimiento: 03/10/2026
+
+Proveedor:
+ASESORES REUNIDOS DEL NORTE S.L.
+Calle Mayor 12, 48001 Bilbao
+CIF: B95123456
+
+Cliente:
+TALLERES GARCIA S.L.
+Avenida Libertad 3, 20001 San Sebastián
+CIF: B20123457
+
+Concepto
+Honorarios asesoría fiscal y contable septiembre 2026   300,00 €
+
+Base imponible 300,00 €
+IVA 21% 63,00 €
+Retención IRPF 15% 45,00 €
+Total factura 318,00 €

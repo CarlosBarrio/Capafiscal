@@ -1,0 +1,112 @@
+{
+  "descripcion": "Réplicas anonimizadas de maquetas de facturas reales (datos inventados). Generadas con generar.py.",
+  "empresa": {
+    "name": "Estudio Ejemplo Arquitectos S.L.P.",
+    "tax_id": "B49123458"
+  },
+  "casos": [
+    {
+      "id": "limpieza_tabla_totales",
+      "file": "limpieza_tabla_totales.pdf",
+      "tags": [
+        "tabla de totales",
+        "texto girado",
+        "Verifactu"
+      ],
+      "expected": {
+        "direction": "RECEIVED",
+        "supplier_name": "LIMPIEZAS DEMO SL",
+        "supplier_tax_id": "B48111116",
+        "customer_tax_id": "B49123458",
+        "invoice_number": "2609001",
+        "invoice_date": "2026-09-15",
+        "due_date": "2026-09-15",
+        "subtotal": "212.40",
+        "tax_total": "44.60",
+        "total": "257.00"
+      }
+    },
+    {
+      "id": "geotecnia_texto_girado",
+      "file": "geotecnia_texto_girado.pdf",
+      "tags": [
+        "texto girado",
+        "dígitos espaciados",
+        "proveedor solo en el pie",
+        "fecha en letra"
+      ],
+      "expected": {
+        "direction": "RECEIVED",
+        "supplier_name": "ESTUDIOS DEL SUELO DEMO, S.L.",
+        "supplier_tax_id": "B47222229",
+        "customer_tax_id": "B49123458",
+        "invoice_number": "20455-03-26",
+        "invoice_date": "2026-09-12",
+        "subtotal": "2150.00",
+        "tax_total": "451.50",
+        "total": "2601.50"
+      }
+    },
+    {
+      "id": "tienda_ticket",
+      "file": "tienda_ticket.pdf",
+      "tags": [
+        "ticket de tienda",
+        "CIF del proveedor en el pie"
+      ],
+      "expected": {
+        "direction": "RECEIVED",
+        "supplier_name": "TIENDA DEMO INFORMATICA S.A.U",
+        "supplier_tax_id": "A28333334",
+        "customer_tax_id": "B49123458",
+        "invoice_number": "MA26090112",
+        "invoice_date": "2026-09-03",
+        "subtotal": "66.12",
+        "tax_total": "13.88",
+        "total": "80.00"
+      }
+    },
+    {
+      "id": "autonomo_dos_paginas",
+      "file": "autonomo_dos_paginas.pdf",
+      "tags": [
+        "autónomo con DNI",
+        "dos páginas",
+        "totales en la última página"
+      ],
+      "expected": {
+        "direction": "RECEIVED",
+        "supplier_name": "Juan Ejemplo Ruiz",
+        "supplier_tax_id": "71234567W",
+        "customer_tax_id": "B49123458",
+        "invoice_number": "260777",
+        "invoice_date": "2026-09-01",
+        "due_date": "2026-09-01",
+        "subtotal": "300.00",
+        "tax_total": "63.00",
+        "total": "363.00"
+      }
+    },
+    {
+      "id": "ingenieria_pie_legal",
+      "file": "ingenieria_pie_legal.pdf",
+      "tags": [
+        "CIF del proveedor en el pie",
+        "cabecera de tabla con valores debajo",
+        "21 420,00 no es 21.420,00"
+      ],
+      "expected": {
+        "direction": "RECEIVED",
+        "supplier_name": "INGENIERIA DEMO S.L.",
+        "supplier_tax_id": "B46444444",
+        "customer_tax_id": "B49123458",
+        "invoice_number": "260612",
+        "invoice_date": "2026-09-30",
+        "due_date": "2026-09-30",
+        "subtotal": "2000.00",
+        "tax_total": "420.00",
+        "total": "2420.00"
+      }
+    }
+  ]
+}

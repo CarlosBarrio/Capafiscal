@@ -1,0 +1,20 @@
+FACTURA
+Número de factura: 2026/0188
+Fecha de factura: 02/10/2026
+
+Proveedor:
+ASESORES REUNIDOS DEL NORTE S.L.
+Calle Mayor 12, 48001 Bilbao
+CIF: B95123456
+
+Cliente:
+TALLERES GARCIA S.L.
+CIF: B20123457
+
+Concepto
+Cuota mensual octubre 2026   300,00 €
+
+Base imponible 300,00 €
+IVA 21% 63,00 €
+Retención IRPF 15% 45,00 €
+Total factura 318,00 €

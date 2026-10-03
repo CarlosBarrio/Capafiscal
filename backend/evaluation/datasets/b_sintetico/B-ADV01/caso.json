@@ -1,0 +1,82 @@
+{
+  "case_id": "B-ADV01",
+  "conjunto": "B",
+  "bloque": "adversarial",
+  "titulo": "Embargo que enumera facturas",
+  "descripcion": "Diligencia de embargo que relaciona las facturas pendientes del deudor: «factura» aparece muchas veces y hay importes y fechas.",
+  "etiquetas": [
+    "adversarial",
+    "ambiguo"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "embargo_con_facturas.pdf",
+      "tipo": "embargo",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    },
+    "facturas": [
+      {
+        "supplier_name": "Programas Ficticios Vena S.L.",
+        "supplier_tax_id": "B00500058",
+        "invoice_number": "2026-0500",
+        "invoice_date": "2026-07-10",
+        "subtotal": "500.00",
+        "tax_total": "105.00",
+        "total": "605.00",
+        "paid_at": null
+      },
+      {
+        "supplier_name": "Programas Ficticios Vena S.L.",
+        "supplier_tax_id": "B00500058",
+        "invoice_number": "2026-0510",
+        "invoice_date": "2026-07-25",
+        "subtotal": "500.00",
+        "tax_total": "105.00",
+        "total": "605.00",
+        "paid_at": null
+      },
+      {
+        "supplier_name": "Programas Ficticios Vena S.L.",
+        "supplier_tax_id": "B00500058",
+        "invoice_number": "2026-0520",
+        "invoice_date": "2026-08-09",
+        "subtotal": "500.00",
+        "tax_total": "105.00",
+        "total": "605.00",
+        "paid_at": null
+      }
+    ]
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "embargo_con_facturas.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "embargo",
+        "procedure": "EMBARGO_CREDITOS",
+        "affected": {
+          "type": "supplier",
+          "tax_id": "B00500058"
+        },
+        "debt_amount": 1200.0,
+        "credit_amount": 1815.0,
+        "not_invoice": true,
+        "requires_human": true,
+        "expected_findings": [
+          "credit_exceeds_debt"
+        ]
+      }
+    }
+  ],
+  "expected": {}
+}
