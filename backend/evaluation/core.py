@@ -97,7 +97,10 @@ def load_dataset(folder: Path) -> Dataset:
 def name_tokens(value: str) -> set[str]:
     from app.extractor import normalize_search_text
 
-    return {token for token in re.findall(r"[a-z0-9]+", normalize_search_text(value or "")) if token not in LEGAL_WORDS}
+    text = normalize_search_text(value or "")
+    # «S.L.» o «S.L.P.» llegan como letras sueltas: se juntan en una sigla (sl, slp) antes de quitar la forma jurídica
+    text = re.sub(r"\b([a-z])\W{0,2}(?=[a-z]\b)", r"\1", text)
+    return {token for token in re.findall(r"[a-z0-9]+", text) if token not in LEGAL_WORDS}
 
 
 def same(name: str, expected: Any, got: Any) -> bool:

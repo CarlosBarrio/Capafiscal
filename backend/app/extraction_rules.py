@@ -34,7 +34,25 @@ CITY_WORDS = {
     "burgos", "madrid", "barcelona", "valencia", "sevilla", "zaragoza", "bilbao", "valladolid", "leon", "palencia",
     "soria", "segovia", "avila", "salamanca", "zamora", "espana", "españa", "logrono", "santander", "vitoria",
 }
+# «ARQUITECTO TÉCNICO» bajo el nombre de un profesional: es su profesión, no el emisor
+PROFESSION_WORDS = {
+    "arquitecto", "arquitecta", "tecnico", "tecnica", "ingeniero", "ingeniera", "abogado", "abogada", "asesor", "asesora",
+    "consultor", "consultora", "fiscal", "gestor", "gestora", "administrativo", "economista", "aparejador", "aparejadora",
+    "procurador", "procuradora", "notario", "notaria", "administrador", "administradora", "fincas", "colegiado", "colegiada",
+    "industrial", "superior", "graduado", "graduada", "licenciado", "licenciada", "medico", "medica", "psicologo", "psicologa",
+    "fisioterapeuta", "odontologo", "odontologa", "veterinario", "veterinaria", "topografo", "topografa", "delineante",
+    "agente", "comercial", "autonomo", "autonoma", "edificacion", "obras", "publicas", "caminos", "de", "y", "en",
+}
+
+
+def profession_only(value: str | None) -> bool:
+    words = re.findall(r"[a-z]+", normalize(value or ""))
+    return bool(words) and all(word in PROFESSION_WORDS for word in words)
+
+
 AMOUNT_TOKEN = re.compile(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})(?!\d)")
+# «3.100.00 €»: punto de miles y también punto decimal (dos cifras tras el último punto)
+DOT_DECIMAL_TOKEN = re.compile(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*|\d+)\.(\d{2})(?![\d.,])")
 SPACED_DIGITS = re.compile(r"(?<![\d,.])((?:\d ){2,6}\d*),(\d{2})(?!\d)")
 SPACE_THOUSANDS = re.compile(r"(?<![\d,.])(\d{1,3}) (\d{3}),(\d{2})(?!\d)")
 LEGAL_FORM = r"(?:S\.?\s?L\.?\s?(?:P|U|L)?\.?|S\.?\s?A\.?\s?(?:U)?\.?|S\.?\s?C\.?|C\.?\s?B\.?|S\.?\s?COOP\.?)"
@@ -152,7 +170,7 @@ def repair_ocr_labels(text: str) -> str:
 
 def clean_name(value: str) -> str | None:
     # Lo que va delante del nombre (IBAN, importes, etiquetas) no es parte de él.
-    value = re.split(r"[\d€|:]", value)[-1]
+    value = re.split(r"[\d€|:\]]", value)[-1]  # «… [texto girado] Nombre S.L.»: lo que va tras la marca
     value = re.sub(r"\s+", " ", value).strip(" ,;:-")
     if value.endswith(".") and not re.search(r"\b[A-Za-z]\.$", value):
         value = value[:-1]  # el punto final es de la frase, salvo en «S.L.»
@@ -179,9 +197,12 @@ def legal_identities(text: str) -> list[LegalIdentity]:
         return found
 
     # 1) «X S.L. Inscrita en el Registro Mercantil de … CIF B…»
-    for match in re.finditer(r"([A-ZÁÉÍÓÚÑ0-9][^.|\n]{2,80}?" + LEGAL_FORM + r")[,.]?\s+inscrit[ao] en el registro mercantil([^\n]{0,220})", flat, re.IGNORECASE):
-        ids = tax_ids_in(match.group(2))
-        identities.append(LegalIdentity(clean_name(match.group(1)), ids[0] if ids else None, "registro_mercantil"))
+    for match in re.finditer(r"([A-ZÁÉÍÓÚÑ0-9][^.|\n]{2,80}?" + LEGAL_FORM + r")[,.]?\s+(?:\[[a-z ]+\]\s*)?inscrit[ao] en el registro mercantil([^\n]{0,220})", flat, re.IGNORECASE):
+        # Lo que sigue a otra marca («[imagen]», «[texto girado]») es otra línea del documento, no este pie
+        ids = tax_ids_in(re.split(r"\[(?:imagen|texto girado)\]", match.group(2))[0])
+        # «S.L.P PREVENCIÓN DEMO, S.L. Inscrita…»: la «P» suelta es el final de la forma jurídica anterior
+        name = re.sub(r"^[A-ZÁÉÍÓÚÑ]\s+(?=\S{2})", "", match.group(1))
+        identities.append(LegalIdentity(clean_name(name), ids[0] if ids else None, "registro_mercantil"))
     # 1b) Registro mercantil sin nombre delante (p. ej. texto girado): solo el CIF
     for line in text.splitlines():
         letters = re.sub(r"[^a-z]", "", normalize(line))
@@ -189,7 +210,10 @@ def legal_identities(text: str) -> list[LegalIdentity]:
         if "registromercantil" in letters or rotated_registry:
             ids = tax_ids_in(re.sub(r"(?<=\d) (?=\d)", "", line))
             if ids and not any(item.tax_id == ids[0] for item in identities):
-                identities.append(LegalIdentity(None, ids[0], "registro_mercantil"))
+                # «ENERGÍAS DEMO | C.I.F.: B-… - Inscrita…»: el nombre es lo que va delante del CIF
+                head = re.match(r"\s*([^|:\d]{4,80}?)\s*[|,\-–]?\s*(?:C\.?\s?I\.?\s?F|N\.?\s?I\.?\s?F)\b", line, re.IGNORECASE)
+                name = clean_name(head.group(1)) if head and not rotated_registry else None
+                identities.append(LegalIdentity(name, ids[0], "registro_mercantil"))
 
     # 2) Protección de datos: quién es el responsable
     patterns = (
@@ -240,7 +264,8 @@ def issuer_from_legal_footer(text: str, company_tax_ids: set[str], company_name:
     if not identities:
         return None
     tax_ids = {item.tax_id for item in identities if item.tax_id}
-    names = [item.name for item in identities if item.name]
+    # Primero el nombre que va junto a su CIF (pie del registro); el de protección de datos suele traer erratas
+    names = [item.name for item in identities if item.name and item.tax_id] + [item.name for item in identities if item.name and not item.tax_id]
     if len(tax_ids) > 1:
         return None  # ambiguo: mejor no decidir
     source = "+".join(sorted({item.source for item in identities}))
@@ -281,6 +306,9 @@ def amount_tokens(text: str) -> list[tuple[Decimal, int]]:
     for index, line in enumerate(text.splitlines()):
         for match in AMOUNT_TOKEN.finditer(line):
             tokens.append((Decimal(match.group(1).replace(".", "") + "." + match.group(2)), index))
+        if "," not in line:  # sin comas en la línea, el punto puede ser el decimal: «3.100.00 €», «651.00 €»
+            for match in DOT_DECIMAL_TOKEN.finditer(line):
+                tokens.append((Decimal(match.group(1).replace(".", "") + "." + match.group(2)), index))
         for match in SPACED_DIGITS.finditer(line):  # «8 3 7,69» → 837,69
             tokens.append((Decimal(match.group(1).replace(" ", "") + "." + match.group(2)), index))
         for match in SPACE_THOUSANDS.finditer(line):  # «21 210,00» puede ser 21 + 210,00 o 21.210,00
@@ -358,6 +386,17 @@ def negative_total(text: str) -> bool:
                 if values:
                     return values[0][0] < 0
     return False
+
+
+def declared_vat_without_tax(text: str, tax: Any) -> bool:
+    """«I.V.A 21 %» en el documento pero cuota 0: la cuota se ha leído mal (no es una factura exenta)."""
+    try:
+        if tax in (None, "") or Decimal(str(tax)) != 0:
+            return False
+    except Exception:
+        return False
+    flat = normalize(text)
+    return bool(re.search(r"\bi\.?\s?v\.?\s?a\.?\s*(?:21|10|5|4)\s*%", flat)) and not re.search(r"exent|no sujet|inversion del sujeto", flat)
 
 
 def plausible_amounts(subtotal: Any, tax: Any, total: Any, withholding: Any = None, surcharge: Any = None) -> bool:

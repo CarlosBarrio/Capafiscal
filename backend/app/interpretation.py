@@ -104,8 +104,21 @@ def needs_help(result: dict[str, Any], company_tax_ids: set[str]) -> list[str]:
     if values.get("subtotal") is not None and values.get("total") is not None and not reconciles(values):
         reasons.append("los importes no cuadran")
     supplier = normalize_tax_id(values.get("supplier_tax_id"))
-    if supplier and supplier in company_tax_ids and normalize_tax_id(values.get("customer_tax_id")) not in company_tax_ids:
+    customer = normalize_tax_id(values.get("customer_tax_id"))
+    # Una emitida tiene cliente con su NIF; si el único NIF es el nuestro, no se sabe quién la emite
+    if supplier and supplier in company_tax_ids and (not customer or customer in company_tax_ids):
         reasons.append("el emisor detectado es la propia empresa")
+    for name, value in (("proveedor", supplier), ("cliente", customer)):
+        if value and not is_valid_spanish_tax_id(value) and not re.fullmatch(r"[A-Z]{2}[A-Z0-9]{2,13}", value):
+            reasons.append(f"NIF del {name} no válido")
+    from app import extraction_rules
+
+    name = str(values.get("supplier_name") or "")
+    words = re.findall(r"[a-z]+", normalize_search_text(name))
+    if words and (all(word in extraction_rules.CITY_WORDS for word in words) or extraction_rules.profession_only(name)):
+        reasons.append("nombre del proveedor sospechoso")
+    if extraction_rules.declared_vat_without_tax(str(result.get("raw_text") or ""), values.get("tax_total")):
+        reasons.append("el documento declara IVA pero la cuota leída es 0")
     if (result.get("fields") or {}).get("category", {}).get("value") in {None, "Otros gastos"} and result.get("direction") != "ISSUED":
         reasons.append("categoría sin determinar")
     number = str(values.get("invoice_number") or "")

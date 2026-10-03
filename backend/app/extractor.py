@@ -55,6 +55,7 @@ TAX_ID_PATTERN = re.compile(
     (?<![A-Z0-9])
     (?:ES[\s\-]?)?
     (?:
+        (?<!N\.I\.)(?<!C\.I\.)(?<!N\.I)(?<!C\.I)  # la «F» de «N.I.F. 12.345.678-Z» es de la etiqueta
         [ABCDEFGHJNPQRSUVW][\s.\-]*\d[\d\s.\-]{5,10}[0-9A-J]
         |
         \d{1,2}(?:[\s.\-]?\d{3}){2}[\s.\-]?[A-Z]
@@ -504,10 +505,64 @@ def extract_page_with_ocr(
                 config="--psm 6",
             )
 
-        return clean_text(text)
+        return clean_text(repair_ocr_tax_ids(text))
 
     except Exception:
         return ""
+
+def repair_ocr_tax_ids(text: str) -> str:
+    """«BO0100016»: en un CIF leído por OCR, la O es un 0 y la I/l un 1 (con al menos cinco cifras de verdad)."""
+    def fix(match: re.Match[str]) -> str:
+        body = match.group(2)
+        if sum(character.isdigit() for character in body) < 5:
+            return match.group(0)
+        return match.group(1) + body[:7].translate(str.maketrans("OoIl", "0011")) + body[7]
+
+    return re.sub(r"(?<![A-Za-z0-9])([ABCDEFGHJNPQRSUVW])[\s.\-]?([0-9OoIl]{7}[0-9A-J])(?![A-Za-z0-9])", fix, text)
+
+
+def ocr_identity_lines(path: Path, page_number: int, legal_form: str) -> list[str]:
+    """Emisor que solo está en imágenes (logo, pie, margen vertical): OCR de la página y solo las líneas de identidad.
+
+    Se lee derecho y girado (el CIF del margen suele ir en vertical). Solo se devuelven líneas con
+    NIF/CIF, registro mercantil o forma jurídica: los importes siguen saliendo de la capa de texto.
+    """
+    if pytesseract is None or Image is None or fitz is None or path.suffix.lower() != ".pdf":
+        return []
+    identity = re.compile(r"(?i)registro\s+mercantil|\bc\.?\s?i\.?\s?f\b|\bn\.?\s?i\.?\s?f\b|" + legal_form + r"(?=\W|$)")
+    lines: list[str] = []
+    try:
+        with fitz.open(path) as document:
+            page = document[page_number - 1]
+            image = Image.open(io.BytesIO(page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False).tobytes("png")))
+            for rotation, psm in ((0, "6"), (270, "11"), (90, "11")):
+                text = pytesseract.image_to_string(image.rotate(rotation, expand=True), lang="spa+eng", config=f"--psm {psm}")
+                found: list[str] = []
+                for line in text.splitlines():
+                    line = re.sub(r"\s+", " ", line).strip()
+                    if len(line) < 6 or not identity.search(line):
+                        continue
+                    line = repair_ocr_tax_ids(line)
+                    if not TAX_ID_PATTERN.search(line):
+                        # «PREVENCIÓN DEMO, S.L. C/ Inventada 1…»: el nombre acaba en la forma jurídica
+                        named = re.match(r"(.*?" + legal_form + r")(?=\W|$)", line, re.IGNORECASE)
+                        line = named.group(1) if named else line
+                        # Restos del logo delante del nombre («P ÓN PREVENCIÓN DEMO…»): fragmentos de una o dos letras
+                        words = line.split(" ")
+                        while len(words) > 3 and len(words[0]) <= 2:
+                            words.pop(0)
+                        line = " ".join(words)
+                    found.append(line)
+                # Girada, la página solo vale si se lee un NIF (el texto del revés sale como ruido)
+                from app.extraction_rules import valid_tax_ids
+
+                if rotation and not valid_tax_ids("\n".join(found)):
+                    continue
+                lines.extend(line for line in found if line not in lines)
+    except Exception:
+        return []
+    return lines
+
 
 class UnreadableDocument(ValueError):
     """El archivo no se puede abrir (PDF dañado o truncado): reintentar no sirve, hace falta otra copia."""
@@ -705,6 +760,10 @@ def clean_invoice_number(value: str | None) -> str | None:
         return None
 
     if DATE_PATTERN.fullmatch(candidate):
+        return None
+
+    # «01/02/2026 B-00.900.100»: una fecha seguida de otra cosa no es un número de factura.
+    if DATE_PATTERN.match(candidate) and " " in candidate:
         return None
 
     return candidate.upper()
@@ -1081,7 +1140,7 @@ def choose_tax_ids_for_issued(
 
 
 STREET_PREFIX = re.compile(
-    r"(?i)^\s*(?:c/|c\.|calle|avda?\.?|avenida|av\.|plaza|pza\.?|pl\.|paseo|p[º°]|ctra\.?|carretera|camino|ronda|traves[ií]a"
+    r"(?i)^\s*(?:c/|c\.|calle|avda?\.?|avenida|av\.|plaza|pza\.?|pl\.|paseo|p[º°]|ctra\.?|crta\.?|cra\.?|carretera|camino|ronda|traves[ií]a"
     r"|pol\.?\s*ind|pol[ií]gono|urb\.?|urbanizaci[oó]n|glorieta|rambla|v[ií]a|apartado|apdo\.?)\b"
 )
 POSTAL_CODE = re.compile(r"\b(?:0[1-9]|[1-4]\d|5[0-2])\d{3}\b\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]")
@@ -1207,6 +1266,8 @@ def company_name_near_tax_id(
     if not tax_id:
         return ExtractedField()
 
+    from app import extraction_rules
+
     lines = get_lines(text)
     normalized_tax_id = normalize_tax_id(tax_id)
 
@@ -1220,6 +1281,10 @@ def company_name_near_tax_id(
 
         if normalized_tax_id not in line_tax_ids:
             continue
+
+        # Dos columnas (emisor | cliente): «NIF: A… NIF: B…». La columna del NIF dice qué mitad es nuestra.
+        distinct_ids = list(dict.fromkeys(item for item in line_tax_ids if item))
+        column = distinct_ids.index(normalized_tax_id) if len(distinct_ids) == 2 else None
 
         # La propia línea es prioritaria porque existen formatos:
         # EMPRESA S.L. | C.I.F.: B12345678
@@ -1269,6 +1334,12 @@ def company_name_near_tax_id(
             if other_tax_ids:
                 continue
 
+            # «CLIENTE S.L.» con su CIF justo debajo también es de la otra parte
+            if candidate_index + 1 < len(lines) and candidate_index + 1 != index and {
+                normalize_tax_id(match.group(0)) for match in TAX_ID_PATTERN.finditer(lines[candidate_index + 1])
+            } - {normalized_tax_id}:
+                continue
+
             opposite_role = (
                 "customer"
                 if role == "supplier"
@@ -1283,7 +1354,20 @@ def company_name_near_tax_id(
                 None,
             )
 
+            if column is not None:
+                # «EMISOR S.A. CLIENTE S.L.P.»: se parte por la forma jurídica y se queda la mitad de su columna
+                halves = [part.strip(" ,;") for part in re.findall(r".+?" + extraction_rules.LEGAL_FORM + r"(?=\s|$)", candidate)]
+                if len(halves) == 2:
+                    candidate = halves[column]
+
             if not looks_like_company_name(candidate):
+                continue
+
+            # «MADRID BURGOS»: solo nombres de ciudad (provincias de dos columnas) no es una empresa
+            if all(word in extraction_rules.CITY_WORDS for word in re.findall(r"[a-z]+", normalize_search_text(candidate))):
+                continue
+
+            if extraction_rules.profession_only(candidate):
                 continue
 
             normalized_candidate = normalize_search_text(
@@ -1419,6 +1503,10 @@ def find_invoice_number(
             match = pattern.search(line)
 
             if not match:
+                continue
+
+            # «FECHA FACTURA: 01/02/2026»: la etiqueta es de la fecha, no del número.
+            if re.search(r"fecha\s*(?:de\s*(?:la\s*)?)?\W*$", normalize_search_text(line[:match.start()])):
                 continue
 
             value = clean_invoice_number(
@@ -2658,15 +2746,26 @@ def extract_invoice(
     real_world_signals: list[str] = ["ocr_labels_repaired"] if repaired_text != primary_text else []
     primary_text = repaired_text
 
-    tax_id_candidates = find_tax_id_candidates(
-        primary_text
-    )
-    for candidate in tax_id_candidates:
-        repaired = extraction_rules.repair_tax_id(candidate["value"])
-        if repaired != candidate["value"] and is_valid_spanish_tax_id(repaired):
-            candidate["value"] = repaired
-            candidate["valid_checksum"] = True
-            real_world_signals.append("tax_id_repaired")
+    def tax_ids_of(text: str) -> list[dict[str, Any]]:
+        found = find_tax_id_candidates(text)
+        for candidate in found:
+            repaired = extraction_rules.repair_tax_id(candidate["value"])
+            if repaired != candidate["value"] and is_valid_spanish_tax_id(repaired):
+                candidate["value"] = repaired
+                candidate["valid_checksum"] = True
+                real_world_signals.append("tax_id_repaired")
+        return found
+
+    tax_id_candidates = tax_ids_of(primary_text)
+
+    # En el texto solo está nuestro NIF: el emisor puede estar solo en imágenes. Se busca con OCR.
+    own_ids = normalized_company_tax_ids(company_tax_id)
+    if own_ids and not any(candidate["value"] not in own_ids for candidate in tax_id_candidates):
+        image_lines = ocr_identity_lines(path, primary_pages[0] if primary_pages else 1, extraction_rules.LEGAL_FORM)
+        if any(value not in own_ids for value in extraction_rules.valid_tax_ids("\n".join(image_lines))):
+            primary_text = primary_text + "\n" + "\n".join(f"[imagen] {line}" for line in image_lines)
+            tax_id_candidates = tax_ids_of(primary_text)
+            real_world_signals.append("issuer_from_image_ocr")
 
     direction, direction_confidence = detect_direction(
         tax_id_candidates,
@@ -2735,10 +2834,23 @@ def extract_invoice(
             if direction == "ISSUED":
                 direction, direction_confidence = "RECEIVED", 88
                 real_world_signals.append("direction_from_legal_footer")
-            supplier_name = ExtractedField(value=issuer.name, confidence=85, source="legal_footer", evidence=issuer.source) if issuer.name else supplier_name
+            if issuer.name:
+                supplier_name = ExtractedField(value=issuer.name, confidence=85, source="legal_footer", evidence=issuer.source)
+            elif supplier_name.source == "configured_company_name" or extraction_rules.weak_name(supplier_name.value, company_name):
+                # El nombre que había era el nuestro (se creyó emitida): se busca junto al CIF del emisor; si no, vacío
+                supplier_name = company_name_near_tax_id(primary_text, issuer.tax_id, "supplier")
         elif direction != "ISSUED" and issuer.name and extraction_rules.weak_name(supplier_name.value, company_name):
             supplier_name = ExtractedField(value=issuer.name, confidence=80, source="legal_footer", evidence=issuer.source)
             real_world_signals.append("supplier_name_from_legal_footer")
+
+    # Solo nuestro NIF y ningún cliente: no es una emitida nuestra si la pagamos por domiciliación
+    # («recibo domiciliado»): el emisor está en imágenes que no se han podido leer. Mejor vacío que nosotros.
+    if direction == "ISSUED" and not customer_tax_id.value and re.search(r"domiciliad|domiciliaci", normalize_search_text(primary_text)):
+        direction, direction_confidence = "RECEIVED", 70
+        customer_tax_id = ExtractedField(value=supplier_tax_id.value, confidence=90, source="company_tax_id", evidence="configured")
+        customer_name = ExtractedField(value=company_name, confidence=99, source="configured_company_name") if company_name else customer_name
+        supplier_tax_id, supplier_name = ExtractedField(), ExtractedField()
+        real_world_signals.append("direction_from_direct_debit")
 
     invoice_number = find_invoice_number(
         primary_text
@@ -2853,8 +2965,12 @@ def extract_invoice(
         return decimal_to_string(abs(Decimal(field.value))) if field.value not in (None, "") else None
 
     # Importes que no cuadran fiscalmente: el solver busca base × IVA = cuota y base + cuota − retención = total.
-    if not extraction_rules.plausible_amounts(magnitude(subtotal), magnitude(tax_total), magnitude(total), withholding_total.value, surcharge_total.value):
+    vat_misread = extraction_rules.declared_vat_without_tax(primary_text, tax_total.value)
+    if vat_misread or not extraction_rules.plausible_amounts(magnitude(subtotal), magnitude(tax_total), magnitude(total), withholding_total.value, surcharge_total.value):
         solved = extraction_rules.solve_amounts(primary_text)
+        # Si los importes ya cuadraban y solo faltaba la cuota, el solver debe respetar el total leído
+        if solved and vat_misread and total.value not in (None, "") and abs(solved["total"] - abs(Decimal(total.value))) > Decimal("0.02"):
+            solved = None
         if solved:
             subtotal = ExtractedField(value=decimal_to_string(solved["subtotal"]), confidence=85, source="vat_solver", evidence=f"IVA {solved['tax_rate']} %")
             tax_total = ExtractedField(value=decimal_to_string(solved["tax_total"]), confidence=85, source="vat_solver", evidence=f"IVA {solved['tax_rate']} %")
