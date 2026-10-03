@@ -1,9 +1,7 @@
 data/
 uploads/
 backup/
-legacy/
 tests/
-CAPAFISCAL_CODIGO_PARTES/
 *.txt
 !requirements.txt
 __pycache__/

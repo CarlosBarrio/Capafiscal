@@ -569,43 +569,40 @@ Las facturas aprobadas nunca se modifican.
 ```
 backend/
   app/
-    main.py               API principal (documentos, facturas, informes) y frontend
-    business_routes.py    API de empresa, impuestos, notificaciones, banco,
-                          cumplimiento, agenda y memoria del agente
-    extractor.py          Extracción de datos de facturas
-    invoice_service.py    Procesado, validación, aprobación, pagos, memoria
-    reports_service.py    IVA, terceros, pagos, libros registro, búsqueda
-    tax_service.py        Borradores 303/130/111/115/347 y calendario fiscal
-    notification_service.py  Notificaciones administrativas y sus plazos
-    bank_service.py       Extractos, conciliación, tesorería y salud del negocio
-    compliance_service.py Certificado digital y checklist de cumplimiento
-    agenda_service.py     Agenda unificada de vencimientos
-    calendar_es.py        Días hábiles y festivos nacionales
-    company_service.py    Datos de la empresa usuaria
-    team_routes.py        API de equipo, proyectos, ausencias y nóminas
-    team_service.py       Fichas, incorporación, organigrama, ausencias, CV
-    payroll_service.py    Cálculo de nóminas, recibos PDF, SEPA, Excel, asiento
-    ops_routes.py         API de ventas, cobros, bandeja de salida, jornada,
-                          automatizaciones y cierre para la gestoría
-    sales_service.py      Clientes, emisión, registro encadenado, recurrentes
-    dunning_service.py    Cobros vencidos, intereses de demora, reclamaciones
-    outbox_service.py     Bandeja de salida: SMTP y borradores .eml
-    timesheet_service.py  Registro de jornada, alertas, PDF y Excel
-    automation_service.py Automatizaciones programadas y resumen diario
-    advisor_service.py    Paquete trimestral para la gestoría
-    extraction_rules.py   Reglas aprendidas de facturas reales (2.ª pasada del extractor)
-    interpretation.py     Híbrido: Claude propone, las reglas validan cada valor
-    connectors/           Fuentes externas → entrada común (correo; DEHú pendiente)
-    agents/               Equipo de agentes: vigilante, expedientes, fiscal,
-                          memoria, gestor, perseguidor, director, detector,
-                          orquestador, conocimiento y capa de IA opcional
-    case_service.py       Expedientes: acciones, adjuntos, escrito PDF, paquete
-    agent_routes.py       API de expedientes, agentes, memoria y portal
-    operations_service.py Panel, riesgos, agentes y asistente
-    task_service.py       Bandeja de revisión
-    outlook_connector.py  Conector de Outlook
-    models.py, schemas.py Modelo de datos y esquemas de la API
-    static/               Frontend (HTML, CSS y JS sin dependencias)
-  scripts/gen_facturas.py Generador de facturas de prueba
-  tests/                  Tests automáticos
+    main.py                 API principal (subida, documentos, facturas) y frontend
+    invoice_service.py      Procesado por fases, validación, aprobación y pagos
+    extractor.py            Lectura de facturas por reglas (texto y OCR)
+    extraction_rules.py     Reglas aprendidas de facturas reales
+    interpretation.py       Cuándo pedir revisión o a Claude; reglas validan a Claude
+    routing.py              Cuándo merece la pena llamar a Claude
+    accounting.py           Asientos (borrador contable)
+    reconciliation.py       Conciliación banco ↔ facturas
+    tax_service.py          Borradores 303/130/111/115/347 y calendario fiscal
+    fiscal_position.py      Posición fiscal del trimestre, al día
+    treasury.py             Tesorería predictiva
+    closing.py              Cierre del mes
+    workcenter.py           Centro de trabajo: la lista única
+    case_service.py         Expedientes
+    *_routes.py             API por área (acceso, empresa, equipo, operaciones, agentes,
+                            contabilidad, tesorería, cierre, trabajo, banco)
+    *_service.py            Lógica por área (ventas, cobros, salida, jornada,
+                            nóminas, cumplimiento, agenda, informes…)
+    agents/                 Orquestador, detector, director, perseguidor…;
+                            llm.py es la única puerta a Claude (coste y metadatos)
+    connectors/             Correo y DEHú hacia la entrada común;
+                            assignment.py reparte las fuentes en multiempresa
+    intelligence/           Inteligencia: BOE, relevancia y resúmenes
+    bank_*.py               Conexión y sincronización bancaria
+    models.py, schemas.py   Modelo de datos y esquemas de la API
+    tenancy.py              Aislamiento por cliente
+    static/                 Frontend (HTML, CSS y JS sin dependencias)
+  migrations/               Alembic
+  evaluation/               Evaluación de reglas, Claude e híbrido (ver su README)
+    datasets/               Corpus y bancos sintéticos; reales/ fuera de git
+    resultados/             Resultados congelados del banco B
+  scripts/                  Generador de facturas de prueba y demo
+  tests/                    unit, integration, workflows, agents, golden
+docs/                       Hoja de ruta, banco real, correo multiempresa, seguridad
+deploy/                     Caddy (HTTPS) para producción
+DESIGN.md, PRODUCT.md       Lenguaje visual y producto
 ```

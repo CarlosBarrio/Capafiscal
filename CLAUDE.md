@@ -70,8 +70,8 @@ FastAPI + SQLAlchemy 2 (SQLite o PostgreSQL) y frontend en JS/CSS sin framework.
   `catalogo/`, `reales/` fuera de git). Informes en `evaluation/informes/` (no se suben).
 - **Tests:** `tests/unit` (reglas del extractor, evaluador), `tests/integration` (API, multiempresa,
   LLM), `tests/workflows` (correo, cierre…), `tests/agents`, `tests/golden` (regresiones).
-- **No leer salvo que se pida** (volcados grandes que solo gastan contexto): `CAPAFISCAL_CODIGO_PARTES/`,
-  `codigo_extraccion_actual.txt`, `openapi_actual.json`, `legacy/`, `.claude/skills/*/reference/`.
+- **No leer salvo que se pida** (solo gastan contexto): `.claude/skills/*/reference/` y los PDF de
+  `evaluation/datasets/`.
 - Docs: `docs/` (roadmap, banco real, correo multiempresa, seguridad y copias).
 - OCR: Tesseract (`tesseract-ocr-spa`) lo trae la imagen Docker; sin él, los escaneados no se leen
   y el emisor que solo está en imágenes queda vacío y a revisión.
