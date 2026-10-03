@@ -165,7 +165,7 @@
 
     container.innerHTML = months.map((item) => {
       const width = Math.max(2, (item.total / max) * 100);
-      const tooltip = `${monthLabel(item.month)}: ${money(item.total)} · base ${money(item.base)} · IVA ${money(item.tax)} · ${item.invoices} factura(s)`;
+      const tooltip = `${monthLabel(item.month)}: ${money(item.total)} · base ${money(item.base)} · IVA ${money(item.tax)} · ${window.pl(item.invoices, "factura(s)")}`;
       return `
         <div class="bar-row" title="${esc(tooltip)}" tabindex="0" aria-label="${esc(tooltip)}">
           <span class="bar-label">${esc(monthLabel(item.month))}</span>

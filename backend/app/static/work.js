@@ -249,7 +249,7 @@
     button.disabled = true;
     try {
       const result = await window.jsonRequest("/agents/pulse/run", "POST", {});
-      window.showMessage(`Ciclo completado: ${result.items} elemento(s) trabajados.`, "success");
+      window.showMessage(`Ciclo completado: ${window.pl(result.items, "elemento(s) trabajado(s)")}.`, "success");
       window.dispatchEvent(new CustomEvent("capafiscal:data-changed"));  // recarga esta lista y las demás pantallas
     } catch (error) {
       window.showMessage(error.message, "error");

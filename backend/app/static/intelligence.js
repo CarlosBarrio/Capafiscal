@@ -199,7 +199,7 @@
             <q>${esc(entry.fragment)}</q>
             <small class="muted">${esc(entry.source)} · ${esc(entry.document)}${entry.date ? ` · ${esc(day(entry.date))}` : ""} · <a href="${esc(entry.url)}" target="_blank" rel="noopener noreferrer">ver</a></small>
           </li>`).join("")}</ol>
-        ${ai.engine ? `<small class="muted">Resumen de IA (${esc(ai.engine)}): cada afirmación lleva una cita encontrada en el texto oficial${ai.discarded ? `; ${ai.discarded} afirmación(es) descartada(s) por no poder citarse` : ""}${ai.truncated ? "; texto largo, se analizó el principio" : ""}.</small>` : ""}`)}
+        ${ai.engine ? `<small class="muted">Resumen de IA (${esc(ai.engine)}): cada afirmación lleva una cita encontrada en el texto oficial${ai.discarded ? `; ${window.pl(ai.discarded, "afirmación(es) descartada(s)")} por no poder citarse` : ""}${ai.truncated ? "; texto largo, se analizó el principio" : ""}.</small>` : ""}`)}
     `;
     document.getElementById("intelDialogActions").innerHTML = `
       <a class="btn-ghost" href="${esc(where.html_url)}" target="_blank" rel="noopener noreferrer">${window.icon("doc")} Fuente oficial</a>
@@ -317,7 +317,7 @@
       try {
         const result = await window.jsonRequest("/intelligence/refresh", "POST", {});
         const fetched = result.fetched;
-        window.showMessage(fetched.errors.length ? `No se pudo consultar el BOE: ${fetched.errors[0]}` : `BOE consultado: ${fetched.new} disposición(es) nuevas, ${result.matched.visible} relevante(s).`, fetched.errors.length ? "error" : "success");
+        window.showMessage(fetched.errors.length ? `No se pudo consultar el BOE: ${fetched.errors[0]}` : `BOE consultado: ${window.pl(fetched.new, "disposición(es) nueva(s)")}, ${window.pl(result.matched.visible, "relevante(s)")}.`, fetched.errors.length ? "error" : "success");
         await load();
       } catch (error) {
         window.showMessage(error.message, "error");
@@ -335,7 +335,7 @@
       event.preventDefault();
       try {
         const result = await window.apiRequest("/intelligence/import", { method: "POST", body: new FormData(event.target) });
-        window.showMessage(`Sumario importado: ${result.fetched.new} disposición(es) nuevas.`, "success");
+        window.showMessage(`Sumario importado: ${window.pl(result.fetched.new, "disposición(es) nueva(s)")}.`, "success");
         await load();
       } catch (error) {
         window.showMessage(error.message, "error");

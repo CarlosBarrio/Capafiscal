@@ -74,7 +74,7 @@
               <div><dt>Información disponible</dt><dd>${share} %</dd></div>
             </dl>
             <span class="meter" aria-hidden="true"><span style="width:${share}%"></span></span>
-            <small class="muted">${item.approved_invoices} factura(s) aprobadas incluidas · % calculado sobre el importe conocido del periodo</small>
+            <small class="muted">${window.pl(item.approved_invoices, "factura(s) aprobada(s)")} incluidas · % calculado sobre el importe conocido del periodo</small>
           </div>
           ${item.gaps.length || item.discrepancies.length ? `
             <details class="position-gaps">
@@ -121,7 +121,7 @@
 
     const pending = calendar.entries.filter((entry) => ["OVERDUE", "DUE_SOON"].includes(entry.status)).length;
     document.getElementById("taxCalendarSub").textContent = pending
-      ? `${pending} obligación(es) requieren atención`
+      ? `${window.pl(pending, "obligación(es) requiere(n)")} atención`
       : `${calendar.entries.length} obligaciones con vencimiento en ${calendar.year}`;
     document.getElementById("taxCalendarNote").textContent = calendar.note;
 
@@ -138,7 +138,7 @@
 
     container.innerHTML = actionable.map(entryHtml).join("") + (withoutData.length ? `
       <details class="tax-nodata">
-        <summary>${withoutData.length} periodo(s) anteriores sin facturas en CapaFiscal</summary>
+        <summary>${window.pl(withoutData.length, "periodo(s) anterior(es)")} sin facturas en CapaFiscal</summary>
         <p class="detail-hint">No hay datos para saber si se presentaron. Márcalos si ya lo hiciste para que el historial quede completo.</p>
         ${withoutData.map(entryHtml).join("")}
       </details>
@@ -203,16 +203,10 @@
     }
 
     if (button.dataset.action === "file") {
-      const reference = window.prompt(
-        `Modelo ${model}: indica el número de justificante o CSV de la presentación (opcional).`,
-        ""
-      );
+      const reference = await window.askText(`Modelo ${model}: indica el número de justificante o CSV de la presentación (opcional).`);
       if (reference === null) return;
 
-      const amountText = window.prompt(
-        "Importe presentado (vacío si coincide con la estimación o es cero):",
-        button.dataset.estimate || ""
-      );
+      const amountText = await window.askText("Importe presentado (vacío si coincide con la estimación o es cero):", { value: button.dataset.estimate || "" });
       if (amountText === null) return;
 
       const amount = amountText.trim() ? Number(amountText.replace(",", ".")) : null;
@@ -235,7 +229,7 @@
     }
 
     if (button.dataset.action === "unfile") {
-      if (!window.confirm(`¿Desmarcar el modelo ${model} como presentado?`)) return;
+      if (!await window.askConfirm(`¿Desmarcar el modelo ${model} como presentado?`)) return;
       try {
         await window.apiRequest(`/taxes/filings?model=${model}&year=${year}&period=${period}`, { method: "DELETE" });
         await loadAll();

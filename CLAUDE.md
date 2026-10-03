@@ -19,7 +19,10 @@ interfaz existente → detectar un problema concreto → aplicar la skill → m�
 
 - Skills de diseño del proyecto en `.claude/skills/`. Léelas antes de tocar su ámbito:
   `frontend-design` (dirección y lenguaje), `emil-design-eng` (revisión general), `mobile-native`
-  (responsive), `review-animations` / `improve-animations` (motion), `prototype` (pantallas nuevas).
+  (responsive), `review-animations` / `improve-animations` (motion), `prototype` (pantallas nuevas),
+  `impeccable` (auditoría y detector), `taste-redesign-skill` (lista de acabado sobre lo existente),
+  `playwright-cli` (recorrer la app en el navegador: `.playwright/cli.config.json` con el Chromium local).
+  De las skills de estilo, aquí NO aplican grano, degradados, fotos de fondo ni animaciones al hacer scroll.
 - Regla de poda: «¿Esto ayuda a decidir o a terminar trabajo? Si no, se va». Sin etiquetas en
   mayúsculas sobre el contenido, sin ceros que no informan, sin degradados ni desenfoques.
 - No rediseñar pantallas completas ni cambiar componentes que funcionan por preferencia estética.

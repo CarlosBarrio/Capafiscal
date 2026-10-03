@@ -172,7 +172,7 @@
   async function action(name) {
     try {
       if (name !== "discard") await saveEdits();
-      if (name === "discard" && !window.confirm("¿Descartar este mensaje?")) return;
+      if (name === "discard" && !await window.askConfirm("¿Descartar este mensaje?")) return;
       await window.jsonRequest(`/outbox/${selectedId}/${name}`, "POST", {});
       window.showMessage(
         name === "send" ? "Mensaje enviado." : name === "mark-sent" ? "Marcado como enviado." : "Mensaje descartado.",

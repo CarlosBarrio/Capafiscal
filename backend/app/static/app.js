@@ -303,7 +303,12 @@ function activateTab(tabName) {
   const buttons = document.querySelectorAll(".nav-tab");
   const panels = document.querySelectorAll(".tab-panel");
 
-  buttons.forEach((item) => item.classList.toggle("active", item.dataset.tab === tabName));
+  buttons.forEach((item) => {
+    const current = item.dataset.tab === tabName;
+    item.classList.toggle("active", current);
+    if (current) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  });
   panels.forEach((panel) => panel.classList.toggle("active", panel.id === `tab-${tabName}`));
 
   if (tabName === "conectores") loadOutlookStatus();
@@ -386,10 +391,8 @@ function setupInvoiceFilters() {
 
   document.getElementById("reprocessPendingButton")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
-    if (!window.confirm(
-      "Se volverán a extraer todos los documentos pendientes (no aprobados ni rechazados). " +
-      "Las correcciones manuales de esos documentos se sustituirán. ¿Continuar?"
-    )) return;
+    if (!await window.askConfirm("Se volverán a extraer todos los documentos pendientes (no aprobados ni rechazados). " +
+      "Las correcciones manuales de esos documentos se sustituirán. ¿Continuar?", { confirmLabel: "Reprocesar pendientes" })) return;
 
     button.disabled = true;
     button.textContent = "Reprocesando…";
@@ -454,7 +457,7 @@ async function loadFilteredDocuments() {
     const view = INVOICE_VIEWS[invoiceView] || INVOICE_VIEWS.all;
     const shown = documentsCache.filter(view.test);
     renderDocuments(shown, invoiceView !== "all");
-    if (summary) summary.textContent = `${shown.length} de ${documentsCache.length} documento(s).`;
+    if (summary) summary.textContent = `${shown.length} de ${window.pl(documentsCache.length, "documento(s)")}.`;
     return;
   }
   document.querySelectorAll("#invoiceViews .segment").forEach((item) => item.classList.remove("active"));  // con filtros manda el formulario
@@ -468,7 +471,7 @@ async function loadFilteredDocuments() {
 
     if (summary) {
       const total = documents.reduce((sum, item) => sum + Number(item.invoice?.total || 0), 0);
-      summary.textContent = `${documents.length} resultado(s) · importe total ${formatMoney(total)}.`;
+      summary.textContent = `${window.pl(documents.length, "resultado(s)")} · importe total ${formatMoney(total)}.`;
     }
   } catch (error) {
     renderDocuments([], true);
@@ -607,7 +610,7 @@ function renderOpenRisks(documents) {
   }
 
   panel.classList.remove("hidden");
-  text.textContent = `${risks.length} documento(s) requieren revisión.`;
+  text.textContent = `${window.pl(risks.length, "documento(s) requiere(n)")} revisión.`;
 
   list.innerHTML = risks
     .slice(0, 6)
@@ -684,7 +687,7 @@ function renderAgenda(agenda) {
   if (!container) return;
 
   const urgent = (agenda.counts?.overdue || 0) + (agenda.counts?.critical || 0);
-  if (sub) sub.textContent = urgent ? `${urgent} asunto(s) urgente(s) · próximos 30 días` : "Próximos 30 días";
+  if (sub) sub.textContent = urgent ? `${window.pl(urgent, "asunto(s) urgente(s)")} · próximos 30 días` : "Próximos 30 días";
 
   if (!agenda.items.length) {
     container.innerHTML = emptyState("🗓️", "Nada vence en los próximos 30 días", "El agente te avisará en cuanto aparezca un plazo.");
@@ -745,13 +748,13 @@ function renderPayments(payments) {
   setText(
     "mUnpaidLabel",
     payments.overdue_count
-      ? `pendiente de pago · ${payments.overdue_count} vencida(s)`
+      ? `pendiente de pago · ${window.pl(payments.overdue_count, "vencida(s)")}`
       : "pendiente de pago"
   );
 
   if (sub) {
     sub.textContent = payments.unpaid_count
-      ? `${payments.unpaid_count} factura(s) · ${formatMoney(payments.unpaid_total)}`
+      ? `${window.pl(payments.unpaid_count, "factura(s)")} · ${formatMoney(payments.unpaid_total)}`
       : "Sin pagos pendientes";
   }
 
@@ -774,9 +777,9 @@ function renderPayments(payments) {
     let dueText = "Sin fecha de vencimiento";
     if (item.due_date) {
       const days = Number(item.days_to_due);
-      if (days < 0) dueText = `Venció hace ${Math.abs(days)} día(s) · ${formatDay(item.due_date)}`;
+      if (days < 0) dueText = `Venció hace ${window.pl(Math.abs(days), "día(s)")} · ${formatDay(item.due_date)}`;
       else if (days === 0) dueText = "Vence hoy";
-      else dueText = `Vence en ${days} día(s) · ${formatDay(item.due_date)}`;
+      else dueText = `Vence en ${window.pl(days, "día(s)")} · ${formatDay(item.due_date)}`;
     }
 
     return `
@@ -810,7 +813,7 @@ async function loadTasks() {
     renderTasks(tasksCache);
 
     const sub = document.getElementById("reviewInboxSub");
-    if (sub) sub.textContent = `${tasksCache.length} tarea(s) activas`;
+    if (sub) sub.textContent = `${window.pl(tasksCache.length, "tarea(s) activa(s)")}`;
     setText("mRisks", tasksCache.length);
   } catch (error) {
     console.error("No se pudieron cargar tareas:", error);
@@ -888,7 +891,7 @@ async function openTask(taskId, documentId) {
 }
 
 async function resolveTask(taskId) {
-  const note = window.prompt("Nota de resolución (opcional):", "Revisión completada");
+  const note = await window.askText("Nota de resolución (opcional):", { value: "Revisión completada" });
   if (note === null) return;
 
   try {
@@ -910,6 +913,8 @@ const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 
 function setupUpload() {
   const fileInput = document.getElementById("fileInput");
+  // El botón es un <button> de verdad: se alcanza con el teclado y abre el selector de archivos
+  document.getElementById("uploadTrigger")?.addEventListener("click", () => fileInput?.click());
   if (fileInput) {
     fileInput.addEventListener("change", async () => {
       const files = [...(fileInput.files || [])];
@@ -1003,8 +1008,8 @@ async function uploadFiles(files) {
 
   if (valid.length > 1) {
     showMessage(
-      `Carga terminada: ${results.ok} lista(s) para aprobar, ${results.review} para revisar, ` +
-      `${results.duplicate} duplicada(s), ${results.failed} con error.`,
+      `Carga terminada: ${window.pl(results.ok, "lista(s)")} para aprobar, ${results.review} para revisar, ` +
+      `${window.pl(results.duplicate, "duplicada(s)")}, ${results.failed} con error.`,
       results.failed ? "warning" : "success"
     );
   }
@@ -1285,6 +1290,14 @@ async function showDetail(documentId, focus = null) {
 
           ${invoice.id ? `
             <fieldset class="detail-form-grid" ${readonly}>
+              <p class="span-2 form-section">Quién la emite y quién la recibe</p>
+              ${detailInput({ id: "detailSupplierName", field: "supplier_name", label: "Emisor (proveedor)", value: invoice.supplier_name, invoice })}
+              ${detailInput({ id: "detailSupplierTaxId", field: "supplier_tax_id", label: "NIF/CIF proveedor", value: invoice.supplier_tax_id, invoice })}
+              ${detailInput({ id: "detailCustomerName", field: "customer_name", label: "Destinatario (cliente)", value: invoice.customer_name, invoice })}
+              ${detailInput({ id: "detailCustomerTaxId", field: "customer_tax_id", label: "NIF/CIF cliente", value: invoice.customer_tax_id, invoice })}
+
+              <p class="span-2 form-section">Factura</p>
+              ${detailInput({ id: "detailInvoiceNumber", field: "invoice_number", label: "Número de factura", value: invoice.invoice_number, invoice })}
               <label>
                 Tipo de factura
                 <select id="detailDirection" data-invoice-field="direction">
@@ -1292,9 +1305,6 @@ async function showDetail(documentId, focus = null) {
                   <option value="ISSUED" ${invoice.direction === "ISSUED" ? "selected" : ""}>Emitida (ingreso)</option>
                 </select>
               </label>
-              ${detailInput({ id: "detailSupplierName", field: "supplier_name", label: "Emisor (proveedor)", value: invoice.supplier_name, invoice })}
-              ${detailInput({ id: "detailSupplierTaxId", field: "supplier_tax_id", label: "NIF/CIF proveedor", value: invoice.supplier_tax_id, invoice })}
-              ${detailInput({ id: "detailInvoiceNumber", field: "invoice_number", label: "Número de factura", value: invoice.invoice_number, invoice })}
               ${detailInput({ id: "detailInvoiceDate", field: "invoice_date", label: "Fecha de factura", type: "date", value: dateInputValue(invoice.invoice_date), invoice })}
               ${detailInput({ id: "detailDueDate", field: "due_date", label: "Fecha de vencimiento", type: "date", value: dateInputValue(invoice.due_date), invoice })}
               <label>
@@ -1304,18 +1314,18 @@ async function showDetail(documentId, focus = null) {
                   ${categoryOptions}
                 </select>
               </label>
+              ${detailInput({ id: "detailCurrency", field: "currency", label: "Moneda", value: invoice.currency || "EUR", invoice, extra: 'maxlength="3"' })}
+              <label class="span-2">
+                Concepto
+                <textarea id="detailConcept" data-invoice-field="concept" rows="2">${escapeHtml(invoice.concept || "")}</textarea>
+              </label>
+
+              <p class="span-2 form-section">Importes</p>
               ${detailInput({ id: "detailSubtotal", field: "subtotal", label: "Base imponible", type: "number", value: invoice.subtotal, invoice })}
               ${detailInput({ id: "detailTaxTotal", field: "tax_total", label: "IVA", type: "number", value: invoice.tax_total, invoice })}
               ${detailInput({ id: "detailWithholding", field: "withholding_total", label: "Retención IRPF", type: "number", value: invoice.withholding_total, invoice })}
               ${detailInput({ id: "detailSurcharge", field: "surcharge_total", label: "Recargo de equivalencia", type: "number", value: invoice.surcharge_total, invoice })}
               ${detailInput({ id: "detailTotal", field: "total", label: "Total", type: "number", value: invoice.total, invoice })}
-              ${detailInput({ id: "detailCurrency", field: "currency", label: "Moneda", value: invoice.currency || "EUR", invoice, extra: 'maxlength="3"' })}
-              ${detailInput({ id: "detailCustomerName", field: "customer_name", label: "Destinatario (cliente)", value: invoice.customer_name, invoice })}
-              ${detailInput({ id: "detailCustomerTaxId", field: "customer_tax_id", label: "NIF/CIF cliente", value: invoice.customer_tax_id, invoice })}
-              <label class="span-2">
-                Concepto
-                <textarea id="detailConcept" data-invoice-field="concept" rows="2">${escapeHtml(invoice.concept || "")}</textarea>
-              </label>
               <p class="span-2 amount-check" id="amountCheck"></p>
             </fieldset>
             ${!editable ? `<p class="detail-hint">La factura está aprobada. Reábrela para corregir datos.</p>` : ""}
@@ -1533,12 +1543,9 @@ async function approveInvoice(invoiceId, documentId = null, button = null) {
 
     const missingFields = detail.missing_fields || [];
 
-    const confirmed = window.confirm(
-      `${detail.message || "La factura está incompleta."}\n\n` +
-      `Campos pendientes:\n${formatMissingFields(missingFields)}\n\n` +
-      "Aceptar: aprobar con advertencias.\n" +
-      "Cancelar: completar los campos."
-    );
+    const confirmed = await window.askConfirm(`${detail.message || "La factura está incompleta."}\n\n` +
+      `Campos pendientes:\n${formatMissingFields(missingFields)}`,
+      { confirmLabel: "Aprobar con advertencias" });
 
     if (!confirmed) {
       if (documentId) {
@@ -1566,7 +1573,7 @@ async function approveInvoice(invoiceId, documentId = null, button = null) {
 }
 
 async function rejectInvoice(invoiceId, documentId) {
-  const reason = window.prompt("Indica el motivo del rechazo (mínimo 3 caracteres):");
+  const reason = await window.askText("¿Por qué rechazas la factura?", { label: "Motivo del rechazo", minLength: 3, confirmLabel: "Rechazar factura", danger: true });
   if (reason === null) return;
 
   if (reason.trim().length < 3) {
@@ -1585,7 +1592,7 @@ async function rejectInvoice(invoiceId, documentId) {
 }
 
 async function reopenInvoice(invoiceId, documentId) {
-  const reason = window.prompt("¿Por qué reabres la factura? (quedará en el historial)");
+  const reason = await window.askText("¿Por qué reabres la factura? Quedará en el historial.", { label: "Motivo", minLength: 3, confirmLabel: "Reabrir factura" });
   if (reason === null) return;
 
   if (reason.trim().length < 3) {
@@ -1619,7 +1626,7 @@ async function markPaid(invoiceId, documentId) {
 }
 
 async function cancelPayment(invoiceId, documentId) {
-  if (!window.confirm("¿Anular el pago registrado de esta factura?")) return;
+  if (!await window.askConfirm("¿Anular el pago registrado de esta factura?")) return;
 
   try {
     await jsonRequest(`/invoices/${invoiceId}/payment`, "POST", { paid: false });
@@ -1632,10 +1639,8 @@ async function cancelPayment(invoiceId, documentId) {
 }
 
 async function convertToNotification(documentId) {
-  if (!window.confirm(
-    "Se tratará el documento como notificación administrativa (AEAT, Seguridad Social…) " +
-    "y dejará de contar como factura. ¿Continuar?"
-  )) return;
+  if (!await window.askConfirm("Se tratará el documento como notificación administrativa (AEAT, Seguridad Social…) " +
+    "y dejará de contar como factura. ¿Continuar?", { confirmLabel: "Tratar como notificación" })) return;
 
   try {
     await apiRequest(`/notifications/from-document/${documentId}`, { method: "POST" });
@@ -1649,7 +1654,7 @@ async function convertToNotification(documentId) {
 }
 
 async function reprocessDocument(documentId) {
-  if (!window.confirm("¿Quieres volver a ejecutar la extracción? Se sobrescribirán los datos extraídos.")) return;
+  if (!await window.askConfirm("¿Quieres volver a ejecutar la extracción? Se sobrescribirán los datos extraídos.", { confirmLabel: "Volver a extraer" })) return;
 
   try {
     const result = await apiRequest(`/documents/${documentId}/reprocess`, { method: "POST" });
@@ -1767,7 +1772,7 @@ async function syncOutlook(button = null) {
   try {
     const result = await apiRequest("/connectors/outlook/sync", { method: "POST" });
     showMessage(
-      result.message || `Sincronización terminada: ${result.imported || 0} adjunto(s) importado(s).`,
+      result.message || `Sincronización terminada: ${window.pl(result.imported || 0, "adjunto(s) importado(s)")}.`,
       "success"
     );
 
@@ -1783,7 +1788,7 @@ async function syncOutlook(button = null) {
 }
 
 async function disconnectOutlook() {
-  if (!window.confirm("¿Desconectar la cuenta de Outlook?")) return;
+  if (!await window.askConfirm("¿Desconectar la cuenta de Outlook?")) return;
 
   try {
     await apiRequest("/connectors/outlook/disconnect", { method: "POST" });

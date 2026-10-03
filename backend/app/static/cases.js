@@ -131,7 +131,7 @@
       </dl>
       ${levels.CONFLICTO || counts.FACTURA_SIN_PAGO ? `<small class="muted">${[
         levels.CONFLICTO ? `${levels.CONFLICTO} en conflicto (varias facturas posibles, importe distinto o duplicado): los decides tú` : "",
-        counts.FACTURA_SIN_PAGO ? `${counts.FACTURA_SIN_PAGO} factura(s) aprobadas sin pago en el banco` : "",
+        counts.FACTURA_SIN_PAGO ? `${window.pl(counts.FACTURA_SIN_PAGO, "factura(s) aprobada(s)")} sin pago en el banco` : "",
       ].filter(Boolean).join(" · ")}</small>` : ""}
     `;
   }
@@ -273,7 +273,7 @@
             ${item.summary ? `<span class="case-summary">${esc(item.summary)}</span>` : ""}
             <span class="case-meta">
               ${progress}
-              ${item.requests_pending ? `<span>${window.icon("send")} ${item.requests_pending} pedido(s)</span>` : ""}
+              ${item.requests_pending ? `<span>${window.icon("send")} ${window.pl(item.requests_pending, "pedido(s)")}</span>` : ""}
               ${item.has_draft ? `<span>${window.icon("edit")} Borrador listo</span>` : ""}
               ${item.amount ? `<span>${window.icon("coins")} ${money(item.amount)}</span>` : ""}
             </span>
@@ -351,7 +351,7 @@
         <strong>Modelo ${esc(ref.model)}${ref.quarter ? ` · ${ref.quarter}T` : ""}${ref.year ? ` ${ref.year}` : ""}</strong>
         <span>${ref.draft_result !== undefined && ref.draft_result !== null ? `Tus datos: ${money(ref.draft_result)}` : "Sin borrador"}</span>
         <span>${ref.filed ? `Presentado: ${money(ref.filed.amount)}` : "No consta presentado"}</span>
-        ${ref.invoices_pending ? `<span class="value-negative">${ref.invoices_pending} factura(s) sin revisar</span>` : ""}
+        ${ref.invoices_pending ? `<span class="value-negative">${window.pl(ref.invoices_pending, "factura(s)")} sin revisar</span>` : ""}
       </div>
     `).join("");
 
@@ -443,14 +443,14 @@
     const auto = [];
     const yours = [];
     const readyDocs = docs.filter((doc) => doc.status === "ready").length;
-    if (readyDocs) auto.push(`${readyDocs} documento(s) localizados y preparados para el paquete`);
+    if (readyDocs) auto.push(`${window.pl(readyDocs, "documento(s) localizado(s)")} y preparados para el paquete`);
     if (item.has_draft) auto.push(item.draft_edited ? "Borrador de respuesta (editado por ti)" : "Borrador de respuesta redactado");
-    if (item.requests_pending) auto.push(`Ha pedido ${item.requests_pending} documento(s) y enviará recordatorios`);
+    if (item.requests_pending) auto.push(`Ha pedido ${window.pl(item.requests_pending, "documento(s)")} y enviará recordatorios`);
     if (item.internal_deadline && open) auto.push(`Vigila el plazo y te avisa antes del ${day(item.internal_deadline)}`);
     if (open) {
-      if (placeholders.length) yours.push(`Completar ${placeholders.length} hueco(s) del borrador`);
+      if (placeholders.length) yours.push(`Completar ${window.pl(placeholders.length, "hueco(s)")} del borrador`);
       const toProvide = missingDocs.filter((doc) => doc.status !== "requested");
-      if (toProvide.length) yours.push(`Aportar o pedir ${toProvide.length} documento(s)`);
+      if (toProvide.length) yours.push(`Aportar o pedir ${window.pl(toProvide.length, "documento(s)")}`);
       yours.push(item.kind === "ANOMALY" ? "Aprobar la recomendación o descartarla" : item.kind === "DEADLINE" ? "Confirmar que está listo para presentar" : item.has_draft ? "Aprobar la respuesta y presentarla en la sede" : "Confirmar que está resuelto");
     } else if (item.status === "READY_TO_FILE") {
       yours.push("Presentarlo en la sede y anotar el justificante");
@@ -536,7 +536,7 @@
                 <span>${esc(doc.source_label)}${doc.note ? ` · ${esc(doc.note)}` : ""}</span>
                 ${doc.detail && doc.code !== "OTRO" ? `<small class="muted">Lo que pide el texto: «${esc(doc.detail)}»</small>` : ""}
                 ${doc.verification ? `<small class="${doc.verification === "ok" ? "value-positive" : "value-negative"}">${doc.verification === "ok" ? "Verificado automáticamente" : doc.verification === "doubtful" ? "Revisa el contenido: no coincide del todo con lo pedido" : "No se pudo leer: revísalo tú"}</small>` : ""}
-                ${doc.request?.status === "PENDING" ? `<small class="muted">Pedido${doc.request.reminders ? ` · ${doc.request.reminders} recordatorio(s)` : ""} · <button type="button" class="link-button" data-copy="${esc(doc.request.url)}">copiar enlace de subida</button></small>` : ""}
+                ${doc.request?.status === "PENDING" ? `<small class="muted">Pedido${doc.request.reminders ? ` · ${window.pl(doc.request.reminders, "recordatorio(s)")}` : ""} · <button type="button" class="link-button" data-copy="${esc(doc.request.url)}">copiar enlace de subida</button></small>` : ""}
               </div>
               <div class="doc-actions">
                 ${doc.status === "ready" ? `<span class="muted doc-auto">${window.icon("sparkles")} Va en el paquete</span>` : ""}
@@ -569,7 +569,7 @@
     const placeholders = (item.draft_response || "").match(/\[[^\]]+\]/g) || [];
     document.getElementById("casePaneDraft").innerHTML = item.draft_response ? `
       <div class="draft-head">
-        <p class="detail-hint">${item.draft_edited ? "Borrador editado por ti." : "Borrador preparado por el Gestor de incidencias."} ${placeholders.length ? `<strong class="value-negative">Quedan ${placeholders.length} hueco(s) entre [corchetes] por completar.</strong>` : "Sin huecos pendientes."}</p>
+        <p class="detail-hint">${item.draft_edited ? "Borrador editado por ti." : "Borrador preparado por el Gestor de incidencias."} ${placeholders.length ? `<strong class="value-negative">Quedan ${window.pl(placeholders.length, "hueco(s)")} entre [corchetes] por completar.</strong>` : "Sin huecos pendientes."}</p>
         <div class="card-actions">
           <a class="btn-ghost" href="/api/cases/${item.id}/letter.pdf" target="_blank" rel="noopener noreferrer">${window.icon("doc")} Ver en PDF</a>
           <button type="button" class="act-btn" data-case-action="save-draft">Guardar cambios</button>
@@ -680,7 +680,7 @@
         const missing = current.documents.filter((doc) => ["missing", "requested", "partial"].includes(doc.status)).length;
         const draft = document.getElementById("caseDraft");
         if (draft && draft.value !== current.draft_response) await patch({ draft_response: draft.value });
-        if (missing && !window.confirm(`Faltan ${missing} documento(s). ¿Aprobar la respuesta igualmente?`)) return;
+        if (missing && !await window.askConfirm(`Faltan ${window.pl(missing, "documento(s)")}. ¿Aprobar la respuesta igualmente?`, { confirmLabel: "Aprobar igualmente" })) return;
         const kind = current.kind;
         current = await window.jsonRequest(`/cases/${id}/approve`, "POST", {});
         window.showMessage(
@@ -688,12 +688,12 @@
           "success",
         );
       } else if (action === "file") {
-        const reference = window.prompt("Número de registro de entrada del justificante (opcional):", "");
+        const reference = await window.askText("Número de registro de entrada del justificante (opcional):");
         if (reference === null) return;
         current = await window.jsonRequest(`/cases/${id}/file`, "POST", { reference });
         window.showMessage("Presentación registrada en el expediente.", "success");
       } else if (action === "resolve" || action === "dismiss") {
-        const text = window.prompt(action === "dismiss" ? "¿Por qué se descarta? (queda en la memoria)" : "¿Cómo se ha resuelto? (queda en la memoria para la próxima vez)", "");
+        const text = await window.askText(action === "dismiss" ? "¿Por qué se descarta? (queda en la memoria)" : "¿Cómo se ha resuelto? (queda en la memoria para la próxima vez)");
         if (text === null) return;
         current = await window.jsonRequest(`/cases/${id}/resolve`, "POST", { resolution: text, dismiss: action === "dismiss" });
         window.showMessage(action === "dismiss" ? "Expediente descartado." : "Expediente resuelto.", "success");
@@ -757,7 +757,7 @@
           ${event.error ? `<small class="value-negative">${event.failed_agent_name ? `${esc(event.failed_agent_name)}: ` : ""}${esc(event.error.slice(0, 160))}</small>` : ""}
         </span>
         <span class="intake-meta">
-          ${event.duplicates ? `<small class="muted">${event.duplicates} repetido(s) ignorado(s)</small>` : ""}
+          ${event.duplicates ? `<small class="muted">${window.pl(event.duplicates, "repetido(s) ignorado(s)")}</small>` : ""}
           ${event.attempts > 1 ? `<small class="muted">${event.attempts} intentos</small>` : ""}
           <small class="muted">${esc(window.formatDate(event.created_at))}</small>
         </span>
@@ -791,7 +791,7 @@
       const result = await window.apiRequest("/connectors/email/import", { method: "POST", body: form });
       const cases = result.attachments.filter((item) => item.case_code).map((item) => item.case_code);
       window.showMessage(
-        `Correo «${result.subject || "sin asunto"}»: ${result.attachments.length} documento(s)` + (cases.length ? `, expediente ${cases.join(", ")}` : ", sin nada que revisar") + (result.skipped.length ? ` · ignorados: ${result.skipped.join(", ")}` : "") + ".",
+        `Correo «${result.subject || "sin asunto"}»: ${window.pl(result.attachments.length, "documento(s)")}` + (cases.length ? `, expediente ${cases.join(", ")}` : ", sin nada que revisar") + (result.skipped.length ? ` · ignorados: ${result.skipped.join(", ")}` : "") + ".",
         "success",
       );
       refreshBackground();
@@ -818,7 +818,7 @@
           <div class="rule-main">
             <div class="rule-title"><span class="status-pill mini ${className}">${esc(label)}${rule.version ? ` · v${rule.version}` : ""}</span><strong>${esc(rule.subject_name || rule.subject_key)} · «${esc(rule.field)}»</strong></div>
             <p>${esc(rule.effect)}</p>
-            <small class="muted">Evidencia: corregido en ${rule.evidence.corrections} factura(s)${(rule.evidence.examples || []).slice(-2).map((ex) => ` · «${esc(ex.predicted ?? "vacío")}» → «${esc(ex.human ?? "vacío")}»`).join("")}</small>
+            <small class="muted">Evidencia: corregido en ${window.pl(rule.evidence.corrections, "factura(s)")}${(rule.evidence.examples || []).slice(-2).map((ex) => ` · «${esc(ex.predicted ?? "vacío")}» → «${esc(ex.human ?? "vacío")}»`).join("")}</small>
             <small class="muted block">Simulación: ${esc(rule.simulation.summary || "")}</small>
             ${rule.decided_by ? `<small class="muted block">${esc(label)} por ${esc(rule.decided_by)} el ${esc(window.formatDate(rule.decided_at))}${rule.note ? ` · ${esc(rule.note)}` : ""}</small>` : ""}
           </div>
@@ -843,7 +843,7 @@
         <div class="agents-engine">
           <span class="status-pill ${data.ai_enabled ? "status-info" : "status-neutral"}">${data.ai_enabled ? `IA: ${esc(data.engine)}` : "Reglas y plantillas"}</span>
           <small>${data.ai_enabled ? "Claude lee las notificaciones y redacta las respuestas." : "Añade ANTHROPIC_API_KEY en .env para que Claude lea y redacte."}</small>
-          <small>${data.runs_this_month} recorrido(s) este mes</small>
+          <small>${window.pl(data.runs_this_month, "recorrido(s)")} este mes</small>
         </div>
       </div>
     `;
@@ -948,7 +948,7 @@
       if (pulseButton) {
         pulseButton.disabled = true;
         window.jsonRequest("/agents/pulse/run", "POST", {}).then((result) => {
-          window.showMessage(`Ciclo completo: buzón, pendientes, plazos, seguimiento y detector (${result.items} elemento(s) trabajados).`, "success");
+          window.showMessage(`Ciclo completo: buzón, pendientes, plazos, seguimiento y detector (${window.pl(result.items, "elemento(s) trabajado(s)")}).`, "success");
           refreshBackground();
         }).catch((error) => window.showMessage(error.message, "error")).finally(() => { pulseButton.disabled = false; });
         return;
@@ -959,11 +959,11 @@
       }
     });
 
-    section.addEventListener("click", (event) => {
+    section.addEventListener("click", async (event) => {
       const ruleButton = event.target.closest("[data-rule]");
       if (ruleButton) {
         const decision = ruleButton.dataset.decision;
-        const note = decision === "aprobar" ? "" : window.prompt(`Motivo para ${decision} (opcional):`, "");
+        const note = decision === "aprobar" ? "" : await window.askText(`Motivo para ${decision} (opcional):`);
         if (note === null) return;
         ruleButton.disabled = true;
         return window.jsonRequest(`/learning/rules/${ruleButton.dataset.rule}/${decision}`, "POST", { note: note || null })
@@ -997,7 +997,7 @@
     document.getElementById("scanAnomalies").addEventListener("click", async () => {
       try {
         const result = await window.jsonRequest("/agents/anomalies/scan", "POST", {});
-        window.showMessage(result.created ? `${result.created} anomalía(s) nuevas.` : result.found ? "Sin novedades: las anomalías ya estaban avisadas." : "Todo cuadra: sin anomalías.", "success");
+        window.showMessage(result.created ? `${window.pl(result.created, "anomalía(s) nueva(s)")}.` : result.found ? "Sin novedades: las anomalías ya estaban avisadas." : "Todo cuadra: sin anomalías.", "success");
         showView(result.created ? "anomalies" : view);
         refreshBackground();
       } catch (error) {
@@ -1013,7 +1013,7 @@
     document.getElementById("pollInbox").addEventListener("click", async () => {
       try {
         const result = await window.jsonRequest("/connectors/email/poll", "POST", {});
-        window.showMessage(result.messages ? `${result.messages} correo(s), ${result.documents} documento(s)` + (result.cases.length ? `; expedientes: ${result.cases.join(", ")}` : "") + "." : "Sin correos nuevos (configura IMAP en .env o deja .eml en data/buzon).", "success");
+        window.showMessage(result.messages ? `${window.pl(result.messages, "correo(s)")}, ${window.pl(result.documents, "documento(s)")}` + (result.cases.length ? `; expedientes: ${result.cases.join(", ")}` : "") + "." : "Sin correos nuevos (configura IMAP en .env o deja .eml en data/buzon).", "success");
         refreshBackground();
         loadIntake();
       } catch (error) {
@@ -1030,7 +1030,7 @@
     document.getElementById("watchDeadlines").addEventListener("click", async () => {
       try {
         const result = await window.jsonRequest("/agents/deadlines/watch", "POST", {});
-        window.showMessage(result.created ? `${result.created} plazo(s) con expediente: ${result.cases.map((item) => item.title).join(", ")}.` : "Ningún modelo vence en los próximos 15 días sin expediente.", "success");
+        window.showMessage(result.created ? `${window.pl(result.created, "plazo(s)")} con expediente: ${result.cases.map((item) => item.title).join(", ")}.` : "Ningún modelo vence en los próximos 15 días sin expediente.", "success");
         refreshBackground();
       } catch (error) {
         window.showMessage(error.message, "error");
@@ -1039,7 +1039,7 @@
     document.getElementById("processPending").addEventListener("click", async () => {
       try {
         const result = await window.jsonRequest("/agents/process-pending", "POST", {});
-        window.showMessage(result.processed ? `${result.processed} notificación(es) trabajadas por los agentes.` : "No había notificaciones pendientes de trabajar.", "success");
+        window.showMessage(result.processed ? `${window.pl(result.processed, "notificación(es) trabajada(s)")} por los agentes.` : "No había notificaciones pendientes de trabajar.", "success");
         refreshBackground();
       } catch (error) {
         window.showMessage(error.message, "error");
@@ -1090,7 +1090,7 @@
           await navigator.clipboard.writeText(copy.dataset.copy);
           window.showMessage("Enlace copiado.", "success");
         } catch {
-          window.prompt("Copia el enlace:", copy.dataset.copy);
+          await window.askText("Copia el enlace:", { value: copy.dataset.copy });
         }
         return;
       }

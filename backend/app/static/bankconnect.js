@@ -80,7 +80,7 @@
         return load();
       }
       const remove = target.closest("[data-bank-remove]");
-      if (remove && window.confirm("¿Desconectar este banco? Los movimientos ya importados se quedan.")) {
+      if (remove && await window.askConfirm("¿Desconectar este banco? Los movimientos ya importados se quedan.")) {
         await window.apiRequest(`/bank/connections/${remove.dataset.bankRemove}`, { method: "DELETE", headers: { "X-CapaFiscal": "1" } });
         return load();
       }

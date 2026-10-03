@@ -72,7 +72,7 @@
         <span class="close-done-mark" aria-hidden="true">✓</span>
         <div>
           <h2 class="close-headline">${esc(name.charAt(0).toUpperCase() + name.slice(1))} cerrado</h2>
-          <p class="close-work">${data.closed ? `Por ${esc(data.closed.by || "—")} el ${esc(new Date(data.closed.at).toLocaleString("es-ES"))} · ${data.closed.percent} % resuelto${data.closed.blockers ? ` · ${data.closed.blockers} salvedad(es): «${esc(data.closed.note || "")}»` : ""}` : ""}</p>
+          <p class="close-work">${data.closed ? `Por ${esc(data.closed.by || "—")} el ${esc(new Date(data.closed.at).toLocaleString("es-ES"))} · ${data.closed.percent} % resuelto${data.closed.blockers ? ` · ${window.pl(data.closed.blockers, "salvedad(es)")}: «${esc(data.closed.note || "")}»` : ""}` : ""}</p>
         </div>
       </div>
       ${checklist}
@@ -98,12 +98,12 @@
           <div class="close-actions"><button type="button" class="link-button" data-close-action="close-note">Cerrar igualmente, con salvedades…</button>${report}</div>
         </div>` : `<div class="close-actions">${report}</div>`}
       <p class="close-formula muted">${data.units.done} de ${data.units.total} elementos resueltos (${esc(data.units.formula)}).</p>
-      ${data.work ? `<p class="close-work muted">En la última preparación CapaFiscal concilió ${data.work.auto_matched} movimiento(s) con evidencia suficiente, abrió ${data.work.anomalies_created} anomalía(s) y cerró ${data.work.anomalies_closed}.</p>` : ""}
+      ${data.work ? `<p class="close-work muted">En la última preparación CapaFiscal concilió ${window.pl(data.work.auto_matched, "movimiento(s)")} con evidencia suficiente, abrió ${window.pl(data.work.anomalies_created, "anomalía(s)")} y cerró ${data.work.anomalies_closed}.</p>` : ""}
     `;
 
     document.getElementById("closeChecksSub").textContent = data.blockers
-      ? `${data.blockers} bloquea(n) · ${data.warnings} aviso(s)`
-      : data.warnings ? `Nada bloquea · ${data.warnings} aviso(s)` : "Todo correcto";
+      ? `${data.blockers} bloquea(n) · ${window.pl(data.warnings, "aviso(s)")}`
+      : data.warnings ? `Nada bloquea · ${window.pl(data.warnings, "aviso(s)")}` : "Todo correcto";
     document.getElementById("closeChecks").innerHTML = data.checks.map((item) => {
       const [symbol, className, label] = MARK[item.status];
       return `
@@ -136,17 +136,17 @@
         busy = true;
         render();
         current = { ...(await window.jsonRequest(`/close/${period}/run`, "POST", {})), history: current.history };
-        window.showMessage(`Cierre preparado: ${current.percent} % · ${current.blockers ? `${current.blockers} bloqueo(s)` : "listo para cerrar"}.`, "success");
+        window.showMessage(`Cierre preparado: ${current.percent} % · ${current.blockers ? `${window.pl(current.blockers, "bloqueo(s)")}` : "listo para cerrar"}.`, "success");
       } else if (action === "close" || action === "close-note") {
         let note = null;
         if (action === "close-note") {
-          note = window.prompt(`Quedan ${current.blockers} bloqueo(s). Escribe por qué se cierra igualmente (queda registrado):`, "");
+          note = await window.askText(`Quedan ${window.pl(current.blockers, "bloqueo(s)")}. Escribe por qué se cierra igualmente (queda registrado):`);
           if (note === null || !note.trim()) return;
         }
         await window.jsonRequest(`/close/${period}/close`, "POST", { note });
         window.showMessage(`${monthName(period)} cerrado.`, "success");
       } else if (action === "reopen") {
-        if (!window.confirm(`¿Reabrir ${monthName(period)}?`)) return;
+        if (!await window.askConfirm(`¿Reabrir ${monthName(period)}?`)) return;
         await window.jsonRequest(`/close/${period}/reopen`, "POST", {});
       }
     } catch (error) {

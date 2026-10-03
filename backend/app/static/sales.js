@@ -163,11 +163,11 @@
     const set = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
     set("salesMonth", money(data.issued_month));
     set("salesYear", money(data.issued_year));
-    set("salesYearFoot", `${data.count_year} factura(s) · siguiente ${data.next_code}`);
+    set("salesYearFoot", `${window.pl(data.count_year, "factura(s)")} · siguiente ${data.next_code}`);
     set("salesPending", money(data.pending));
-    set("salesOverdueFoot", data.collections.count ? `${money(data.collections.amount)} vencido en ${data.collections.count} factura(s)` : "nada vencido");
+    set("salesOverdueFoot", data.collections.count ? `${money(data.collections.amount)} vencido en ${window.pl(data.collections.count, "factura(s)")}` : "nada vencido");
     set("salesRecurring", money(data.recurring_monthly));
-    set("salesRecurringFoot", `al mes · ${data.recurring_active} activa(s)`);
+    set("salesRecurringFoot", `al mes · ${window.pl(data.recurring_active, "activa(s)")}`);
     updateBadge(data.collections.count);
 
     const pill = document.getElementById("salesOverdueCount");
@@ -196,7 +196,7 @@
 
     document.getElementById("salesChain").innerHTML = chain.records
       ? (chain.valid
-        ? `${window.icon("shield")} Cadena de registros íntegra · ${chain.records} registro(s)`
+        ? `${window.icon("shield")} Cadena de registros íntegra · ${window.pl(chain.records, "registro(s)")}`
         : `<span class="danger-text">${window.icon("alert")} Cadena rota en ${esc(chain.broken_at)}</span>`)
       : "";
 
@@ -353,7 +353,7 @@
         window.showMessage(`Factura ${issued.code} emitida y anotada en el libro de emitidas.`, "success");
         await openInvoice(issued.id);
       } else if (action === "delete") {
-        if (!window.confirm("¿Eliminar este borrador?")) return;
+        if (!await window.askConfirm("¿Eliminar este borrador?")) return;
         await window.apiRequest(`/sales/invoices/${current.id}`, { method: "DELETE" });
         closeDialog("invoiceDialog");
         window.showMessage("Borrador eliminado.", "success");
@@ -372,7 +372,7 @@
         const copy = await window.jsonRequest(`/sales/invoices/${current.id}/duplicate`, "POST", {});
         await openInvoice(copy.id);
       } else if (action === "rectify") {
-        const reason = window.prompt("Motivo de la rectificación (aparecerá en la factura):", "Anulación de la factura original");
+        const reason = await window.askText("Motivo de la rectificación (aparecerá en la factura):", { value: "Anulación de la factura original" });
         if (reason === null) return;
         const draft = await window.jsonRequest(`/sales/invoices/${current.id}/rectify`, "POST", { reason });
         window.showMessage("Borrador de rectificativa creado con los importes en negativo. Ajústalo y emítelo.", "success");
@@ -466,7 +466,7 @@
           <span class="status-pill ${item.active ? (item.auto_issue ? "status-success" : "status-info") : "status-neutral"}">
             ${item.active ? (item.auto_issue ? (item.auto_send ? "Emite y prepara envío" : "Emite sola") : "Deja borrador") : "En pausa"}
           </span>
-          <small>${item.active ? `Próxima: ${day(item.next_date)}` : ""}${item.generated_count ? ` · ${item.generated_count} generada(s)` : ""}</small>
+          <small>${item.active ? `Próxima: ${day(item.next_date)}` : ""}${item.generated_count ? ` · ${window.pl(item.generated_count, "generada(s)")}` : ""}</small>
         </span>
       </button>
     `).join("");
@@ -533,7 +533,7 @@
     const summary = data.summary;
 
     document.getElementById("collectionsHero").innerHTML = summary.count ? `
-      <div class="collections-stat"><span>Vencido</span><strong>${money(summary.amount)}</strong><small>${summary.count} factura(s)</small></div>
+      <div class="collections-stat"><span>Vencido</span><strong>${money(summary.amount)}</strong><small>${window.pl(summary.count, "factura(s)")}</small></div>
       <div class="collections-stat"><span>Intereses de demora devengados</span><strong>${money(summary.interest)}</strong><small>Ley 3/2004</small></div>
       <div class="collections-stat"><span>Retraso medio ponderado</span><strong>${String(summary.weighted_days).replace(".", ",")} días</strong><small>por importe</small></div>
       <div class="collections-stat"><span>Reclamaciones por preparar</span><strong>${summary.pending_actions}</strong><small>${summary.pending_actions ? "el agente las redacta" : "al día"}</small></div>
@@ -576,7 +576,7 @@
     document.getElementById("customerRisk").innerHTML = data.customers.length
       ? `<div class="plain-rows">${data.customers.slice(0, 6).map((row) => `
           <div class="plain-row">
-            <span><strong>${esc(row.customer_name || "—")}</strong><small class="muted block">${row.count} factura(s) · la más antigua ${row.max_days} d${row.average_delay ? ` · paga con ${row.average_delay} d de media` : ""}</small></span>
+            <span><strong>${esc(row.customer_name || "—")}</strong><small class="muted block">${window.pl(row.count, "factura(s)")} · la más antigua ${row.max_days} d${row.average_delay ? ` · paga con ${row.average_delay} d de media` : ""}</small></span>
             <strong class="value-negative">${money(row.amount)}</strong>
           </div>`).join("")}</div>`
       : `<p class="empty-inline">Nadie te debe dinero vencido.</p>`;
@@ -589,7 +589,7 @@
         window.showMessage("No había reclamaciones nuevas que preparar.", "info");
       } else {
         window.showMessage(
-          `${result.created} reclamación(es) preparada(s) en la bandeja de salida${result.without_email ? ` (${result.without_email} sin email del cliente)` : ""}.`,
+          `${window.pl(result.created, "reclamación(es) preparada(s)")} en la bandeja de salida${result.without_email ? ` (${result.without_email} sin email del cliente)` : ""}.`,
           "success",
         );
       }
@@ -641,7 +641,7 @@
     document.getElementById("importCustomersButton").addEventListener("click", async () => {
       try {
         const result = await window.jsonRequest("/sales/customers/import", "POST", {});
-        window.showMessage(result.created ? `${result.created} cliente(s) importado(s).` : "No había clientes nuevos en las facturas leídas.", "success");
+        window.showMessage(result.created ? `${window.pl(result.created, "cliente(s) importado(s)")}.` : "No había clientes nuevos en las facturas leídas.", "success");
         loadCustomersView();
       } catch (error) {
         window.showMessage(error.message, "error");
@@ -708,7 +708,7 @@
 
     document.getElementById("customerForm").addEventListener("submit", saveCustomer);
     document.getElementById("customerDelete").addEventListener("click", async () => {
-      if (!currentCustomer || !window.confirm(`¿Eliminar a ${currentCustomer.name}?`)) return;
+      if (!currentCustomer || !await window.askConfirm(`¿Eliminar a ${currentCustomer.name}?`)) return;
       try {
         await window.apiRequest(`/sales/customers/${currentCustomer.id}`, { method: "DELETE" });
         closeDialog("customerDialog");
@@ -723,7 +723,7 @@
       if (event.target.checked) document.getElementById("recurringForm").elements.auto_issue.checked = true;
     });
     document.getElementById("recurringDelete").addEventListener("click", async () => {
-      if (!currentRecurring || !window.confirm("¿Eliminar esta factura recurrente? Las ya emitidas no se tocan.")) return;
+      if (!currentRecurring || !await window.askConfirm("¿Eliminar esta factura recurrente? Las ya emitidas no se tocan.")) return;
       try {
         await window.apiRequest(`/sales/recurring/${currentRecurring.id}`, { method: "DELETE" });
         closeDialog("recurringDialog");

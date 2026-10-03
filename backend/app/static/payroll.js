@@ -142,7 +142,7 @@
     const totals = run.totals;
     document.querySelector("#payslipTable tfoot").innerHTML = `
       <tr class="total-row">
-        <td>Total · ${totals.employees} persona(s)</td>
+        <td>Total · ${window.pl(totals.employees, "persona(s)")}</td>
         <td></td><td></td><td></td><td></td>
         <td class="num">${money(totals.gross)}</td>
         <td class="num">${money(totals.ss_employee)}</td>
@@ -173,7 +173,7 @@
         renderRun(await window.apiRequest(`/payroll/runs/${currentRunId}/recalculate`, { method: "POST" }));
         window.showMessage("Nómina recalculada con los datos actuales del equipo.", "success");
       } else if (action === "approve") {
-        if (!window.confirm("¿Aprobar la nómina? Después no se podrán cambiar las variables sin volver a borrador.")) return;
+        if (!await window.askConfirm("¿Aprobar la nómina? Después no se podrán cambiar las variables sin volver a borrador.")) return;
         await window.jsonRequest(`/payroll/runs/${currentRunId}/status`, "POST", { status: "APPROVED" });
         window.showMessage("Nómina aprobada: ya puedes descargar la remesa SEPA y los recibos.", "success");
       } else if (action === "paid") {
@@ -185,14 +185,14 @@
         const result = await window.jsonRequest(`/payroll/runs/${currentRunId}/email`, "POST", {});
         window.showMessage(
           result.created
-            ? `${result.created} recibo(s) preparado(s) en la bandeja de salida${result.without_email.length ? ` · sin email: ${result.without_email.join(", ")}` : ""}.`
+            ? `${window.pl(result.created, "recibo(s) preparado(s)")} en la bandeja de salida${result.without_email.length ? ` · sin email: ${result.without_email.join(", ")}` : ""}.`
             : "Los recibos de esta nómina ya estaban preparados o enviados.",
           result.without_email.length ? "warning" : "success",
         );
         window.dispatchEvent(new CustomEvent("capafiscal:outbox-changed"));
         return;
       } else if (action === "delete") {
-        if (!window.confirm("¿Eliminar este borrador de nómina?")) return;
+        if (!await window.askConfirm("¿Eliminar este borrador de nómina?")) return;
         await window.apiRequest(`/payroll/runs/${currentRunId}`, { method: "DELETE" });
         currentRunId = null;
       }
@@ -238,7 +238,7 @@
           month: Number(data.get("month")),
         });
         currentRunId = run.id;
-        window.showMessage(`Borrador de ${run.period} generado para ${run.totals.employees} persona(s).`, "success");
+        window.showMessage(`Borrador de ${run.period} generado para ${window.pl(run.totals.employees, "persona(s)")}.`, "success");
         await loadRuns();
         document.getElementById("payrollRunCard").scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (error) {

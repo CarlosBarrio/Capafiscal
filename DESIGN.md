@@ -106,6 +106,8 @@ secundario.
   para todo lo demás. Se mantienen: forman parte de la identidad y funcionan.
 - Cifras con `font-variant-numeric: tabular-nums` y alineadas a la derecha en tablas.
 - Tamaño mínimo de texto legible: 11 px (pills mini) y 11,5 px para notas; cuerpo de 13–14 px.
+- Cabeceras de tabla, títulos de grupo y etiquetas en minúscula normal (frase), nunca en versalitas;
+  las etiquetas de cifras empiezan en mayúscula. Titulares con `text-wrap: balance`.
 - Etiquetas de grupo de la navegación en minúscula normal (12 px, `muted`), no en versalitas: sin
   etiquetas en mayúsculas sobre el contenido.
 
@@ -139,6 +141,12 @@ secundario.
 - **Estado** `.status-pill` (+ `.mini`), punto `.level-dot` con texto al lado.
 - **Segmentado** `.segmented` para alternar vistas; **migas** en la barra superior.
 - **Mensajes** `.app-message`: superficie blanca con punto de estado; `role="alert"` en errores.
+- **Confirmaciones y preguntas** `dialogs.js`: `await askConfirm("¿Eliminar…?")` y `await askText(…, { minLength })`.
+  Nunca `confirm()`/`prompt()` del navegador. El botón toma el verbo de la pregunta; lo destructivo, en rojo
+  suave y con el foco en «Cancelar».
+- **Plurales** `pl(n, "factura(s) aprobada(s)")`: nunca «(s)» a la vista.
+- **Formularios largos**: agrupados con `.form-section` (p. ej. detalle de factura: quién, factura, importes);
+  importes alineados a la derecha con cifras tabulares.
 - **Campos**: borde `line-strong`, foco con contorno de marca (`:focus-visible`), deshabilitado
   con fondo `surface-3`.
 - **Estados vacíos** `.board-empty` / `emptyState()`: una frase con contexto y, si existe, la acción.

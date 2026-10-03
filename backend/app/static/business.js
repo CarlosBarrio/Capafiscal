@@ -152,7 +152,7 @@
 
     if (sub) {
       sub.textContent = overview.unpaid_count
-        ? `${overview.unpaid_count} factura(s) · ${money(overview.unpaid_total)}`
+        ? `${window.pl(overview.unpaid_count, "factura(s)")} · ${money(overview.unpaid_total)}`
         : "Todo cobrado";
     }
 
@@ -172,7 +172,7 @@
       const [label, className] = labels[item.state] || labels.PENDING;
       const days = Number(item.days_to_due);
       const dueText = item.due_date
-        ? (days < 0 ? `Venció hace ${Math.abs(days)} día(s)` : `Vence en ${days} día(s)`)
+        ? (days < 0 ? `Venció hace ${window.pl(Math.abs(days), "día(s)")}` : `Vence en ${window.pl(days, "día(s)")}`)
         : "Sin fecha de vencimiento";
 
       return `
@@ -478,7 +478,7 @@
       try {
         // Solo concilia lo SEGURO (importe exacto + prueba de identidad + una única factura).
         const result = await window.jsonRequest("/bank/reconcile", "POST", {});
-        window.showMessage(result.auto_matched ? `${result.auto_matched} movimiento(s) conciliados con evidencia suficiente.` : "Nada con evidencia suficiente para conciliar solo: revisa los probables y los conflictos.", "success");
+        window.showMessage(result.auto_matched ? `${window.pl(result.auto_matched, "movimiento(s) conciliado(s)")} con evidencia suficiente.` : "Nada con evidencia suficiente para conciliar solo: revisa los probables y los conflictos.", "success");
         await refreshBusiness();
         window.refreshAll();
       } catch (error) {

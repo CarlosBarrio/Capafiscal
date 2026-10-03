@@ -172,9 +172,9 @@
     }
     body.innerHTML = data.rows.map((row) => {
       const issues = [];
-      if (row.missing_days.length) issues.push(`<span class="status-pill mini status-warning">${row.missing_days.length} día(s) sin registro</span>`);
-      if (row.long_days.length) issues.push(`<span class="status-pill mini status-danger">${row.long_days.length} jornada(s) &gt; 9 h</span>`);
-      if (row.manual_entries) issues.push(`<span class="status-pill mini status-neutral">${row.manual_entries} manual(es)</span>`);
+      if (row.missing_days.length) issues.push(`<span class="status-pill mini status-warning">${window.pl(row.missing_days.length, "día(s)")} sin registro</span>`);
+      if (row.long_days.length) issues.push(`<span class="status-pill mini status-danger">${window.pl(row.long_days.length, "jornada(s)")} &gt; 9 h</span>`);
+      if (row.manual_entries) issues.push(`<span class="status-pill mini status-neutral">${window.pl(row.manual_entries, "manual(es)")}</span>`);
       const balanceClass = row.balance_minutes < -60 ? "value-negative" : row.balance_minutes > 60 ? "value-positive" : "";
       return `
         <tr>
@@ -338,7 +338,7 @@
         window.showMessage("Indica el motivo antes de borrar el registro.", "warning");
         return;
       }
-      if (!window.confirm("¿Borrar este registro? Quedará constancia en el historial.")) return;
+      if (!await window.askConfirm("¿Borrar este registro? Quedará constancia en el historial.")) return;
       try {
         await window.jsonRequest(`/timesheet/entries/${currentEntry.id}/delete`, "POST", { reason });
         document.getElementById("entryDialog").close();

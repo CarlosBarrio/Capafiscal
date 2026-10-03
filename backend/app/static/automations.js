@@ -34,7 +34,7 @@
     ]);
 
     document.getElementById("autoItems").textContent = data.month.items;
-    document.getElementById("autoRuns").textContent = `${data.month.runs} ejecución(es) este mes`;
+    document.getElementById("autoRuns").textContent = `${window.pl(data.month.runs, "ejecución(es)")} este mes`;
     document.getElementById("autoHours").textContent = `${String(data.month.hours_saved).replace(".", ",")} h`;
     document.getElementById("autoCost").textContent = window.formatMoney(data.month.cost_saved);
     document.getElementById("autoScheduler").textContent = data.scheduler.running ? "Activo" : "Parado";

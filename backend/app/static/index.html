@@ -7,6 +7,8 @@
     content="width=device-width, initial-scale=1.0, viewport-fit=cover"
   >
   <title>CapaFiscal · Administrativo digital</title>
+  <meta name="description" content="CapaFiscal: facturas, impuestos, banco y notificaciones de tu empresa, al día y revisados.">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -15,10 +17,11 @@
   >
   <link
     rel="stylesheet"
-    href="/static/style.css?v=110"
+    href="/static/style.css?v=111"
   >
 </head>
 <body>
+<a class="skip-link" href="#contenido">Saltar al contenido</a>
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
   <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
   <symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.9L19 9.7l-5.2 1.8L12 16.5l-1.8-5L5 9.7l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
@@ -163,17 +166,17 @@
   <div class="main-area">
     <header class="topbar site-header">
       <button type="button" class="icon-button menu-toggle" id="menuToggle" aria-label="Abrir menú"><svg class="icon"><use href="#i-menu"/></svg></button>
-      <div class="breadcrumb" id="breadcrumb">
+      <nav class="breadcrumb" id="breadcrumb" aria-label="Estás en">
         <span class="breadcrumb-group" id="breadcrumbGroup">Inicio</span>
         <svg class="icon"><use href="#i-chevron"/></svg>
         <span class="breadcrumb-current" id="breadcrumbCurrent">Hoy</span>
-      </div>
+      </nav>
       <button type="button" class="search-trigger" id="searchTrigger">
         <svg class="icon"><use href="#i-search"/></svg><span>Buscar o ir a…</span><kbd>Ctrl K</kbd>
       </button>
-      <label for="fileInput" class="btn-solid-light upload-button">
-        <svg class="icon"><use href="#i-upload"/></svg><span>Subir documentos</span>
-      </label>
+      <button type="button" class="btn-solid-light upload-button" id="uploadTrigger" aria-controls="fileInput" aria-label="Subir documentos">
+        <svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg><span>Subir documentos</span>
+      </button>
       <input
         type="file"
         id="fileInput"
@@ -183,7 +186,7 @@
       >
     </header>
 
-<main class="page">
+<main class="page" id="contenido" tabindex="-1">
   <!-- PANEL: CENTRO DE TRABAJO -->
   <section class="tab-panel active" id="tab-panel">
     <div class="section-title work-title">
@@ -1912,27 +1915,28 @@
 <div id="appMessages" class="app-messages"></div>
 
 <script src="/static/auth.js?v=3"></script>
-<script src="/static/app.js?v=68"></script>
-<script src="/static/reports.js?v=3"></script>
+<script src="/static/dialogs.js?v=1"></script>
+<script src="/static/app.js?v=69"></script>
+<script src="/static/reports.js?v=4"></script>
 <script src="/static/assistant.js?v=3"></script>
 <script src="/static/activity.js?v=4"></script>
-<script src="/static/business.js?v=9"></script>
-<script src="/static/taxes.js?v=3"></script>
+<script src="/static/business.js?v=10"></script>
+<script src="/static/taxes.js?v=4"></script>
 <script src="/static/notifications.js?v=2"></script>
 <script src="/static/compliance.js?v=1"></script>
 <script src="/static/company.js?v=3"></script>
-<script src="/static/team.js?v=1"></script>
-<script src="/static/payroll.js?v=2"></script>
-<script src="/static/cases.js?v=11"></script>
-<script src="/static/sales.js?v=2"></script>
-<script src="/static/outbox.js?v=4"></script>
-<script src="/static/timesheet.js?v=3"></script>
-<script src="/static/automations.js?v=4"></script>
-<script src="/static/intelligence.js?v=1"></script>
-<script src="/static/close.js?v=3"></script>
-<script src="/static/work.js?v=11"></script>
+<script src="/static/team.js?v=2"></script>
+<script src="/static/payroll.js?v=3"></script>
+<script src="/static/cases.js?v=12"></script>
+<script src="/static/sales.js?v=3"></script>
+<script src="/static/outbox.js?v=5"></script>
+<script src="/static/timesheet.js?v=4"></script>
+<script src="/static/automations.js?v=5"></script>
+<script src="/static/intelligence.js?v=2"></script>
+<script src="/static/close.js?v=4"></script>
+<script src="/static/work.js?v=12"></script>
 <script src="/static/accounting.js?v=2"></script>
-<script src="/static/bankconnect.js?v=1"></script>
-<script src="/static/shell.js?v=9"></script>
+<script src="/static/bankconnect.js?v=2"></script>
+<script src="/static/shell.js?v=10"></script>
 </body>
 </html>

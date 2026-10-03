@@ -60,7 +60,7 @@
         <div class="card alert-card">
           <div class="card-head">
             <h2>Pendientes del equipo</h2>
-            <span class="card-sub">${overview.alerts.length} tarea(s) con plazo</span>
+            <span class="card-sub">${window.pl(overview.alerts.length, "tarea(s)")} con plazo</span>
           </div>
           <div class="alert-list">
             ${overview.alerts.slice(0, 6).map((alert) => `
@@ -143,7 +143,7 @@
             <div><dt>Responsable</dt><dd>${esc(person.manager_name || "—")}</dd></div>
             <div><dt>Proyectos</dt><dd>${person.projects.length ? person.projects.map((project) => `${esc(project.name)} (${project.allocation} %)`).join(", ") : "—"}</dd></div>
           </dl>
-          ${person.urgent_checks ? `<p class="person-alert">${window.icon("alert")} ${person.urgent_checks} tarea(s) urgente(s) de incorporación</p>` : ""}
+          ${person.urgent_checks ? `<p class="person-alert">${window.icon("alert")} ${window.pl(person.urgent_checks, "tarea(s) urgente(s)")} de incorporación</p>` : ""}
         </button>
       `;
     }).join("");
@@ -353,7 +353,7 @@
     const container = document.getElementById("orgChart");
     const chart = await window.apiRequest("/team/org-chart");
     document.getElementById("orgSub").textContent =
-      `${chart.headcount} persona(s) · ${Object.keys(chart.departments).length} departamento(s)`;
+      `${window.pl(chart.headcount, "persona(s)")} · ${window.pl(Object.keys(chart.departments).length, "departamento(s)")}`;
 
     if (!chart.roots.length) {
       container.innerHTML = window.emptyState("org", "Sin organigrama todavía", "Crea fichas e indica el responsable de cada persona.");
@@ -543,13 +543,13 @@
       }
 
       const deleteProject = event.target.closest("[data-delete-project]");
-      if (deleteProject && window.confirm("¿Eliminar el proyecto y sus asignaciones?")) {
+      if (deleteProject && await window.askConfirm("¿Eliminar el proyecto y sus asignaciones?")) {
         await window.apiRequest(`/team/projects/${deleteProject.dataset.deleteProject}`, { method: "DELETE" });
         loadProjects();
       }
 
       const absenceCell = event.target.closest("[data-absence]");
-      if (absenceCell && window.confirm("¿Eliminar esta ausencia?")) {
+      if (absenceCell && await window.askConfirm("¿Eliminar esta ausencia?")) {
         await window.apiRequest(`/team/absences/${absenceCell.dataset.absence}`, { method: "DELETE" });
         loadAbsences();
         loadOverview();
@@ -632,7 +632,7 @@
     });
 
     document.getElementById("employeeDelete")?.addEventListener("click", async () => {
-      if (!currentEmployee || !window.confirm(`¿Eliminar la ficha de ${currentEmployee.name}? Si ya tiene nóminas, indica mejor una fecha de baja.`)) return;
+      if (!currentEmployee || !await window.askConfirm(`¿Eliminar la ficha de ${currentEmployee.name}? Si ya tiene nóminas, indica mejor una fecha de baja.`)) return;
       try {
         await window.apiRequest(`/team/employees/${currentEmployee.id}`, { method: "DELETE" });
         document.getElementById("employeeDialog").close();
@@ -665,7 +665,7 @@
 
     document.getElementById("employeeDocs")?.addEventListener("click", async (event) => {
       const button = event.target.closest("[data-delete-doc]");
-      if (!button || !window.confirm("¿Eliminar el documento?")) return;
+      if (!button || !await window.askConfirm("¿Eliminar el documento?")) return;
       await window.apiRequest(`/team/documents/${button.dataset.deleteDoc}`, { method: "DELETE" });
       openEmployee(currentEmployee.id);
     });
