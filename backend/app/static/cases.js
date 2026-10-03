@@ -263,6 +263,7 @@
         <button type="button" class="case-card lvl-${esc(item.level)}" data-case="${item.id}">
           <span class="case-main">
             <span class="case-top">
+              <span class="case-level"><span class="level-dot"></span>${esc(LEVEL_LABELS[item.level] || "")}</span>
               <span class="mono">${esc(item.code || "")}</span>
               <span>${esc(item.kind === "ANOMALY" ? item.procedure_label : item.organism_label || "")}</span>
               ${item.reference ? `<span>ref. ${esc(item.reference)}</span>` : ""}

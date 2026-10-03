@@ -529,7 +529,7 @@ function realDocumentCard(documentItem) {
     </div>
     ${state ? `<span class="status-pill ${state.className}">${escapeHtml(state.label)}</span>` : "<span></span>"}
     <span class="invoice-row-amount">${invoice.total !== null && invoice.total !== undefined ? formatMoney(invoice.total, invoice.currency) : "—"}</span>
-    <button class="${pending ? "act-btn act-primary" : "btn-ghost"}" type="button" data-call="showDetail" data-args="${documentId}">${pending ? "Revisar" : "Ver"}</button>
+    <button class="${pending ? "act-btn" : "btn-ghost"}" type="button" data-call="showDetail" data-args="${documentId}">${pending ? "Revisar" : "Ver"}</button>
   </article>
   `;
 }
