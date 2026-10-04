@@ -340,7 +340,7 @@ def build_digest(database: Session, today: date) -> dict[str, Any]:
         lines.append("")
 
     if outbox["draft"]:
-        lines.append(f"BANDEJA DE SALIDA: {outbox['draft']} mensaje(s) esperando tu visto bueno.")
+        lines.append(f"BANDEJA DE SALIDA: {outbox['draft']} {'mensaje esperando' if outbox['draft'] == 1 else 'mensajes esperando'} tu visto bueno.")
         lines.append("")
 
     if alerts:

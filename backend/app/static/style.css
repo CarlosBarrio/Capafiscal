@@ -1143,6 +1143,11 @@ dialog {
 }
 
 .detail-actions-bar { padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+/* Cambios sin guardar en el detalle: aviso de estado (punto ámbar + texto), no decoración */
+.detail-dirty { display: flex; gap: 8px; align-items: baseline; margin: 0 0 10px; color: var(--amber); font-size: 13px; font-weight: 500; }
+.detail-dirty::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); transform: translateY(-1px); }
+/* Cifras sin datos o con error (setFigures): la misma tarjeta que el error de «Hoy» */
+.figures-note .btn-ghost { margin-top: 10px; }
 
 .timeline { margin: 0; padding: 0; list-style: none; position: relative; }
 .timeline::before { content: ""; position: absolute; top: 8px; bottom: 8px; left: 5px; width: 1px; background: var(--line-strong); }

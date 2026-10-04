@@ -164,9 +164,10 @@ def journal(database: Session, date_from: date, date_to: date) -> dict[str, Any]
         {"label": "Sumas del diario iguales", "ok": abs(totals["debit"] - totals["credit"]) < 0.01, "detail": None},
         {"label": "Facturas con cuenta de gasto específica", "ok": default_account == 0 or None,
          "detail": f"{default_account} en {DEFAULT_ACCOUNT} (otros gastos): revisa la categoría" if default_account else None},
-        {"label": "Terceros con NIF", "ok": no_tax_id == 0 or None, "detail": f"{no_tax_id} asiento(s) con proveedor o cliente sin NIF" if no_tax_id else None},
+        {"label": "Terceros con NIF", "ok": no_tax_id == 0 or None, "detail": f"{no_tax_id} {'asiento' if no_tax_id == 1 else 'asientos'} con proveedor o cliente sin NIF" if no_tax_id else None},
         {"label": "Todo lo del periodo contabilizado", "ok": not (pending or not_booked) or None,
-         "detail": f"{len(not_booked)} factura(s) sin aprobar y {len(pending)} movimiento(s) sin conciliar" if pending or not_booked else None},
+         "detail": (f"{len(not_booked)} {'factura' if len(not_booked) == 1 else 'facturas'} sin aprobar y "
+                    f"{len(pending)} {'movimiento' if len(pending) == 1 else 'movimientos'} sin conciliar") if pending or not_booked else None},
     ]
     return {
         "from": date_from.isoformat(), "to": date_to.isoformat(), "entries": entries, "count": len(entries), "totals": totals,

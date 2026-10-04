@@ -38,7 +38,9 @@
       period = current.period;
       render();
     } catch (error) {
-      document.getElementById("closeCard").innerHTML = `<p class="danger-text">${esc(error.message)}</p>`;
+      const card = document.getElementById("closeCard");
+      card.innerHTML = window.loadErrorHtml("el cierre del mes", error);
+      card.querySelector("[data-figures-retry]")?.addEventListener("click", () => load());
     }
   }
 
@@ -65,6 +67,11 @@
         ${item.action ? `<button type="button" class="btn-ghost" ${item.action.document_id ? `data-close-document="${Number(item.action.document_id)}"` : item.action.case_id ? `data-close-case="${Number(item.action.case_id)}"`
           : `data-go="${esc(item.action.tab || "panel")}" data-anchor="${esc(item.action.anchor || "")}" data-view="${esc(item.action.view || "")}"`}>${esc(item.action.label || "Resolver")}</button>` : ""}
       </li>`).join("");
+    // Sin facturas ni movimientos en el mes no hay porcentaje que dar: «100 % cerrado» con 0 de 0 engaña.
+    const measurable = data.units.total > 0;
+    const headline = measurable ? data.headline
+      : `${name.charAt(0).toUpperCase() + name.slice(1)}: sin facturas ni movimientos que revisar todavía`
+        + (data.to_resolve?.length ? ` · ${window.pl(data.to_resolve.length, "cosa(s) bloquea(n) el cierre")}` : "");
     const report = `<a class="btn-ghost" href="/api/close/${esc(data.period)}/report">${window.icon("download")} ${closed ? "Informe de cierre" : "Informe provisional"}</a>`;
 
     document.getElementById("closeCard").innerHTML = closed ? `
@@ -82,14 +89,14 @@
         <div>
           <p class="close-state"><span class="status-pill status-neutral">Abierto</span>
             ${data.last_run_at ? `<span class="muted">Última comprobación de CapaFiscal ${esc(ago(data.last_run_at))}</span>` : `<span class="muted">CapaFiscal aún no ha preparado este cierre</span>`}</p>
-          <h2 class="close-headline">${esc(data.headline)}</h2>
+          <h2 class="close-headline">${esc(headline)}</h2>
         </div>
         <div class="close-actions">
           <button type="button" class="${data.last_run_at ? "btn-ghost" : "act-btn act-primary"}" data-close-action="run" ${busy ? "disabled" : ""}>${window.icon("play")} ${busy ? "Trabajando…" : `Preparar el cierre de ${esc(short)}`}</button>
           ${data.ready ? `<button type="button" class="act-btn act-primary" data-close-action="close">${window.icon("lock")} Cerrar ${esc(short)}</button>` : ""}
         </div>
       </div>
-      <span class="meter close-meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${data.percent}" aria-label="Porcentaje cerrado"><span style="width:${data.percent}%"></span></span>
+      ${measurable ? `<span class="meter close-meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${data.percent}" aria-label="Porcentaje cerrado"><span style="width:${data.percent}%"></span></span>` : ""}
       ${checklist}
       ${resolve ? `
         <div class="close-resolve">
@@ -97,12 +104,12 @@
           <ol>${resolve}</ol>
           <div class="close-actions"><button type="button" class="link-button" data-close-action="close-note">Cerrar igualmente, con salvedades…</button>${report}</div>
         </div>` : `<div class="close-actions">${report}</div>`}
-      <p class="close-formula muted">${data.units.done} de ${data.units.total} elementos resueltos (${esc(data.units.formula)}).</p>
+      ${measurable ? `<p class="close-formula muted">${data.units.done} de ${data.units.total} elementos resueltos (${esc(data.units.formula)}).</p>` : ""}
       ${data.work ? `<p class="close-work muted">En la última preparación CapaFiscal concilió ${window.pl(data.work.auto_matched, "movimiento(s)")} con evidencia suficiente, abrió ${window.pl(data.work.anomalies_created, "anomalía(s)")} y cerró ${data.work.anomalies_closed}.</p>` : ""}
     `;
 
     document.getElementById("closeChecksSub").textContent = data.blockers
-      ? `${data.blockers} bloquea(n) · ${window.pl(data.warnings, "aviso(s)")}`
+      ? `${data.blockers} ${data.blockers === 1 ? "bloquea" : "bloquean"} · ${window.pl(data.warnings, "aviso(s)")}`
       : data.warnings ? `Nada bloquea · ${window.pl(data.warnings, "aviso(s)")}` : "Todo correcto";
     document.getElementById("closeChecks").innerHTML = data.checks.map((item) => {
       const [symbol, className, label] = MARK[item.status];

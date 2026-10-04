@@ -143,11 +143,11 @@ def evaluate(database: Session, period: str, *, today: date | None = None) -> di
     requested = database.scalars(select(DocumentRequest).where(DocumentRequest.status == "PENDING")).all()
     units_total += len(missing)
     if missing:
-        checks.append(check("documentos", "Documentos que faltan", "block", f"No ha llegado la factura habitual de {len(missing)} proveedor(es)",
+        checks.append(check("documentos", "Documentos que faltan", "block", f"No ha llegado la factura habitual de {len(missing)} {'proveedor' if len(missing) == 1 else 'proveedores'}",
                             count=len(missing), action={"tab": "facturas", "label": "Subir o pedir"},
                             items=[{"label": item["label"], "amount": item["usual"]} for item in missing]))
     elif requested:
-        checks.append(check("documentos", "Documentos que faltan", "warn", f"{len(requested)} documento(s) pedidos sin respuesta (el Perseguidor insiste)",
+        checks.append(check("documentos", "Documentos que faltan", "warn", f"{len(requested)} {'documento pedido' if len(requested) == 1 else 'documentos pedidos'} sin respuesta (el Perseguidor insiste)",
                             count=len(requested), action={"tab": "expedientes", "label": "Ver expedientes"}))
     else:
         checks.append(check("documentos", "Documentos que faltan", "ok", "Han llegado las facturas habituales del mes"))

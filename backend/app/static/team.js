@@ -44,8 +44,11 @@
   RESUMEN
   ------------------------------------------------------------ */
   async function loadOverview() {
+    const row = document.getElementById("teamHeadcount")?.closest(".kpi-row");
     try {
       const overview = await window.apiRequest("/team/overview");
+      // Sin nadie en plantilla no hay cifras: lo explica la lista de personas.
+      window.setFigures(row, overview.headcount || overview.incoming || overview.terminated ? "ready" : "empty");
       document.getElementById("teamHeadcount").textContent = overview.headcount;
       document.getElementById("teamFte").textContent = `${String(overview.fte).replace(".", ",")} jornadas completas`;
       document.getElementById("teamIncoming").textContent = overview.incoming;
@@ -74,7 +77,7 @@
         </div>
       ` : "";
     } catch (error) {
-      console.error(error);
+      window.setFigures(row, "error", { what: "las cifras del equipo", error, retry: () => { window.setFigures(row, "loading"); loadOverview(); } });
     }
   }
 

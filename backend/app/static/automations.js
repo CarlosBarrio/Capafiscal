@@ -28,10 +28,24 @@
   }
 
   async function load() {
-    const [data, digest] = await Promise.all([
-      window.apiRequest("/automations"),
-      window.apiRequest("/digest"),
-    ]);
+    const row = document.getElementById("autoItems")?.closest(".kpi-row");
+    let data;
+    let digest;
+    try {
+      [data, digest] = await Promise.all([
+        window.apiRequest("/automations"),
+        window.apiRequest("/digest"),
+      ]);
+    } catch (error) {
+      window.setFigures(row, "error", { what: "las automatizaciones", error, retry: () => { window.setFigures(row, "loading"); load().catch(() => {}); } });
+      return;
+    }
+    // Si ninguna se ha ejecutado nunca, «0 tareas, 0 h, 0 €» no informa: se dice y se deja el estado del planificador.
+    const neverRan = !data.automations.some((item) => item.last_status || item.last_run_at);
+    window.setFigures(row, neverRan ? "empty" : "ready", {
+      keep: ["autoScheduler"],
+      empty: "Aún no se ha ejecutado ninguna automatización. Las tareas resueltas y el tiempo ahorrado aparecerán tras la primera ejecución.",
+    });
 
     document.getElementById("autoItems").textContent = data.month.items;
     document.getElementById("autoRuns").textContent = `${window.pl(data.month.runs, "ejecución(es)")} este mes`;
@@ -147,19 +161,27 @@
     document.getElementById("advisorZip").href = `/api/advisor/pack.zip?year=${year}&quarter=${quarter}`;
     try {
       const data = await window.apiRequest(`/advisor/summary?year=${year}&quarter=${quarter}`);
+      // Un trimestre vacío no está «listo para enviar»: no hay nada que enviar.
+      if (!data.issued && !data.received && !data.payroll_runs && !data.transactions && !data.issues.length) {
+        document.getElementById("advisorSummary").innerHTML =
+          `<p class="board-empty">Nada que enviar del ${quarter}T ${year} todavía: no hay facturas, nóminas ni movimientos del banco en el trimestre.</p>`;
+        return;
+      }
       document.getElementById("advisorSummary").innerHTML = `
         <div class="advisor-stats">
-          <span><strong>${data.issued}</strong> emitidas</span>
-          <span><strong>${data.received}</strong> recibidas</span>
-          <span><strong>${data.payroll_runs}</strong> nómina(s)</span>
-          <span><strong>${data.transactions}</strong> movimientos</span>
+          <span><strong>${data.issued}</strong> ${data.issued === 1 ? "emitida" : "emitidas"}</span>
+          <span><strong>${data.received}</strong> ${data.received === 1 ? "recibida" : "recibidas"}</span>
+          <span><strong>${data.payroll_runs}</strong> ${data.payroll_runs === 1 ? "nómina" : "nóminas"}</span>
+          <span><strong>${data.transactions}</strong> ${data.transactions === 1 ? "movimiento" : "movimientos"}</span>
         </div>
         ${data.issues.length
           ? data.issues.map((issue) => `<div class="report-warning">${window.icon("alert")}<span>${esc(issue)}</span></div>`).join("")
           : `<p class="advisor-ok">${window.icon("check")} Todo listo para enviar: sin incidencias.</p>`}
       `;
     } catch (error) {
-      document.getElementById("advisorSummary").innerHTML = `<p class="danger-text">${esc(error.message)}</p>`;
+      const summary = document.getElementById("advisorSummary");
+      summary.innerHTML = window.loadErrorHtml("el resumen para la gestoría", error);
+      summary.querySelector("[data-figures-retry]")?.addEventListener("click", () => loadAdvisor());
     }
   }
 

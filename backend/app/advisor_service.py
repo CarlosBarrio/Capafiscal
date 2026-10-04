@@ -97,12 +97,14 @@ def pack_summary(database: Session, year: int, quarter: int) -> dict[str, Any]:
 
     issues = []
     if pending:
-        issues.append(f"{len(pending)} factura(s) del trimestre siguen pendientes de revisar y no entran en los libros.")
+        issues.append("1 factura del trimestre sigue pendiente de revisar y no entra en los libros." if len(pending) == 1
+                      else f"{len(pending)} facturas del trimestre siguen pendientes de revisar y no entran en los libros.")
     draft_runs = [item for item in runs if item.status == "DRAFT"]
     if draft_runs:
-        issues.append(f"{len(draft_runs)} nómina(s) del trimestre están en borrador (no cuentan en el 111).")
+        issues.append("1 nómina del trimestre está en borrador (no cuenta en el 111)." if len(draft_runs) == 1
+                      else f"{len(draft_runs)} nóminas del trimestre están en borrador (no cuentan en el 111).")
     if unmatched:
-        issues.append(f"{len(unmatched)} movimiento(s) bancario(s) sin conciliar.")
+        issues.append("1 movimiento bancario sin conciliar." if len(unmatched) == 1 else f"{len(unmatched)} movimientos bancarios sin conciliar.")
 
     return {
         "year": year,

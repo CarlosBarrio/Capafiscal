@@ -368,9 +368,9 @@ def build_vat_report(
             ZERO,
         )
         warnings.append(
-            f"Hay {len(pending)} factura(s) del periodo pendientes de "
-            f"revisión por {format_eur(pending_amount)} que no se "
-            "incluyen en este resumen."
+            (f"Hay 1 factura del periodo pendiente de revisión por {format_eur(pending_amount)} que no se incluye en este resumen."
+             if len(pending) == 1 else
+             f"Hay {len(pending)} facturas del periodo pendientes de revisión por {format_eur(pending_amount)} que no se incluyen en este resumen.")
         )
 
     undated_statement = (
@@ -384,8 +384,8 @@ def build_vat_report(
 
     if undated_count:
         warnings.append(
-            f"{undated_count} factura(s) no tienen fecha y no pueden "
-            "asignarse a ningún periodo."
+            "1 factura no tiene fecha y no puede asignarse a ningún periodo." if undated_count == 1
+            else f"{undated_count} facturas no tienen fecha y no pueden asignarse a ningún periodo."
         )
 
     return {

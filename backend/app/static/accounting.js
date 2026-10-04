@@ -29,7 +29,7 @@
     try {
       const data = await window.apiRequest(`/accounting/journal?${query}`);
       summary.innerHTML = `
-        <p class="work-night"><strong>${data.count}</strong> asiento(s) · debe ${window.formatMoney(data.totals.debit)} · haber ${window.formatMoney(data.totals.credit)}</p>
+        <p class="work-night"><strong>${data.count}</strong> ${data.count === 1 ? "asiento" : "asientos"} · debe ${window.formatMoney(data.totals.debit)} · haber ${window.formatMoney(data.totals.credit)}</p>
         <ul class="journal-checks">${data.checks.map((check) => `<li>${mark(check.ok)}<span>${esc(check.label)}${check.detail ? ` <span class="muted">· ${esc(check.detail)}</span>` : ""}</span></li>`).join("")}</ul>
         ${data.pending.length ? `
           <details class="work-checked">

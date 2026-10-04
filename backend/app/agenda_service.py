@@ -258,7 +258,7 @@ def build_agenda(
                 "level": "high",
                 "date": current_day.isoformat(),
                 "days_left": 0,
-                "title": f"{pending_messages} mensaje(s) listos para enviar",
+                "title": "1 mensaje listo para enviar" if pending_messages == 1 else f"{pending_messages} mensajes listos para enviar",
                 "detail": "Facturas, reclamaciones de cobro o recibos que el agente ha redactado.",
                 "action": "Revísalos en la bandeja de salida y envíalos.",
                 "entity_type": "outbox",

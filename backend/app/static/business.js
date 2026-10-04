@@ -34,6 +34,7 @@
     const quarter = document.getElementById("healthQuarter").value;
     if (quarter) params.set("quarter", quarter);
 
+    const row = document.getElementById("hIncome")?.closest(".kpi-row");
     try {
       const [health, receivables] = await Promise.all([
         window.apiRequest(`/business-health?${params.toString()}`),
@@ -41,9 +42,16 @@
       ]);
       renderHealth(health);
       renderReceivables(receivables);
+      // Sin ingresos ni gastos aprobados en el periodo, la fila serían ceros que no informan:
+      // se dice con una frase y se mantiene el saldo del banco, que sí se conoce (o «—»).
+      const nothing = !health.income && !health.expenses && !health.payroll_cost;
+      window.setFigures(row, nothing ? "empty" : "ready", {
+        keep: ["hBalance"],
+        empty: `Sin ingresos ni gastos aprobados en ${String(health.period || "el periodo").replace(/^Año/, "el año")}. Aprueba tus facturas en «Facturas» para ver ingresos, gastos y resultado.`,
+      });
     } catch (error) {
-      document.getElementById("healthInsights").innerHTML =
-        window.emptyState("⚠️", "No se pudo calcular la salud del negocio", error.message);
+      document.getElementById("healthInsights").innerHTML = "";
+      window.setFigures(row, "error", { what: "las cifras del negocio", error, retry: () => { window.setFigures(row, "loading"); loadHealth(); } });
     }
   }
 

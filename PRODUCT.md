@@ -22,5 +22,14 @@ una plantilla SaaS. Nada de automatizaciones de escaparate.
 **Modo de diseño (Impeccable).** Operate: la persona viene a terminar una tarea. Escaneabilidad,
 coherencia y estados claros por encima de la expresión.
 
+**Cifras: cero, sin datos o error.** 0 significa cero. «—» significa que aún no lo sabemos (cargando
+o error). Sin datos, se dice con una frase y no con una fila de ceros. Si algo no se pudo cargar, se
+dice qué y se ofrece «Reintentar» (`setFigures` y `loadErrorHtml` en `app.js`, el mismo aviso que «Hoy»).
+
+**Decisión pendiente: el Asistente.** Sigue disponible solo en «Más», sin protagonismo y con su
+funcionalidad actual. Está por decidir si se mantiene como asistente conversacional o se convierte en
+una ayuda contextual que actúe sobre la pantalla en curso. Se decidirá cuando esté terminado el resto
+de la revisión del frontend.
+
 > Redactado a partir de `CLAUDE.md` y del propio producto; si alguna frase no encaja con la visión,
 > corrígela aquí: las skills de diseño leen este archivo.

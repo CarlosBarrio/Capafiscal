@@ -81,9 +81,9 @@ def pending_warning(
         return []
 
     return [
-        f"{len(pending)} factura(s) del periodo siguen pendientes de "
-        "revisión y no se incluyen. Revísalas para que el borrador sea "
-        "completo."
+        "1 factura del periodo sigue pendiente de revisión y no se incluye. Revísala para que el borrador sea completo."
+        if len(pending) == 1 else
+        f"{len(pending)} facturas del periodo siguen pendientes de revisión y no se incluyen. Revísalas para que el borrador sea completo."
     ]
 
 

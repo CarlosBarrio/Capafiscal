@@ -72,17 +72,30 @@
       window.apiRequest("/dashboard/monthly-impact"),
     ]);
 
+    const summary = document.getElementById("txCount")?.closest(".taxhealth-metrics");
+    const retry = () => { window.setFigures(summary, "loading"); window.setFigures(activity, "loading"); loadReports(); };
     if (vatResult.status === "fulfilled") {
       renderVatReport(vatResult.value);
+      const report = vatResult.value;
+      // Sin facturas aprobadas en el periodo, «0 facturas · 0 € · 0 €» no informa.
+      window.setFigures(summary, report.approved_invoices || report.issued_invoices ? "ready" : "empty", {
+        empty: `Sin facturas aprobadas en ${String(report.period || "el periodo")}. Cuando apruebes facturas del periodo verás aquí la base, el IVA soportado y el total.`,
+      });
     } else {
-      const warnings = document.getElementById("reportWarnings");
-      if (warnings) {
-        warnings.innerHTML = window.emptyState("⚠️", "No se pudo calcular el informe", vatResult.reason?.message || "");
-      }
+      document.getElementById("reportWarnings").innerHTML = "";
+      window.setFigures(summary, "error", { what: "el informe del periodo", error: vatResult.reason, retry });
     }
 
+    const activity = document.getElementById("roiDocs")?.closest(".roi-metrics");
     if (impactResult.status === "fulfilled") {
       renderImpact(impactResult.value);
+      const impact = impactResult.value;
+      window.setFigures(activity, impact.documents_processed || impact.risks_detected ? "ready" : "empty", {
+        empty: `Sin documentos procesados en ${String(impact.period || "este mes")}: el tiempo y el coste ahorrados se calculan a partir de ellos.`,
+      });
+    } else {
+      document.getElementById("roiNote").textContent = "";
+      window.setFigures(activity, "error", { what: "la actividad del mes", error: impactResult.reason, retry });
     }
   }
 
@@ -207,7 +220,7 @@
 
       if (summary) {
         const total = suppliers.reduce((sum, item) => sum + item.total_approved, 0);
-        summary.textContent = `${suppliers.length} ${clients ? "cliente(s)" : "proveedor(es)"} · ${money(total)} aprobado`;
+        summary.textContent = `${window.pl(suppliers.length, clients ? "cliente(s)" : "proveedor(es)")} · ${money(total)} aprobado`;
       }
 
       if (!suppliers.length) {

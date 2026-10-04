@@ -121,7 +121,7 @@
     const decide = group("accion").items.length;
     const missing = lacking().length;
     if (!decide && !missing) return `<li class="state-done"><span class="board-dot"></span>Nada pendiente</li>`;
-    return [decide ? `<li class="state-red"><span class="board-dot"></span><strong>${decide}</strong> por revisar</li>` : "",
+    return [decide ? `<li class="state-red"><span class="board-dot"></span><strong>${decide}</strong> ${decide === 1 ? "decisión pendiente" : "decisiones pendientes"}</li>` : "",
             missing ? `<li class="state-orange"><span class="board-dot"></span><strong>${missing}</strong> ${missing === 1 ? "pendiente" : "pendientes"}</li>` : ""].join("");
   }
 
@@ -150,9 +150,13 @@
   function closeRow() {
     const close = data.close;
     if (!close) return "";
-    const value = close.ready ? "Listo para cerrar" : close.percent >= 100 && close.blockers ? `Listo salvo ${plural(close.blockers, "bloqueo", "bloqueos")}`
+    // Con 0 elementos en el mes no hay nada revisado ni conciliado: no se da un porcentaje.
+    const measurable = close.units_total === undefined || close.units_total > 0;
+    const value = close.ready ? "Listo para cerrar" : measurable && close.percent >= 100 && close.blockers ? `Listo salvo ${plural(close.blockers, "bloqueo", "bloqueos")}`
       : close.blockers ? plural(close.blockers, "bloqueo", "bloqueos") : `${close.percent} % revisado`;
-    return row("cierre", `Cierre ${close.label.toLowerCase()}`, value, close.ready ? "Todo revisado y conciliado" : `${close.percent} % revisado y conciliado`,
+    const detail = !measurable ? "Sin facturas ni movimientos del mes todavía"
+      : close.ready ? "Todo revisado y conciliado" : `${close.percent} % revisado y conciliado`;
+    return row("cierre", `Cierre ${close.label.toLowerCase()}`, value, detail,
                close.ready ? "is-ok" : close.blockers ? "is-warn" : "");
   }
 

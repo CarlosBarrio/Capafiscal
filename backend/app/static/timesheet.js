@@ -281,7 +281,15 @@
   }
 
   async function refresh() {
-    await Promise.all([loadBoard(), loadAlerts(), loadMonth()]);
+    const row = document.getElementById("tsWorking")?.closest(".kpi-row");
+    try {
+      await Promise.all([loadBoard(), loadAlerts(), loadMonth()]);
+    } catch (error) {
+      window.setFigures(row, "error", { what: "el registro de jornada", error, retry: () => { window.setFigures(row, "loading"); refresh().catch(() => {}); } });
+      return;
+    }
+    // Sin personas en plantilla no hay jornada que contar: lo explica el bloque «Hoy».
+    window.setFigures(row, board?.people?.length ? "ready" : "empty");
     await loadEntries();
   }
 

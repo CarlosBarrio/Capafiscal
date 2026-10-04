@@ -351,10 +351,13 @@ async function loadDocuments() {
     renderRecentDocuments(documentsCache);
     renderOpenRisks(documentsCache);
 
-    // El menú solo cuenta lo que pide acción: facturas por revisar (sin «0» si no hay ninguna).
-    const toReview = documentsCache.filter((doc) => doc.invoice?.review_status === "PENDING").length;
+    // El menú cuenta exactamente lo mismo que la vista «Para revisar» de Facturas (misma regla),
+    // incluidos los documentos que no se pudieron leer como factura. Sin «0» si no hay ninguno.
+    const toReview = documentsCache.filter(INVOICE_VIEWS.review.test).length;
+    const badge = document.getElementById("cntFacturas");
     setText("cntFacturas", String(toReview));
-    document.getElementById("cntFacturas")?.classList.toggle("hidden", !toReview);
+    badge?.classList.toggle("hidden", !toReview);
+    badge?.setAttribute("title", window.pl(toReview, "documento(s) para revisar"));
 
     await loadFilteredDocuments();
     return documentsCache;
@@ -1039,9 +1042,18 @@ function ensureDetailDialog() {
 
   document.body.appendChild(dialog);
 
-  document.getElementById("closeDetailDialog").addEventListener("click", () => dialog.close());
+  const requestClose = async () => {
+    if (detailHasChanges() && !(await window.askConfirm("¿Descartar los cambios sin guardar de esta factura?"))) return;
+    dialog.close();
+  };
+  document.getElementById("closeDetailDialog").addEventListener("click", requestClose);
   dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog.close();
+    if (event.target === dialog) requestClose();
+  });
+  dialog.addEventListener("cancel", (event) => {
+    if (!detailHasChanges()) return;
+    event.preventDefault();
+    requestClose();
   });
 
   return dialog;
@@ -1334,9 +1346,14 @@ async function showDetail(documentId, focus = null) {
           ${taxLinesHtml(invoice)}
           ${paymentSectionHtml(invoice, docId)}
 
+          ${editable ? `
+            <p class="detail-dirty hidden" id="detailDirty" role="status">
+              Hay cambios sin guardar.${canReview ? " «Aprobar» los guarda antes de aprobar." : ""}
+            </p>
+          ` : ""}
           <div class="card-actions detail-actions-bar">
             ${editable ? `
-              <button type="button" class="act-btn act-primary" data-call="saveInvoice" data-args="${invoiceId}, ${docId}">
+              <button type="button" class="act-btn ${canReview ? "" : "act-primary"}" data-call="saveInvoice" data-args="${invoiceId}, ${docId}">
                 Guardar correcciones
               </button>
             ` : ""}
@@ -1383,12 +1400,14 @@ async function showDetail(documentId, focus = null) {
     `;
 
     setupAmountCheck();
+    setupDirtyTracking(invoiceId, editable);
     loadDetailHistory(docId);
 
     if (focus === "payment") {
       document.getElementById("paymentSection")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   } catch (error) {
+    detailEdit = null;
     content.innerHTML = emptyState("⚠️", "No se pudo abrir el documento", error.message);
   }
 }
@@ -1430,7 +1449,31 @@ function snapVatRate(rate) {
   return Math.round(rate * 100) / 100;
 }
 
-async function saveInvoice(invoiceId, documentId) {
+/* Cambios sin guardar en el detalle: «Aprobar» los guarda antes de aprobar y al cerrar se pregunta. */
+let detailEdit = null;  // { invoiceId, snapshot }
+
+function detailFormValues() {
+  return JSON.stringify([...document.querySelectorAll("#documentDetailContent [data-invoice-field]")]
+    .map((element) => [element.dataset.invoiceField, element.value.trim()]));
+}
+
+function detailHasChanges(invoiceId = null) {
+  if (!detailEdit || !document.getElementById("documentDetailDialog")?.open) return false;
+  if (invoiceId !== null && Number(invoiceId) !== detailEdit.invoiceId) return false;
+  return detailFormValues() !== detailEdit.snapshot;
+}
+
+function setupDirtyTracking(invoiceId, editable) {
+  detailEdit = editable && invoiceId ? { invoiceId: Number(invoiceId), snapshot: detailFormValues() } : null;
+  const fieldset = document.querySelector("#documentDetailContent .detail-form-grid");
+  const notice = document.getElementById("detailDirty");
+  if (!detailEdit || !fieldset || !notice) return;
+  const update = () => notice.classList.toggle("hidden", !detailHasChanges());
+  fieldset.addEventListener("input", update);
+  fieldset.addEventListener("change", update);
+}
+
+function invoiceEditBody(documentId) {
   const body = {
     supplier_name: inputValue("detailSupplierName"),
     supplier_tax_id: inputValue("detailSupplierTaxId"),
@@ -1464,9 +1507,18 @@ async function saveInvoice(invoiceId, documentId) {
       confidence: 100,
     }];
   }
+  return body;
+}
 
+/* Guarda lo que hay en el formulario; lanza el error si el servidor no lo acepta. */
+async function persistInvoiceEdits(invoiceId, documentId) {
+  await jsonRequest(`/invoices/${invoiceId}`, "PATCH", invoiceEditBody(documentId));
+  if (detailEdit?.invoiceId === Number(invoiceId)) detailEdit.snapshot = detailFormValues();
+}
+
+async function saveInvoice(invoiceId, documentId) {
   try {
-    await jsonRequest(`/invoices/${invoiceId}`, "PATCH", body);
+    await persistInvoiceEdits(invoiceId, documentId);
     showMessage("Correcciones guardadas correctamente.", "success");
     await refreshAll();
     await showDetail(documentId);
@@ -1521,12 +1573,25 @@ async function approveInvoice(invoiceId, documentId = null, button = null) {
     button.disabled = true;
     button.textContent = "Comprobando…";
   }
+  let savedFirst = false;
 
   try {
+    if (detailHasChanges(invoiceId)) {
+      if (button) button.textContent = "Guardando cambios…";
+      try {
+        await persistInvoiceEdits(invoiceId, documentId);
+      } catch (error) {
+        showMessage(`La factura no se ha aprobado porque no se pudieron guardar tus cambios: ${error.message}. Siguen en pantalla para que los corrijas.`, "error");
+        return;
+      }
+      savedFirst = true;
+      if (button) button.textContent = "Aprobando…";
+    }
+
     const result = await sendApproval(invoiceId, false);
 
     showMessage(
-      result.message || "Factura aprobada.",
+      savedFirst ? `Cambios guardados. ${result.message || "Factura aprobada."}` : (result.message || "Factura aprobada."),
       result.approved_with_warnings ? "warning" : "success"
     );
 
@@ -1537,7 +1602,8 @@ async function approveInvoice(invoiceId, documentId = null, button = null) {
     const missingFieldsWarning = error.status === 409 && detail.code === "MISSING_FIELDS";
 
     if (!missingFieldsWarning) {
-      showMessage(error.message, "error");
+      showMessage(savedFirst ? `Tus cambios se guardaron, pero la factura no se ha aprobado: ${error.message}` : error.message, "error");
+      if (savedFirst) await refreshAll();
       return;
     }
 
@@ -1835,9 +1901,67 @@ function renderApiError(title, detail) {
 }
 
 /* ================================================================
+CIFRAS: CERO, SIN DATOS O ERROR
+0 es cero. «—» es que aún no lo sabemos (cargando o error). Sin datos, se dice con
+una frase en lugar de una fila de ceros. El error usa el patrón de «Hoy»: qué no se
+pudo cargar, por qué y «Reintentar».
+  setFigures(fila, "loading" | "ready" | "empty" | "error",
+             { what, error, retry, empty, keep })
+  · empty: frase para el estado sin datos ("" = solo ocultar, si la pantalla ya lo explica).
+  · keep: ids de cifras que siguen visibles sin datos (p. ej. el estado del planificador).
+================================================================ */
+const FIGURE_VALUES = ".kpi-value, .taxhealth-metrics > div > span, .roi-item > strong";
+const FIGURE_BOX = ".kpi, .taxhealth-metrics > div, .roi-item";
+
+/* El aviso de error de «Hoy», reutilizable: qué no se pudo cargar, por qué y «Reintentar». */
+function loadErrorHtml(what, error, retry = true) {
+  return `<p class="danger-text">No se pudieron cargar ${escapeHtml(what)}: ${escapeHtml(error?.message || "error desconocido")}</p>`
+    + (retry ? `<div><button type="button" class="btn-ghost" data-figures-retry>Reintentar</button></div>` : "");
+}
+
+function setFigures(container, state, { what = "los datos", error = null, retry = null, empty = "", keep = [] } = {}) {
+  if (!container) return;
+  let note = container.nextElementSibling?.classList.contains("figures-note") ? container.nextElementSibling : null;
+
+  if (state === "loading" || state === "error") {
+    container.querySelectorAll(FIGURE_VALUES).forEach((element) => {
+      element.textContent = "—";
+      element.classList.remove("value-negative");
+    });
+    container.querySelectorAll(".kpi-foot[id]").forEach((element) => { element.textContent = ""; });
+  }
+  container.setAttribute("aria-busy", String(state === "loading"));
+
+  const boxes = [...container.querySelectorAll(FIGURE_BOX)];
+  const kept = (box) => keep.some((id) => box.querySelector(`#${id}`));
+  boxes.forEach((box) => box.classList.toggle("hidden", state === "empty" && !kept(box)));
+  container.classList.toggle("hidden", state === "empty" && !boxes.some(kept));
+
+  if (state === "ready" || state === "loading" || (state === "empty" && !empty)) {
+    note?.remove();
+    return;
+  }
+  if (!note) {
+    note = document.createElement("section");
+    note.className = "card figures-note";
+    container.after(note);
+  }
+  if (state === "error") {
+    note.setAttribute("role", "alert");
+    note.innerHTML = loadErrorHtml(what, error, Boolean(retry));
+    note.querySelector("[data-figures-retry]")?.addEventListener("click", () => retry());
+  } else {
+    note.setAttribute("role", "status");
+    note.innerHTML = `<p class="board-empty">${escapeHtml(empty)}</p>`;
+  }
+}
+
+/* ================================================================
 FUNCIONES GLOBALES
 ================================================================ */
 Object.assign(window, {
+  setFigures,
+  loadErrorHtml,
   icon,
   convertToNotification,
   jsonRequest,

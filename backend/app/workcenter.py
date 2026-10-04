@@ -404,12 +404,15 @@ def overnight(database: Session, since: datetime) -> dict[str, Any]:
     anomalies = count(select(func.count()).select_from(Case).where(Case.kind == "ANOMALY", Case.created_at >= since))
     requested = count(select(func.count()).select_from(DocumentRequest).where(DocumentRequest.created_at >= since))
     prepared = count(select(func.count()).select_from(Case).where(Case.kind != "ANOMALY", Case.created_at >= since))
+    def line(key: str, number: int, one: str, many: str) -> dict:
+        return {"key": key, "count": number, "label": one if number == 1 else many}
+
     lines = [
-        {"key": "documents", "count": documents, "label": "documento(s) leídos y registrados"},
-        {"key": "reconciled", "count": reconciled, "label": "pago(s) y cobro(s) conciliados"},
-        {"key": "anomalies", "count": anomalies, "label": "anomalía(s) detectadas"},
-        {"key": "requested", "count": requested, "label": "documento(s) pedidos"},
-        {"key": "prepared", "count": prepared, "label": "expediente(s) preparados"},
+        line("documents", documents, "documento leído y registrado", "documentos leídos y registrados"),
+        line("reconciled", reconciled, "pago o cobro conciliado", "pagos y cobros conciliados"),
+        line("anomalies", anomalies, "anomalía detectada", "anomalías detectadas"),
+        line("requested", requested, "documento pedido", "documentos pedidos"),
+        line("prepared", prepared, "expediente preparado", "expedientes preparados"),
     ]
     return {"since": since.isoformat(), "total": sum(line["count"] for line in lines), "items": [line for line in lines if line["count"]]}
 
@@ -467,7 +470,7 @@ def work_center(database: Session, *, today: date | None = None, now: datetime |
         "headline": headline,
         "overnight": overnight(database, now - timedelta(hours=24)),
         "pulse": pulse,
-        "close": {"period": period, "label": close["label"], "percent": close["percent"], "blockers": close["blockers"], "headline": close["headline"], "ready": close["ready"]},
+        "close": {"period": period, "label": close["label"], "percent": close["percent"], "units_total": close["units"]["total"], "blockers": close["blockers"], "headline": close["headline"], "ready": close["ready"]},
         "groups": [{"key": key, "label": label, "count": len(groups[key]) if key != "resuelto" else sum(row["count"] for row in groups[key]), "items": groups[key]}
                    for key, label in GROUPS],
         "counts": {key: len(groups[key]) for key, _ in GROUPS if key != "resuelto"},

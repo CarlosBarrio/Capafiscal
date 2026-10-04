@@ -159,7 +159,17 @@
   RESUMEN Y LISTADO
   ------------------------------------------------------------ */
   async function loadOverview() {
-    const data = await window.apiRequest("/sales/overview");
+    const row = document.getElementById("salesMonth")?.closest(".kpi-row");
+    let data;
+    try {
+      data = await window.apiRequest("/sales/overview");
+    } catch (error) {
+      window.setFigures(row, "error", { what: "las cifras de ventas", error, retry: () => { window.setFigures(row, "loading"); loadOverview(); } });
+      return;
+    }
+    // Sin ninguna factura emitida (ni borradores ni recurrentes) no hay cifras que dar: lo explica la lista de abajo.
+    const nothingYet = !data.last_hash && !data.drafts && !data.recurring_active;
+    window.setFigures(row, nothingYet ? "empty" : "ready");
     const set = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
     set("salesMonth", money(data.issued_month));
     set("salesYear", money(data.issued_year));

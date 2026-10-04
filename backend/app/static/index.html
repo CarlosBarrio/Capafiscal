@@ -17,7 +17,7 @@
   >
   <link
     rel="stylesheet"
-    href="/static/style.css?v=111"
+    href="/static/style.css?v=112"
   >
 </head>
 <body>
@@ -363,15 +363,15 @@
 
     <div class="kpi-row">
       <div class="kpi kpi-income">
-        <span class="kpi-value" id="hIncome">0 €</span>
+        <span class="kpi-value" id="hIncome">—</span>
         <span class="kpi-label">ingresos (base)</span>
       </div>
       <div class="kpi">
-        <span class="kpi-value" id="hExpenses">0 €</span>
+        <span class="kpi-value" id="hExpenses">—</span>
         <span class="kpi-label">gastos (base)</span>
       </div>
       <div class="kpi kpi-result">
-        <span class="kpi-value" id="hResult">0 €</span>
+        <span class="kpi-value" id="hResult">—</span>
         <span class="kpi-label" id="hResultLabel">resultado</span>
       </div>
       <div class="kpi kpi-payments">
@@ -685,22 +685,22 @@
     <div class="kpi-row">
       <div class="kpi kpi-income">
         <span class="kpi-label">facturado este mes</span>
-        <span class="kpi-value" id="salesMonth">0 €</span>
+        <span class="kpi-value" id="salesMonth">—</span>
         <span class="kpi-foot">base imponible</span>
       </div>
       <div class="kpi">
         <span class="kpi-label">facturado en el año</span>
-        <span class="kpi-value" id="salesYear">0 €</span>
+        <span class="kpi-value" id="salesYear">—</span>
         <span class="kpi-foot" id="salesYearFoot"></span>
       </div>
       <div class="kpi kpi-risk">
         <span class="kpi-label">pendiente de cobro</span>
-        <span class="kpi-value" id="salesPending">0 €</span>
+        <span class="kpi-value" id="salesPending">—</span>
         <span class="kpi-foot" id="salesOverdueFoot"></span>
       </div>
       <div class="kpi">
         <span class="kpi-label">ingresos recurrentes</span>
-        <span class="kpi-value" id="salesRecurring">0 €</span>
+        <span class="kpi-value" id="salesRecurring">—</span>
         <span class="kpi-foot" id="salesRecurringFoot">al mes</span>
       </div>
     </div>
@@ -844,21 +844,21 @@
     <div class="kpi-row">
       <div class="kpi">
         <span class="kpi-label">trabajando ahora</span>
-        <span class="kpi-value" id="tsWorking">0</span>
+        <span class="kpi-value" id="tsWorking">—</span>
         <span class="kpi-foot" id="tsClock"></span>
       </div>
       <div class="kpi">
         <span class="kpi-label">horas registradas hoy</span>
-        <span class="kpi-value" id="tsToday">0 h</span>
+        <span class="kpi-value" id="tsToday">—</span>
       </div>
       <div class="kpi kpi-risk">
         <span class="kpi-label">incidencias</span>
-        <span class="kpi-value" id="tsAlertCount">0</span>
+        <span class="kpi-value" id="tsAlertCount">—</span>
         <span class="kpi-foot">últimos 14 días</span>
       </div>
       <div class="kpi">
         <span class="kpi-label">horas del mes</span>
-        <span class="kpi-value" id="tsMonthHours">0 h</span>
+        <span class="kpi-value" id="tsMonthHours">—</span>
         <span class="kpi-foot" id="tsMonthBalance"></span>
       </div>
     </div>
@@ -922,17 +922,17 @@
     <div class="kpi-row">
       <div class="kpi">
         <span class="kpi-label">tareas resueltas este mes</span>
-        <span class="kpi-value" id="autoItems">0</span>
+        <span class="kpi-value" id="autoItems">—</span>
         <span class="kpi-foot" id="autoRuns"></span>
       </div>
       <div class="kpi kpi-income">
         <span class="kpi-label">horas ahorradas</span>
-        <span class="kpi-value" id="autoHours">0 h</span>
+        <span class="kpi-value" id="autoHours">—</span>
         <span class="kpi-foot">estimación por tarea</span>
       </div>
       <div class="kpi">
         <span class="kpi-label">coste evitado</span>
-        <span class="kpi-value" id="autoCost">0 €</span>
+        <span class="kpi-value" id="autoCost">—</span>
         <span class="kpi-foot">con tu coste/hora</span>
       </div>
       <div class="kpi">
@@ -1139,19 +1139,19 @@
       </div>
       <div class="taxhealth-metrics">
         <div>
-          <span id="txCount">0</span>
+          <span id="txCount">—</span>
           <p>facturas aprobadas</p>
         </div>
         <div>
-          <span id="txBase">0 €</span>
+          <span id="txBase">—</span>
           <p>base imponible</p>
         </div>
         <div class="tax-iva">
-          <span id="txIva">0 €</span>
+          <span id="txIva">—</span>
           <p>IVA soportado</p>
         </div>
         <div>
-          <span id="txTotal">0 €</span>
+          <span id="txTotal">—</span>
           <p>total gasto</p>
         </div>
       </div>
@@ -1208,11 +1208,11 @@
 
       <div class="roi-metrics">
         <div class="roi-item">
-          <strong id="roiDocs">0</strong>
+          <strong id="roiDocs">—</strong>
           <span>documentos procesados</span>
         </div>
         <div class="roi-item">
-          <strong id="roiRisks">0</strong>
+          <strong id="roiRisks">—</strong>
           <span>incidencias detectadas</span>
         </div>
         <div class="roi-item roi-hero">
@@ -1483,21 +1483,21 @@
     <div class="kpi-row">
       <div class="kpi">
         <span class="kpi-label">plantilla activa</span>
-        <span class="kpi-value" id="teamHeadcount">0</span>
+        <span class="kpi-value" id="teamHeadcount">—</span>
         <span class="kpi-foot" id="teamFte"></span>
       </div>
       <div class="kpi">
         <span class="kpi-label">incorporaciones próximas</span>
-        <span class="kpi-value" id="teamIncoming">0</span>
+        <span class="kpi-value" id="teamIncoming">—</span>
       </div>
       <div class="kpi">
         <span class="kpi-label">coste anual estimado</span>
-        <span class="kpi-value" id="teamCost">0 €</span>
+        <span class="kpi-value" id="teamCost">—</span>
         <span class="kpi-foot">salarios + Seguridad Social</span>
       </div>
       <div class="kpi">
         <span class="kpi-label">fuera hoy</span>
-        <span class="kpi-value" id="teamAbsent">0</span>
+        <span class="kpi-value" id="teamAbsent">—</span>
         <span class="kpi-foot" id="teamAbsentNames"></span>
       </div>
     </div>
@@ -1916,26 +1916,26 @@
 
 <script src="/static/auth.js?v=3"></script>
 <script src="/static/dialogs.js?v=1"></script>
-<script src="/static/app.js?v=69"></script>
-<script src="/static/reports.js?v=4"></script>
+<script src="/static/app.js?v=71"></script>
+<script src="/static/reports.js?v=6"></script>
 <script src="/static/assistant.js?v=3"></script>
 <script src="/static/activity.js?v=4"></script>
-<script src="/static/business.js?v=10"></script>
+<script src="/static/business.js?v=12"></script>
 <script src="/static/taxes.js?v=4"></script>
 <script src="/static/notifications.js?v=2"></script>
 <script src="/static/compliance.js?v=1"></script>
 <script src="/static/company.js?v=3"></script>
-<script src="/static/team.js?v=2"></script>
+<script src="/static/team.js?v=3"></script>
 <script src="/static/payroll.js?v=3"></script>
 <script src="/static/cases.js?v=12"></script>
-<script src="/static/sales.js?v=3"></script>
+<script src="/static/sales.js?v=4"></script>
 <script src="/static/outbox.js?v=5"></script>
-<script src="/static/timesheet.js?v=4"></script>
-<script src="/static/automations.js?v=5"></script>
+<script src="/static/timesheet.js?v=5"></script>
+<script src="/static/automations.js?v=6"></script>
 <script src="/static/intelligence.js?v=2"></script>
-<script src="/static/close.js?v=4"></script>
-<script src="/static/work.js?v=12"></script>
-<script src="/static/accounting.js?v=2"></script>
+<script src="/static/close.js?v=6"></script>
+<script src="/static/work.js?v=13"></script>
+<script src="/static/accounting.js?v=3"></script>
 <script src="/static/bankconnect.js?v=2"></script>
 <script src="/static/shell.js?v=10"></script>
 </body>
