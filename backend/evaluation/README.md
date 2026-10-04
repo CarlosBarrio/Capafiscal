@@ -53,6 +53,10 @@ python -m evaluation preparar reales --conjunto B
 python -m evaluation incorporar reales
 ```
 
+Para **ver esos documentos en la aplicación** sin mezclarlos con tus datos: `python scripts/cargar_lote.py RUTA`
+(carpeta o .zip). Crea una base nueva en `backend/data/solo-lote/` (fuera de git), los pasa por el circuito normal y
+explica cómo arrancar CapaFiscal con ella.
+
 `--prerrellenar` rellena el borrador con lo que leen las reglas. Ahorra
 tiempo, pero si no revisas cada valor estarás midiendo las reglas contra sí
 mismas.
