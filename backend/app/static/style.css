@@ -3205,3 +3205,7 @@ h1, h2, h3, .case-headline { text-wrap: balance; }
     .detail-actions-bar { bottom: -16px; margin: 16px -16px -16px; padding: 10px 16px 12px; }
     .detail-actions .act-btn, .detail-actions > .btn-ghost, .detail-more > summary { height: 40px; }
 }
+
+/* Hoy (P1-2): facturas por revisar en una línea; la frase solo si algo no cuadra */
+.hoy-invoice-meta { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.hoy-invoice-issue { color: var(--amber); }

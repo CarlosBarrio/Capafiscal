@@ -309,7 +309,7 @@ def impact(case: Case, today: date) -> dict[str, Any]:
     score = round(urgency + money + kind + blocked)
     why = []
     if days_left is not None:
-        why.append("plazo vencido" if days_left < 0 else "vence hoy" if days_left == 0 else f"vence en {days_left} día(s)")
+        why.append("plazo vencido" if days_left < 0 else "vence hoy" if days_left == 0 else f"vence en {days_left} {'día' if days_left == 1 else 'días'}")
     if amount:
         from app.agents.base import eur
 

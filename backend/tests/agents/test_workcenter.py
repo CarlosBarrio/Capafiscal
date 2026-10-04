@@ -124,3 +124,14 @@ def test_today_leaves_out_what_is_not_work(client):
     assert not [item for item in everything if item["kind"] == "outbox"]
     assert not [item for item in everything if item["kind"] == "compliance" and "Verifactu" in item["title"]]
     assert client.get("/api/outbox", params={"status": "DRAFT"}).json()["messages"]  # sigue en la Bandeja de salida
+
+
+def test_a_clean_invoice_does_not_jump_ahead_of_a_deadline():
+    """«Primera factura de este proveedor» es contexto, no un problema: una factura que cuadra
+    (de cualquier importe) queda por detrás de un requerimiento a 15 días (34 puntos en director.impact)."""
+    from app.workcenter import invoice_score
+
+    assert invoice_score(0, False, 30510.15) < 34
+    assert invoice_score(0, False, None) < invoice_score(0, False, 300) <= invoice_score(0, False, 10_000_000) == 30
+    assert invoice_score(1, False, 300) > invoice_score(0, False, 300)
+    assert invoice_score(0, True, 300) > 45  # algo raro para ese proveedor sí pasa delante

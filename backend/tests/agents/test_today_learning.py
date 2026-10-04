@@ -28,7 +28,7 @@ def test_today_ranks_by_impact_and_says_why(client):
     scores = [item["impact"]["score"] for item in today["top"]]
     assert scores == sorted(scores, reverse=True)
     reasons = {item["title"].split(" · ")[0]: item["impact"]["why"] for item in today["top"]}
-    assert any("vence en 2 día(s)" in why and "requerimiento" in why for why in reasons.values())
+    assert any("vence en 2 días" in why and "requerimiento" in why for why in reasons.values())
     assert any("2.850,00 €" in why for why in reasons.values())
     assert "fiscal" in today and "bank" in today
 

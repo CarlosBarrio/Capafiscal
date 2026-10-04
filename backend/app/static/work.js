@@ -80,6 +80,34 @@
       </li>`;
   }
 
+  /* Una factura por revisar en una línea: quién, cuál, cuánto y «Revisar». Si todo cuadra no se dice nada
+     (sería la misma frase en cada fila); si algo no cuadra, se dice qué y se puede abrir lo comprobado. */
+  function invoiceHtml(item, first) {
+    const [number, ...party] = (item.title || "").replace(/^Factura\s+/, "").split(" · ");
+    const clean = /^Todo cuadra/i.test(item.why || "");
+    const checks = item.checked || [];
+    return `
+      <li class="work-item hoy-invoice">
+        <div class="work-item-main">
+          <div class="work-item-text">
+            <strong>${esc(party.join(" · ") || "Sin identificar")}</strong>
+            <span class="hoy-invoice-meta">${esc([number ? `Nº ${number}` : "Sin número", item.when ? window.formatDay(item.when) : null].filter(Boolean).join(" · "))}</span>
+            ${clean ? "" : `<span class="work-why hoy-invoice-issue">${esc(item.why)}</span>`}
+          </div>
+          <div class="work-item-side">
+            ${item.amount !== null && item.amount !== undefined ? `<span class="work-amount">${money(item.amount)}</span>` : ""}
+            ${item.action ? `<button type="button" class="${first ? "act-btn act-primary" : "btn-ghost"} work-act" ${actionAttrs(item.action)}>Revisar</button>` : ""}
+          </div>
+        </div>
+        ${clean || !checks.length ? "" : `
+          <details class="work-checked">
+            <summary>Qué ha comprobado CapaFiscal</summary>
+            <ul class="hoy-checks">${checks.map((check) => `<li>${mark(check.ok)}<span>${esc(check.label)}</span></li>`).join("")}</ul>
+            ${item.proposal ? `<p class="hoy-proposal">Propuesta: ${esc(item.proposal)}</p>` : ""}
+          </details>`}
+      </li>`;
+  }
+
   /* Un bloqueo: qué falta, en una línea, y el botón para resolverlo. */
   function compactHtml(item) {
     return `
@@ -97,14 +125,14 @@
       </li>`;
   }
 
-  function listSection(key, cls, title, items, render) {
+  function listSection(key, cls, title, items, render, primary = true) {
     const open = expanded.has(key);
     const shown = open ? items : items.slice(0, TOP);
     const rest = items.length - shown.length;
     return `
       <section class="card work-group ${cls}" aria-labelledby="hoy-${key}">
         <div class="card-head"><h2 class="work-group-title" id="hoy-${key}"><span class="board-dot"></span>${esc(title)}</h2><span class="card-sub">${items.length}</span></div>
-        <ol class="work-list">${shown.map((item, index) => render(item, index === 0)).join("")}</ol>
+        <ol class="work-list">${shown.map((item, index) => render(item, primary && index === 0)).join("")}</ol>
         ${rest > 0 ? `<button type="button" class="link-button work-more" data-work-more="${key}">Ver ${rest} más</button>` : ""}
       </section>`;
   }
@@ -120,9 +148,12 @@
   function summaryHtml() {
     const decide = group("accion").items.length;
     const missing = lacking().length;
-    if (!decide && !missing) return `<li class="state-done"><span class="board-dot"></span>Nada pendiente</li>`;
-    return [decide ? `<li class="state-red"><span class="board-dot"></span><strong>${decide}</strong> ${decide === 1 ? "decisión pendiente" : "decisiones pendientes"}</li>` : "",
-            missing ? `<li class="state-orange"><span class="board-dot"></span><strong>${missing}</strong> ${missing === 1 ? "pendiente" : "pendientes"}</li>` : ""].join("");
+    const doneToday = data.overnight?.total || 0;
+    const auto = doneToday ? `<li class="state-done"><span class="board-dot"></span><strong>${doneToday}</strong> hecho por CapaFiscal en 24 h</li>` : "";
+    if (!decide && !missing) return `<li class="state-done"><span class="board-dot"></span>Nada pendiente</li>${auto}`;
+    return [decide ? `<li class="state-red"><span class="board-dot"></span><strong>${decide}</strong> por decidir</li>` : "",
+            missing ? `<li class="state-orange"><span class="board-dot"></span><strong>${missing}</strong> ${missing === 1 ? "bloqueo" : "bloqueos"}</li>` : "",
+            auto].join("");
   }
 
   function calmHtml() {
@@ -191,13 +222,12 @@
     const done = metrics?.finished;
     return `
       <section class="card work-group" aria-labelledby="hoy-done">
-        <div class="card-head"><h2 class="work-group-title" id="hoy-done">Trabajo realizado</h2>
-          <button type="button" class="link-button" id="workRun">Trabajar ahora</button></div>
+        <div class="card-head"><h2 class="work-group-title" id="hoy-done">Trabajo realizado</h2></div>
         ${done && done.total
           ? `<p class="hoy-figure">${plural(done.total, "trabajo completado", "trabajos completados")}</p>
-             <p class="hoy-sub" title="${esc(metrics.definition)}">Últimos ${metrics.days} días: facturas pagadas o cobradas, movimientos conciliados, expedientes y meses cerrados</p>`
-          : `<p class="board-empty">Todavía no hay trabajo automático registrado.</p>`}
-        ${night.items.length ? `<p class="hoy-sub">Últimas 24 h: ${night.items.map((line) => `${line.count} ${esc(line.label)}`).join(" · ")}</p>` : ""}
+             <p class="hoy-sub" title="${esc(metrics.definition)}">Últimos ${metrics.days} días: facturas pagadas o cobradas, movimientos conciliados, expedientes y meses cerrados</p>` : ""}
+        ${night.items.length ? `<p class="hoy-sub">Últimas 24 h: ${night.items.map((line) => `${line.count} ${esc(line.label)}`).join(" · ")}.</p>` : ""}
+        ${!(done && done.total) && !night.items.length ? `<p class="board-empty">CapaFiscal aún no ha hecho trabajo por su cuenta: aparecerá aquí cuando lea documentos, concilie el banco o prepare expedientes.</p>` : ""}
         ${doing.length ? `<ol class="work-list hoy-doing">${doing.map(compactHtml).join("")}</ol>` : ""}
       </section>`;
   }
@@ -214,9 +244,13 @@
     document.getElementById("panelPeriodNote").innerHTML = `${esc(today.charAt(0).toUpperCase() + today.slice(1))} ${statusPill()}`;
     document.getElementById("hoySummary").innerHTML = summaryHtml();
     const decide = group("accion").items;
+    const others = decide.filter((item) => item.kind !== "invoice");  // ya vienen por urgencia: plazos primero
+    const invoices = decide.filter((item) => item.kind === "invoice")
+      .sort((a, b) => (b.score - a.score) || ((b.amount || 0) - (a.amount || 0)));
     const missing = lacking();
     const parts = [];
-    if (decide.length) parts.push(listSection("accion", "state-red", "Para ti", decide, decisionHtml));
+    if (others.length) parts.push(listSection("accion", "state-red", "Para decidir", others, decisionHtml));
+    if (invoices.length) parts.push(listSection("facturas", "state-red", "Facturas por revisar", invoices, invoiceHtml, !others.length));
     if (missing.length) parts.push(listSection("falta", "state-orange", "Bloqueos", missing, compactHtml));
     if (!decide.length && !missing.length) parts.push(calmHtml());
     parts.push(`
@@ -249,19 +283,6 @@
     timer = active ? window.setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS) : null;
   }
 
-  async function runNow(button) {
-    button.disabled = true;
-    try {
-      const result = await window.jsonRequest("/agents/pulse/run", "POST", {});
-      window.showMessage(`Ciclo completado: ${window.pl(result.items, "elemento(s) trabajado(s)")}.`, "success");
-      window.dispatchEvent(new CustomEvent("capafiscal:data-changed"));  // recarga esta lista y las demás pantallas
-    } catch (error) {
-      window.showMessage(error.message, "error");
-    } finally {
-      button.disabled = false;
-    }
-  }
-
   async function simulate(button) {
     const box = button.nextElementSibling;
     button.disabled = true;
@@ -280,8 +301,6 @@
     const section = document.getElementById("tab-panel");
     if (!section || !document.getElementById("workGroups")) return;
     section.addEventListener("click", (event) => {
-      const run = event.target.closest("#workRun");
-      if (run) return runNow(run);
       if (event.target.closest("[data-work-retry]")) return load();
       const sim = event.target.closest("[data-work-simulate]");
       if (sim) return simulate(sim);

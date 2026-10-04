@@ -65,6 +65,15 @@ def item(group: str, kind: str, key: Any, title: str, why: str, *, action: dict[
             "action": action, "amount": amount, "score": score, "when": when}
 
 
+def invoice_score(problems: int, rare: bool, total: Any) -> int:
+    """Una factura que cuadra espera tu visto bueno, pero no por delante de un plazo: base 20, +10 por
+    problema, +25 si algo es raro para ese proveedor y hasta +10 por importe (escala logarítmica)."""
+    import math
+
+    amount = abs(float(total)) if total is not None else 0.0
+    return round(20 + 10 * problems + (25 if rare else 0) + min(10.0, 2.5 * math.log10(amount + 1)))
+
+
 def case_checks(case: Any) -> list[dict[str, Any]]:
     """Lo que los agentes ya han hecho con el expediente, en una línea cada uno."""
     rows = []
@@ -169,15 +178,18 @@ def decisions(database: Session, today: date, cases: list[Any]) -> list[dict[str
     pool = list(database.scalars(select(Invoice).where(Invoice.invoice_date.is_not(None), Invoice.total.is_not(None))).all()) if pending else []
     for invoice in pending:
         memory = unusual(database, invoice, today=today, pool=pool)["signals"]
+        # Una nota informativa («primera factura de este proveedor») es contexto, no un problema:
+        # no sube la factura por delante de lo que tiene plazo ni sustituye a «Todo cuadra».
         problems = [row for row in invoice_checks(invoice) if not row["ok"]] + [
-            {"label": signal["text"], "ok": False if signal["severity"] in ("high", "medium") else None} for signal in memory]
+            {"label": signal["text"], "ok": False if signal["severity"] in ("high", "medium") else None}
+            for signal in memory if signal["severity"] != "info"]
         party = invoice.customer_name if invoice.direction == "ISSUED" else invoice.supplier_name
         rare = next((signal["text"] for signal in memory if signal["severity"] == "high"), None)
         why = rare or ("; ".join(row["label"].lower() for row in problems[:3]) if problems else "Todo cuadra: falta tu visto bueno")
         rows.append(item("accion", "invoice", invoice.id, f"Factura {invoice.invoice_number or 's/n'} · {party or 'sin identificar'}", why,
                          action={"label": "Revisar factura", "document_id": invoice.document_id},
                          checked=invoice_checks(invoice) + [{"label": signal["text"], "ok": False if signal["severity"] != "info" else None} for signal in memory],
-                         amount=float(invoice.total) if invoice.total is not None else None, score=40 + 10 * len(problems) + (25 if rare else 0),
+                         amount=float(invoice.total) if invoice.total is not None else None, score=invoice_score(len(problems), bool(rare), invoice.total),
                          when=invoice.invoice_date.isoformat() if invoice.invoice_date else None)
                     | {"simulate": {"type": "approve_invoice", "invoice_id": invoice.id}, "simulate_label": "¿Qué cambia si la apruebo?",
                        "proposal": ("Confirmar el importe con el proveedor antes de aprobarla" if rare else
