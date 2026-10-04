@@ -3084,8 +3084,9 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 
 /* Facturas: una fila por factura (tercero · estado · importe · acción); el detalle, al abrirla. */
 .invoice-views { margin-bottom: 14px; }
-#documentsList { display: flex; flex-direction: column; gap: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
-#documentsList:has(.section-empty) { background: none; border: 0; }
+#documentsList, #otherDocumentsList { display: flex; flex-direction: column; gap: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+#documentsList:has(.section-empty), #otherDocumentsList:has(.section-empty) { background: none; border: 0; }
+.other-docs-hint { margin: -4px 0 14px; font-size: 13px; }
 .invoice-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 112px 92px; gap: 6px 16px; align-items: center; padding: 12px 18px; border-top: 1px solid var(--line); }
 .invoice-row:first-child { border-top: 0; }
 .invoice-row-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 13.5px; }

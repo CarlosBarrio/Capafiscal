@@ -582,6 +582,14 @@ def read_document(
         )
         return text, 1, not bool(text), [text]
 
+    from app.office_text import OFFICE_EXTENSIONS
+    from app.office_text import office_text
+
+    if suffix in OFFICE_EXTENSIONS:
+        # Word, RTF, HTML o XML: el texto basta para clasificarlo; no hay páginas que pasar por OCR.
+        text = clean_text(office_text(path))
+        return text, 1, False, [text]
+
     if suffix != ".pdf":
         return "", None, False, []
 
@@ -2648,6 +2656,15 @@ NON_INVOICE_TITLES = tuple(
 # reales citan «Nº de pedido: …» o «Albarán: …» junto a un «Factura: 24-07» o un «Factura de venta …» que no tiene la
 # forma estricta de título; un albarán o un pedido que dice «factura» se queda en lo que diga su título.
 INVOICING_WORDS = re.compile(r"\bfactur|\bfra\.?\b")
+# Lo que solo dice un pedido (orden de compra): sus condiciones de compra, cómo se acepta o qué hay que citar al
+# facturarlo. Una factura no da instrucciones para facturarse a sí misma.
+PURCHASE_ORDER_SIGNS = re.compile(
+    r"condiciones (?:generales )?de compra|purchase conditions|terms (?:and conditions )?of purchase"
+    r"|acepta(?:cion|r) (?:del |de este |este |el )?pedido"
+    r"|(?:citese|indique|indicar\w*|reflej\w+)[^\n]{0,40}(?:pedido|order)[^\n]{0,60}(?:factura|\bfra\b|albaran|invoice)"
+)
+# Una oferta en forma de carta no lleva título: habla de ofertar o presupuestar varias veces.
+OFFER_WORDS = re.compile(r"\bofert\w*|\bpresupuest\w*")
 NUMBER_MARK = r"(?:n\.?\s?[o°º]\.?|num(?:ero)?\.?)"
 FIELD_ID = r"(?=[\w/.\-]*\d)[\w/.\-]+"
 NON_INVOICE_FIELDS = tuple(
@@ -2709,7 +2726,10 @@ def non_invoice_title(text: str, head_lines: int = 25) -> str | None:
     lines = [title_text(line) for line in (text or "").splitlines() if line.strip()][:head_lines]
     if any(INVOICE_TITLE.match(line) or INVOICE_NUMBER_FIELD.search(line) for line in lines):
         return None
-    fields = not INVOICING_WORDS.search(title_text(text or ""))
+    whole = title_text(text or "")
+    if PURCHASE_ORDER_SIGNS.search(whole):
+        return "pedido"
+    fields = not INVOICING_WORDS.search(whole)
     for line in lines:
         for kind, pattern in NON_INVOICE_TITLES:
             if pattern.match(line):
@@ -2719,6 +2739,8 @@ def non_invoice_title(text: str, head_lines: int = 25) -> str | None:
                 return kind
     if is_payslip(text):
         return "nómina"
+    if len(OFFER_WORDS.findall(whole)) >= 3:
+        return "presupuesto"
     return None
 
 

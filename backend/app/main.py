@@ -189,6 +189,27 @@ def validate_file_signature(
 
         return
 
+    # Word, OpenDocument, RTF, HTML y XML: el contenido debe ser lo que dice la extensión.
+    signatures = {
+        ".doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+        ".docx": (b"PK\x03\x04",),
+        ".odt": (b"PK\x03\x04",),
+        ".rtf": (b"{\\rtf",),
+    }
+    if extension in signatures or extension in {".htm", ".html", ".xml"}:
+        with file_path.open("rb") as file_handle:
+            sample = file_handle.read(8192)
+        if extension in signatures:
+            valid = sample.startswith(signatures[extension])
+        else:
+            valid = sample[:2] in (b"\xff\xfe", b"\xfe\xff") or b"\x00" not in sample
+        if not valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El archivo tiene extensión {extension}, pero su contenido no corresponde a ese formato.",
+            )
+        return
+
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=f"El tipo de archivo {extension} no está permitido.",
@@ -1260,7 +1281,10 @@ def document_detail(
 def document_file(
     document_id: int,
     database: DatabaseDependency,
-) -> FileResponse:
+    as_text: bool = False,
+) -> Response:
+    """El archivo original. Con ``as_text`` (Word, RTF, HTML, XML), el texto leído en texto plano: el navegador
+    no muestra esos formatos y un HTML subido nunca se sirve como página."""
     document = get_document(
         database,
         document_id,
@@ -1271,6 +1295,10 @@ def document_file(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Documento no encontrado.",
         )
+
+    if as_text:
+        text = document.extraction_runs[0].raw_text if document.extraction_runs else None
+        return Response(content=text or "No se pudo leer el texto de este documento.", media_type="text/plain; charset=utf-8")
 
     file_path = get_document_file_path(document)
 
@@ -1372,6 +1400,57 @@ def reprocess_pending_documents(
             + "."
         ),
     }
+
+
+class ClassifyRequest(BaseModel):
+    kind: str
+
+
+@app.post(
+    "/api/documents/{document_id}/classify",
+    response_model=ActionResponse,
+    tags=["Documentos"],
+)
+def classify_document(
+    document_id: int,
+    payload: ClassifyRequest,
+    database: DatabaseDependency,
+    actor_header: ActorHeader = None,
+) -> ActionResponse:
+    """Una persona dice qué es un documento que no es factura (albarán, presupuesto, pedido, proforma o nómina):
+    sale de la revisión de facturas y queda en su sitio. Una factura aprobada no se reclasifica."""
+    from app.invoice_service import CLASSIFIED
+    from app.invoice_service import OTHER_DOCUMENT_KINDS
+    from app.task_service import synchronize_document_task
+
+    kind = payload.kind.strip().upper()
+    if kind not in OTHER_DOCUMENT_KINDS.values():
+        raise HTTPException(status_code=422, detail=f"Tipo no válido. Tipos: {', '.join(sorted(OTHER_DOCUMENT_KINDS.values()))}.")
+    document = get_document(database, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado.")
+    if document.kind == "NOTIFICATION":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El documento es una notificación.")
+    if document.invoice is not None:
+        check_invoice_is_editable(document.invoice)
+        database.delete(document.invoice)
+        document.invoice = None
+
+    add_audit_event(
+        database,
+        action="document.classified_by_person",
+        entity_type="document",
+        entity_id=document.id,
+        actor=normalize_actor(actor_header),
+        event_data={"previous_kind": document.kind, "kind": kind},
+    )
+    document.kind = kind
+    document.status = CLASSIFIED
+    database.flush()
+    synchronize_document_task(database, document=document)
+    database.commit()
+
+    return ActionResponse(success=True, message="Documento clasificado.", document=get_document(database, document.id))
 
 
 @app.post(

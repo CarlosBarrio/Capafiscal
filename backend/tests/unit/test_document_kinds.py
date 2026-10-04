@@ -31,7 +31,6 @@ FIELD_INVOICES = [
     # Sin número, o sin marca, no es un campo de identidad
     "EMPRESA EJEMPLO S.L.\nAlbarán   Fecha   Importe\nA-1 01/09/2026 100,00",
     "EMPRESA EJEMPLO S.L.\nRef. presupuesto 88 aceptado\nTotal 121,00",
-    "EMPRESA EJEMPLO S.L.\nCítese el nº de pedido en la factura\nTotal 121,00",
 ]
 
 
@@ -135,3 +134,55 @@ def test_issued_by_position_only_asks_a_person():
     assert any("emitimos o la recibimos" in reason for reason in needs_help(result, {"B00001016"}))
     clear = {**result, "direction_confidence": 92}
     assert not any("emitimos o la recibimos" in reason for reason in needs_help(clear, {"B00001016"}))
+
+
+# ---------------------------------------------------------------------
+# Pedidos y ofertas sin título reconocible
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "EMPRESA EJEMPLO S.L.\nORDEN\nNúmero de orden 4500012345\nSe aplican nuestras condiciones generales de compra.\nTotal 121,00",
+    "EMPRESA EJEMPLO S.L.  Num. pedido/fecha\nPor favor confirme la aceptación del pedido.\nTotal 121,00",
+    "Cítese el nº de pedido en la fra. y en el albarán\nEMPRESA EJEMPLO S.L.\nSegún oferta 23-45\nTotal 121,00",
+])
+def test_what_only_a_purchase_order_says(text):
+    from app.extractor import non_invoice_title
+
+    assert non_invoice_title(text) == "pedido"
+
+
+def test_an_offer_letter_without_title():
+    from app.extractor import non_invoice_title
+
+    letter = ("ESTUDIO EJEMPLO S.L.\nEstimado cliente:\nCon el fin de ofertarte los trabajos solicitados, te enviamos "
+              "nuestra oferta. No es necesario contratar todo lo ofertado.\nHonorarios 1.000,00\nIVA 21 % 210,00")
+    assert non_invoice_title(letter) == "presupuesto"
+
+
+@pytest.mark.parametrize("text", [
+    "FACTURA Nº 12\nSegún su pedido 4500 y nuestras condiciones generales de compra\nTotal 121,00",
+    "FACTURA Nº 7\nSegún oferta 23-45 y presupuesto aceptado; ver oferta adjunta\nTotal 121,00",
+])
+def test_an_invoice_that_mentions_orders_or_offers_stays_an_invoice(text):
+    from app.extractor import non_invoice_title
+
+    assert non_invoice_title(text) is None
+
+
+# ---------------------------------------------------------------------
+# Word, RTF, HTML y XML: se leen para clasificarlos
+# ---------------------------------------------------------------------
+
+def test_other_formats_are_read(tmp_path):
+    from app.office_text import office_text
+
+    (tmp_path / "pedido.htm").write_text("<html><body><h1>PEDIDO Nº 4500123</h1><script>alert(1)</script><p>Total 121,00</p></body></html>", encoding="utf-8")
+    (tmp_path / "pedido.xml").write_text('<?xml version="1.0" encoding="UTF-8"?><Order><Title>PEDIDO Nº 4500123</Title><Total>121,00</Total></Order>', encoding="utf-8")
+    (tmp_path / "oferta.rtf").write_bytes(rb"{\rtf1\ansi{\fonttbl{\f0 Arial;}}{\*\generator Ejemplo;}\f0 OFERTA N\'ba 12/26\par Honorarios 1.000,00\par}")
+    for name, expected in (("pedido.htm", "PEDIDO Nº 4500123"), ("pedido.xml", "PEDIDO Nº 4500123"), ("oferta.rtf", "OFERTA Nº 12/26")):
+        text = office_text(tmp_path / name)
+        assert expected in text.splitlines(), (name, text)
+    assert "alert" not in office_text(tmp_path / "pedido.htm")
+    # Un .doc de Word 97 guarda el texto en UTF-16: se recupera
+    (tmp_path / "presupuesto.doc").write_bytes(b"\xd0\xcf\x11\xe0" + b"\x00" * 64 + "PRESUPUESTO Nº 26-14 para la reforma\r".encode("utf-16-le") + b"\x00" * 32)
+    assert "PRESUPUESTO Nº 26-14 para la reforma" in office_text(tmp_path / "presupuesto.doc")

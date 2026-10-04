@@ -75,3 +75,39 @@ def test_an_invoice_is_still_an_invoice(client, tmp_path):
 
     assert document["kind"] in (None, "INVOICE")
     assert document["invoice"] is not None
+
+
+def test_word_html_and_xml_are_accepted_and_classified(client, tmp_path):
+    """Un pedido en HTML o XML y una oferta en RTF se leen y van a su sitio; un HTML subido nunca se sirve como página."""
+    html_order = write(tmp_path, "pedido.htm", "<html><body><h1>PEDIDO Nº 4500123</h1><script>alert(1)</script>"
+                       "<p>Condiciones generales de compra</p><p>Total 121,00</p><p>SIMULACIÓN — NO OFICIAL</p></body></html>")
+    xml_order = write(tmp_path, "pedido.xml", '<?xml version="1.0" encoding="UTF-8"?><Pedido><Titulo>PEDIDO Nº 4500124</Titulo>'
+                      "<Total>121,00</Total></Pedido>")
+    rtf_offer = tmp_path / "oferta.rtf"
+    rtf_offer.write_bytes(rb"{\rtf1\ansi{\fonttbl{\f0 Arial;}}\f0 OFERTA N\'ba 12/26\par Honorarios 1.000,00\par IVA 21 % 210,00\par}")
+
+    kinds = [upload(client, path)["document"]["kind"] for path in (html_order, xml_order, rtf_offer)]
+    assert kinds == ["PEDIDO", "PEDIDO", "PRESUPUESTO"]
+
+    document_id = client.get("/api/documents").json()[-1]["id"]
+    original = client.get(f"/api/documents/{document_id}/file")
+    assert original.headers["content-type"].startswith("application/octet-stream")
+    preview = client.get(f"/api/documents/{document_id}/file", params={"as_text": True})
+    assert preview.headers["content-type"].startswith("text/plain")
+    assert "PEDIDO Nº 4500123" in preview.text and "alert" not in preview.text
+
+
+def test_a_person_puts_a_document_in_its_place(client, tmp_path):
+    """«Es un pedido» sobre algo leído como factura: deja de ser factura, va a Documentos y ahí se queda al releerlo."""
+    document = upload(client, write(tmp_path, "factura.txt", "TALLERES EJEMPLO S.L.\nFACTURA Nº 12" + BODY))["document"]
+    assert document["invoice"] is not None
+
+    response = client.post(f"/api/documents/{document['id']}/classify", json={"kind": "PEDIDO"})
+
+    assert response.status_code == 200
+    reread = client.get(f"/api/documents/{document['id']}").json()
+    assert (reread["kind"], reread["status"], reread["invoice"]) == ("PEDIDO", "CLASSIFIED", None)
+    assert client.get("/api/tasks/review-inbox").json() == []
+    client.post(f"/api/documents/{document['id']}/reprocess")
+    assert client.get(f"/api/documents/{document['id']}").json()["kind"] == "PEDIDO"
+    assert client.post(f"/api/documents/{document['id']}/classify", json={"kind": "CONTRATO"}).status_code == 422

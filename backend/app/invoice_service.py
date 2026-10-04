@@ -513,6 +513,18 @@ OTHER_DOCUMENT_KINDS = {
 CLASSIFIED = "CLASSIFIED"
 
 
+def classified_by_person(database: Session, document: Document) -> bool:
+    from sqlalchemy import select
+
+    return database.scalar(
+        select(AuditEvent.id).where(
+            AuditEvent.entity_type == "document",
+            AuditEvent.entity_id == str(document.id),
+            AuditEvent.action == "document.classified_by_person",
+        ).limit(1)
+    ) is not None
+
+
 def classify_other_document(database: Session, document: Document, kind: str, result: dict[str, Any]) -> None:
     """Archiva un documento que no es factura con su tipo. Si una lectura anterior lo tomó por factura y nadie la
     aprobó, esa factura se descarta (como al pasar a notificación); una aprobada no se toca."""
@@ -589,6 +601,10 @@ def persist_extraction_result(
 
     # Una persona dijo que es factura (Document.kind = INVOICE): se lee como factura, diga lo que diga el título.
     marked_invoice = document.kind == "INVOICE"
+    if document.kind in OTHER_DOCUMENT_KINDS.values() and classified_by_person(database, document):
+        # Una persona dijo qué es (albarán, presupuesto…): volver a leerlo no le cambia el sitio.
+        classify_other_document(database, document, next(key for key, value in OTHER_DOCUMENT_KINDS.items() if value == document.kind), result)
+        return None
     other_kind = None if result.get("is_invoice") or marked_invoice else non_invoice_kind(result.get("signals") or [])
     if other_kind:
         # El propio documento dice qué es (título de albarán, presupuesto, pedido o proforma, o la estructura de

@@ -6,7 +6,7 @@ Al abrir CapaFiscal con esa base se ven únicamente esos documentos, leídos por
 
     python scripts/cargar_lote.py RUTA [--empresa-nif B00000000 --empresa-nombre "Mi empresa S.L."] [--reemplazar]
 
-RUTA es una carpeta (se recorre entera) o un .zip. La base se crea en backend/data/solo-lote/ (fuera de git).
+RUTA es una carpeta (se recorre entera) o un .zip: PDF, texto, Word (.doc, .docx), .odt, RTF, HTML y XML. La base se crea en backend/data/solo-lote/ (fuera de git).
 Sin --empresa-nif se usa la empresa de evaluation/datasets/reales/labels.json si existe: hace falta para saber
 qué facturas son emitidas y cuáles recibidas. Al terminar dice cómo arrancar la aplicación con esa base.
 """
@@ -51,8 +51,10 @@ def main() -> int:
     if not empresa["tax_id"] and LABELS.is_file():
         empresa = {**(json.loads(LABELS.read_text(encoding="utf-8")).get("empresa") or {}), **{k: v for k, v in empresa.items() if v}}
 
-    # La configuración se fija antes de importar la aplicación: todo va a la base nueva.
+    # La configuración se fija antes de importar la aplicación: todo va a la base nueva, con todos los formatos
+    # que CapaFiscal sabe leer aunque un .env antiguo diga solo «.pdf,.txt».
     os.environ.update({
+        "ALLOWED_EXTENSIONS": ".pdf,.txt,.doc,.docx,.odt,.rtf,.htm,.html,.xml",
         "DATA_DIR": str(destino / "data"),
         "UPLOAD_DIR": str(destino / "uploads"),
         "DATABASE_URL": f"sqlite:///{(destino / 'capafiscal.db').as_posix()}",

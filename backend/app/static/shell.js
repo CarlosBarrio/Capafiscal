@@ -12,6 +12,7 @@
     inteligencia: ["Más", "Radar jurídico", "radar"],
     asistente: ["Más", "Asistente", "sparkles"],
     facturas: ["Operación", "Facturas recibidas", "file"],
+    documentos: ["Operación", "Documentos", "doc"],
     ventas: ["Operación", "Ventas y cobros", "invoice"],
     notificaciones: ["Operación", "Notificaciones", "landmark"],
     salida: ["Operación", "Bandeja de salida", "send"],

@@ -17,7 +17,7 @@
   >
   <link
     rel="stylesheet"
-    href="/static/style.css?v=114"
+    href="/static/style.css?v=115"
   >
 </head>
 <body>
@@ -97,6 +97,9 @@
         <p class="nav-group-label">Operación</p>
         <button type="button" class="nav-tab" data-tab="facturas">
           <svg class="icon"><use href="#i-file"/></svg><span class="nav-label">Facturas recibidas</span><span class="tab-count hidden" id="cntFacturas">0</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="documentos">
+          <svg class="icon"><use href="#i-doc"/></svg><span class="nav-label">Documentos</span><span class="tab-count hidden" id="cntDocumentos">0</span>
         </button>
         <button type="button" class="nav-tab" data-tab="ventas">
           <svg class="icon"><use href="#i-invoice"/></svg><span class="nav-label">Ventas y cobros</span><span class="tab-count tab-count-alert hidden" id="cntOverdue">0</span>
@@ -180,7 +183,7 @@
       <input
         type="file"
         id="fileInput"
-        accept=".pdf,.txt,application/pdf,text/plain"
+        accept=".pdf,.txt,.doc,.docx,.odt,.rtf,.htm,.html,.xml,application/pdf,text/plain"
         multiple
         hidden
       >
@@ -260,6 +263,7 @@
     </div>
 
     <div class="segmented invoice-views" id="invoiceViews" role="group" aria-label="Vista de facturas"></div>
+    <p class="muted other-docs-hint hidden" id="otherDocsHint"></p>
 
     <div class="card filter-card">
       <form class="filter-toolbar" id="invoiceFilters">
@@ -330,6 +334,26 @@
       id="documentsList"
       class="documents-list"
     ></div>
+  </section>
+
+  <!-- DOCUMENTOS: lo que no es factura ni notificación -->
+  <section class="tab-panel" id="tab-documentos">
+    <div class="section-title">
+      <h1>Documentos</h1>
+      <p>Lo que no es factura ni notificación, cada cosa en su sitio: presupuestos y ofertas, pedidos, albaranes, nóminas y lo que falta por identificar.</p>
+    </div>
+
+    <div class="segmented invoice-views" id="docKindViews" role="group" aria-label="Tipo de documento"></div>
+
+    <div class="card filter-card">
+      <label class="filter-search">
+        Buscar
+        <input type="search" id="otherDocsSearch" placeholder="Nombre del archivo…" autocomplete="off">
+      </label>
+      <p class="filter-summary" id="otherDocsSummary"></p>
+    </div>
+
+    <div id="otherDocumentsList" class="documents-list"></div>
   </section>
 
   <!-- NEGOCIO -->
@@ -1916,7 +1940,7 @@
 
 <script src="/static/auth.js?v=3"></script>
 <script src="/static/dialogs.js?v=1"></script>
-<script src="/static/app.js?v=73"></script>
+<script src="/static/app.js?v=74"></script>
 <script src="/static/reports.js?v=6"></script>
 <script src="/static/assistant.js?v=3"></script>
 <script src="/static/activity.js?v=4"></script>
@@ -1937,6 +1961,6 @@
 <script src="/static/work.js?v=14"></script>
 <script src="/static/accounting.js?v=3"></script>
 <script src="/static/bankconnect.js?v=2"></script>
-<script src="/static/shell.js?v=10"></script>
+<script src="/static/shell.js?v=11"></script>
 </body>
 </html>

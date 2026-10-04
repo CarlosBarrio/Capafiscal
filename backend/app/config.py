@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     data_dir: Path = DEFAULT_DATA_DIR
     upload_dir: Path = DEFAULT_UPLOAD_DIR
     max_upload_size: int = 15 * 1024 * 1024
-    allowed_extensions: str = ".pdf,.txt"
+    allowed_extensions: str = ".pdf,.txt,.doc,.docx,.odt,.rtf,.htm,.html,.xml"
 
     company_name: str | None = None
     company_tax_id: str | None = None

@@ -7,7 +7,7 @@ const API_BASE = "/api";
 // Sin manejadores en línea, la política de seguridad (CSP) puede prohibir todo script que no venga
 // de /static: una inyección de HTML no puede ejecutar código.
 const CALLABLE = new Set(["showDetail", "approveInvoice", "rejectInvoice", "activateTab", "openTask", "resolveTask", "cancelPayment", "markPaid",
-  "saveInvoice", "reopenInvoice", "reprocessDocument", "markAsInvoice", "convertToNotification", "connectOutlook", "syncOutlook", "disconnectOutlook"]);
+  "saveInvoice", "reopenInvoice", "reprocessDocument", "markAsInvoice", "classifyDocument", "convertToNotification", "connectOutlook", "syncOutlook", "disconnectOutlook"]);
 document.addEventListener("click", (event) => {
   const target = event.target.closest("[data-call]");
   const handler = target && CALLABLE.has(target.dataset.call) && window[target.dataset.call];
@@ -264,6 +264,18 @@ const OTHER_DOCUMENT_PHRASES = { ALBARAN: "un albarán", PRESUPUESTO: "un presup
 function otherDocumentLabel(documentItem) {
   return OTHER_DOCUMENT_LABELS[documentItem?.kind] || "";
 }
+/* Facturas muestra facturas (y lo que aún se está leyendo); Documentos, el resto salvo las notificaciones. */
+function isInvoiceDocument(documentItem) {
+  return Boolean(documentItem?.invoice?.id) || ["RECEIVED", "PROCESSING"].includes(documentItem?.status);
+}
+function isUnidentifiedDocument(documentItem) {
+  return documentItem?.kind !== "NOTIFICATION" && !otherDocumentLabel(documentItem) && !isInvoiceDocument(documentItem);
+}
+function unidentifiedReason(documentItem) {
+  if (documentItem.extraction_status === "FAILED" || documentItem.status === "FAILED") return "No se pudo leer";
+  if (documentItem.requires_ocr) return "Escaneado sin texto";
+  return "No parece una factura";
+}
 
 function requiresReview(documentItem) {
   if (documentItem.kind === "NOTIFICATION" || otherDocumentLabel(documentItem)) return false;
@@ -381,6 +393,7 @@ async function loadDocuments() {
     badge?.classList.toggle("hidden", !toReview);
     badge?.setAttribute("title", window.pl(toReview, "documento(s) para revisar"));
 
+    renderOtherDocuments();
     await loadFilteredDocuments();
     return documentsCache;
   } catch (error) {
@@ -388,6 +401,69 @@ async function loadDocuments() {
     renderApiError("No se pudieron cargar los documentos", error.message);
     return [];
   }
+}
+
+/* ================================================================
+DOCUMENTOS: presupuestos y ofertas, pedidos, albaranes, nóminas, proformas y lo que falta por identificar
+================================================================ */
+const DOCUMENT_KIND_VIEWS = [
+  { key: "pending", label: "Por identificar", test: isUnidentifiedDocument },
+  { key: "PRESUPUESTO", label: "Presupuestos y ofertas" },
+  { key: "PEDIDO", label: "Pedidos" },
+  { key: "ALBARAN", label: "Albaranes" },
+  { key: "NOMINA", label: "Nóminas" },
+  { key: "PROFORMA", label: "Proformas" },
+  { key: "all", label: "Todos", test: (doc) => Boolean(otherDocumentLabel(doc)) || isUnidentifiedDocument(doc) },
+].map((view) => ({ ...view, test: view.test || ((doc) => doc.kind === view.key) }));
+let documentKindView = null;
+
+function renderOtherDocuments() {
+  const others = documentsCache.filter(DOCUMENT_KIND_VIEWS.at(-1).test);
+  const pending = others.filter(isUnidentifiedDocument).length;
+  const badge = document.getElementById("cntDocumentos");
+  setText("cntDocumentos", String(pending));
+  badge?.classList.toggle("hidden", !pending);
+  badge?.setAttribute("title", window.pl(pending, "documento(s) por identificar"));
+
+  const hint = document.getElementById("otherDocsHint");
+  if (hint) {
+    hint.classList.toggle("hidden", !others.length);
+    hint.innerHTML = others.length
+      ? `${escapeHtml(others.length === 1 ? "1 documento no es factura" : `${others.length} documentos no son facturas`)}: presupuestos, pedidos, albaranes, nóminas… <button type="button" class="link-button" data-call="activateTab" data-args="'documentos'">Ver en Documentos</button>`
+      : "";
+  }
+
+  const bar = document.getElementById("docKindViews");
+  const list = document.getElementById("otherDocumentsList");
+  if (!bar || !list) return;
+  const counts = Object.fromEntries(DOCUMENT_KIND_VIEWS.map((view) => [view.key, documentsCache.filter(view.test).length]));
+  if (!documentKindView || (!counts[documentKindView] && documentKindView !== "all")) documentKindView = counts.pending ? "pending" : "all";
+  bar.innerHTML = DOCUMENT_KIND_VIEWS
+    .filter((view) => view.key === "all" || counts[view.key])
+    .map((view) => `<button type="button" class="segment ${view.key === documentKindView ? "active" : ""}" data-doc-kind="${view.key}">${escapeHtml(view.label)} <span class="segment-count">${counts[view.key]}</span></button>`)
+    .join("");
+
+  const view = DOCUMENT_KIND_VIEWS.find((item) => item.key === documentKindView);
+  const query = (document.getElementById("otherDocsSearch")?.value || "").trim().toLowerCase();
+  const shown = documentsCache.filter(view.test)
+    .filter((doc) => !query || `${doc.original_filename} ${otherDocumentLabel(doc)}`.toLowerCase().includes(query))
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  setText("otherDocsSummary", others.length ? `${shown.length} de ${window.pl(others.length, "documento(s)")}.` : "");
+  list.innerHTML = shown.length
+    ? shown.map(realDocumentCard).join("")
+    : others.length
+      ? emptyState("check", "Nada aquí", "Ningún documento con ese nombre en esta vista.")
+      : emptyState("📄", "Todavía no hay otros documentos", "Los presupuestos, pedidos, albaranes y nóminas que subas aparecerán aquí, cada uno en su sitio.");
+}
+
+function setupOtherDocuments() {
+  document.getElementById("docKindViews")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-doc-kind]");
+    if (!button) return;
+    documentKindView = button.dataset.docKind;
+    renderOtherDocuments();
+  });
+  document.getElementById("otherDocsSearch")?.addEventListener("input", () => renderOtherDocuments());
 }
 
 function setupInvoiceFilters() {
@@ -482,7 +558,7 @@ async function loadFilteredDocuments() {
     const view = INVOICE_VIEWS[invoiceView] || INVOICE_VIEWS.all;
     const shown = documentsCache.filter(view.test);
     renderDocuments(shown, invoiceView !== "all");
-    if (summary) summary.textContent = `${shown.length} de ${window.pl(documentsCache.length, "documento(s)")}.`;
+    if (summary) summary.textContent = `${shown.length} de ${window.pl(documentsCache.filter(isInvoiceDocument).length, "factura(s)")}.`;
     return;
   }
   document.querySelectorAll("#invoiceViews .segment").forEach((item) => item.classList.remove("active"));  // con filtros manda el formulario
@@ -538,6 +614,7 @@ function realDocumentCard(documentItem) {
   const confidence = Number(invoice.confidence || 0);
   if (documentItem.kind === "NOTIFICATION") return notificationDocumentCard(documentItem, "");
   if (otherDocumentLabel(documentItem)) return otherDocumentCard(documentItem);
+  if (isUnidentifiedDocument(documentItem)) return unidentifiedDocumentCard(documentItem);
 
   const issued = invoice.direction === "ISSUED";
   const partyName = issued ? invoice.customer_name : invoice.supplier_name;
@@ -579,6 +656,22 @@ function otherDocumentCard(documentItem) {
   `;
 }
 
+/* Un documento que no se sabe qué es: a una persona, con el motivo. */
+function unidentifiedDocumentCard(documentItem) {
+  return `
+  <article class="invoice-row needs-review">
+    <div class="invoice-row-main">
+      <strong>${escapeHtml(documentItem.original_filename || "Documento")}</strong>
+      <span class="muted">${escapeHtml(documentItem.created_at ? formatDay(documentItem.created_at) : "")}</span>
+      <span class="invoice-row-issue">${escapeHtml(unidentifiedReason(documentItem))}</span>
+    </div>
+    <span class="status-pill status-warning">Por identificar</span>
+    <span class="invoice-row-amount"></span>
+    <button class="act-btn" type="button" data-call="showDetail" data-args="${Number(documentItem.id)}">Revisar</button>
+  </article>
+  `;
+}
+
 /* Qué tiene de raro esta factura, en pocas palabras (o nada). */
 function invoiceIssue(documentItem) {
   const invoice = documentItem.invoice || {};
@@ -591,11 +684,10 @@ function invoiceIssue(documentItem) {
 
 /* Vistas rápidas por estado de trabajo, sobre lo ya cargado (sin pedir nada al servidor). */
 const INVOICE_VIEWS = {
-  review: { label: "Para revisar", test: (doc) => doc.kind !== "NOTIFICATION" && !otherDocumentLabel(doc) && (doc.invoice?.review_status === "PENDING" || requiresReview(doc)) },
-  issues: { label: "Con incidencias", test: (doc) => doc.kind !== "NOTIFICATION" && !otherDocumentLabel(doc) && Boolean(invoiceIssue(doc)) },
+  review: { label: "Para revisar", test: (doc) => isInvoiceDocument(doc) && (doc.invoice?.review_status === "PENDING" || requiresReview(doc)) },
+  issues: { label: "Con incidencias", test: (doc) => isInvoiceDocument(doc) && Boolean(invoiceIssue(doc)) },
   unpaid: { label: "Sin pagar", test: (doc) => doc.invoice?.review_status === "APPROVED" && !doc.invoice?.paid_at },
-  other: { label: "Otros documentos", test: (doc) => Boolean(otherDocumentLabel(doc)) },
-  all: { label: "Todas", test: () => true },
+  all: { label: "Todas", test: (doc) => isInvoiceDocument(doc) },
 };
 let invoiceView = null;
 
@@ -1453,7 +1545,7 @@ async function showDetail(documentId, focus = null) {
 
         <div class="detail-preview" id="documentPreview">
           <iframe
-            src="${fileUrl}"
+            src="${[".pdf", ".txt"].includes(String(documentItem.extension || "").toLowerCase()) ? fileUrl : `${fileUrl}?as_text=true`}"
             title="Vista previa de ${escapeHtml(documentItem.original_filename || "documento")}"
             loading="lazy"
           ></iframe>
@@ -1483,7 +1575,9 @@ async function showDetail(documentId, focus = null) {
             <div class="detail-more-menu">
               ${invoice.review_status !== "APPROVED" ? `
                 <button type="button" class="btn-ghost" data-call="reprocessDocument" data-args="${docId}">Volver a leer el documento</button>
-                ${otherLabel ? `<button type="button" class="btn-ghost" data-call="markAsInvoice" data-args="${docId}">Es una factura</button>` : ""}
+                ${otherLabel || !invoice.id ? `<button type="button" class="btn-ghost" data-call="markAsInvoice" data-args="${docId}">Es una factura</button>` : ""}
+                ${Object.entries(OTHER_DOCUMENT_PHRASES).filter(([kind]) => kind !== documentItem.kind).map(([kind, phrase]) => `
+                  <button type="button" class="btn-ghost" data-call="classifyDocument" data-args="${docId}, '${kind}'">Es ${escapeHtml(phrase)}</button>`).join("")}
                 <button type="button" class="btn-ghost" data-call="convertToNotification" data-args="${docId}">Es una notificación</button>
               ` : ""}
               <a class="btn-ghost" href="${fileUrl}" target="_blank" rel="noopener noreferrer">Abrir el archivo original</a>
@@ -1852,6 +1946,21 @@ async function markAsInvoice(documentId) {
   }
 }
 
+/* Una persona dice qué es: sale de las facturas (si se leyó como tal y no está aprobada) y va a su sitio en Documentos. */
+async function classifyDocument(documentId, kind) {
+  const phrase = OTHER_DOCUMENT_PHRASES[kind] || "otro documento";
+  if (!await window.askConfirm(`¿Es ${phrase}? Se guardará en Documentos y no contará como factura.`, { confirmLabel: "Guardar en Documentos" })) return;
+
+  try {
+    await jsonRequest(`/documents/${documentId}/classify`, "POST", { kind });
+    showMessage(`Guardado en Documentos como ${phrase}.`, "success");
+    await refreshAll();
+    await showDetail(documentId);
+  } catch (error) {
+    showMessage(`No se pudo clasificar: ${error.message}`, "error");
+  }
+}
+
 /* ================================================================
 OUTLOOK CONNECTOR
 ================================================================ */
@@ -2100,6 +2209,7 @@ Object.assign(window, {
   cancelPayment,
   reprocessDocument,
   markAsInvoice,
+  classifyDocument,
   openTask,
   resolveTask,
   connectOutlook,
@@ -2122,6 +2232,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupTabs();
   setupUpload();
   setupInvoiceFilters();
+  setupOtherDocuments();
 
   const query = new URLSearchParams(window.location.search);
   if (query.get("outlook") === "connected") {
