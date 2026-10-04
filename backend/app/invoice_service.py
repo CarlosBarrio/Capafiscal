@@ -502,6 +502,44 @@ def create_or_replace_tax_lines(
         )
 
 
+# Documentos que no son factura ni notificación, por el tipo que dice el extractor (Document.kind).
+OTHER_DOCUMENT_KINDS = {
+    "albaran": "ALBARAN",
+    "presupuesto": "PRESUPUESTO",
+    "pedido": "PEDIDO",
+    "proforma": "PROFORMA",
+    "nomina": "NOMINA",
+}
+CLASSIFIED = "CLASSIFIED"
+
+
+def classify_other_document(database: Session, document: Document, kind: str, result: dict[str, Any]) -> None:
+    """Archiva un documento que no es factura con su tipo. Si una lectura anterior lo tomó por factura y nadie la
+    aprobó, esa factura se descarta (como al pasar a notificación); una aprobada no se toca."""
+    if document.invoice is not None:
+        if document.invoice.review_status == "APPROVED":
+            document.status = "NEEDS_REVIEW"
+            return
+        database.delete(document.invoice)
+        document.invoice = None
+        database.flush()
+
+    document.kind = OTHER_DOCUMENT_KINDS[kind]
+    document.status = CLASSIFIED
+    add_audit_event(
+        database,
+        action="document.classified_not_invoice",
+        entity_type="document",
+        entity_id=document.id,
+        actor="extractor",
+        event_data={
+            "kind": document.kind,
+            "signals": [signal for signal in result.get("signals") or [] if signal.startswith("not_invoice:")],
+            "invoice_likelihood": result.get("invoice_likelihood"),
+        },
+    )
+
+
 def persist_extraction_result(
     database: Session,
     *,
@@ -547,11 +585,25 @@ def persist_extraction_result(
         )
         return None
 
+    from app.extractor import non_invoice_kind
+
+    # Una persona dijo que es factura (Document.kind = INVOICE): se lee como factura, diga lo que diga el título.
+    marked_invoice = document.kind == "INVOICE"
+    other_kind = None if result.get("is_invoice") or marked_invoice else non_invoice_kind(result.get("signals") or [])
+    if other_kind:
+        # El propio documento dice qué es (título de albarán, presupuesto, pedido o proforma, o la estructura de
+        # una nómina): no es una factura ni una notificación aunque cite a la Seguridad Social, a un ayuntamiento
+        # o la palabra «requerimiento». Se archiva con su tipo, sin tarea de revisión, y queda a la vista.
+        classify_other_document(database, document, other_kind, result)
+        return None
+    if document.kind in OTHER_DOCUMENT_KINDS.values():
+        document.kind = None  # una lectura anterior lo archivó con otro tipo; ahora se lee de nuevo
+
     from app.notification_service import administrative_record
     from app.notification_service import looks_like_administrative_act
 
     raw_text = result.get("raw_text") or ""
-    if administrative_record(raw_text) or looks_like_administrative_act(raw_text):
+    if not marked_invoice and (administrative_record(raw_text) or looks_like_administrative_act(raw_text)):
         # Un apremio o una liquidación tienen importe y fecha y pueden
         # parecer facturas: si viene de un organismo, es notificación.
         from app.notification_service import detect_and_register
@@ -571,7 +623,7 @@ def persist_extraction_result(
         if notification is not None:
             return None
 
-    if not result.get("is_invoice"):
+    if not result.get("is_invoice") and not marked_invoice:
         document.status = "NEEDS_REVIEW"
 
         from app.notification_service import detect_and_register

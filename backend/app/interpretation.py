@@ -108,6 +108,10 @@ def needs_help(result: dict[str, Any], company_tax_ids: set[str]) -> list[str]:
     # Una emitida tiene cliente con su NIF; si el único NIF es el nuestro, no se sabe quién la emite
     if supplier and supplier in company_tax_ids and (not customer or customer in company_tax_ids):
         reasons.append("el emisor detectado es la propia empresa")
+    from app.extractor import DIRECTION_BY_POSITION
+
+    if result.get("direction") == "ISSUED" and (result.get("direction_confidence") or 100) <= DIRECTION_BY_POSITION:
+        reasons.append("no está claro si la emitimos o la recibimos (solo lo dice el orden de los NIF)")
     for name, value in (("proveedor", supplier), ("cliente", customer)):
         if value and not is_valid_spanish_tax_id(value) and not re.fullmatch(r"[A-Z]{2}[A-Z0-9]{2,13}", value):
             reasons.append(f"NIF del {name} no válido")

@@ -33,7 +33,7 @@ FIELDS = (
 NOT_PRODUCED: dict[str, set[str]] = {}
 # Tipos de documento que distingue CapaFiscal (las reglas: título del documento; ver extractor.non_invoice_title).
 # Claude devuelve exactamente los mismos (llm.DOCUMENT_TYPES); un test lo comprueba.
-DOCUMENT_TYPES = ("factura", "albaran", "presupuesto", "proforma", "pedido", "otro")
+DOCUMENT_TYPES = ("factura", "albaran", "presupuesto", "proforma", "pedido", "nomina", "otro")
 # Dimensiones de los metadatos por las que se desglosa el acierto.
 META_DIMENSIONS = ("document_type", "difficulty", "ambiguous", "ocr", "multipage", "language", "visual_template", "synthetic")
 FIELD_LABELS = {
@@ -144,9 +144,11 @@ def flatten(result: dict[str, Any]) -> dict[str, Any]:
 
 def document_type(result: dict[str, Any]) -> str | None:
     """Tipo de documento según las reglas: el título de no-factura que detectaron, o «factura», o «otro»."""
-    kind = next((signal.split(":", 1)[1] for signal in result.get("signals") or [] if signal.startswith("not_invoice:")), None)
+    from app.extractor import non_invoice_kind
+
+    kind = non_invoice_kind(result.get("signals") or [])
     if kind:
-        return kind.replace("á", "a")
+        return kind
     if result.get("is_invoice") is None:
         return None
     return "factura" if result.get("is_invoice") else "otro"

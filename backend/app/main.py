@@ -1383,7 +1383,10 @@ def reprocess_document(
     document_id: int,
     database: DatabaseDependency,
     actor_header: ActorHeader = None,
+    as_invoice: bool = False,
 ) -> ActionResponse:
+    """Vuelve a leer el documento. Con ``as_invoice`` una persona dice que es una factura aunque su título diga
+    albarán, presupuesto, pedido o nómina: se lee como factura y pasa a revisión."""
     actor = normalize_actor(actor_header)
 
     document = get_document(
@@ -1410,6 +1413,19 @@ def reprocess_document(
                 "para reprocesar."
             ),
         )
+
+    if as_invoice:
+        if document.kind == "NOTIFICATION":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El documento es una notificación.")
+        add_audit_event(
+            database,
+            action="document.marked_as_invoice",
+            entity_type="document",
+            entity_id=document.id,
+            actor=actor,
+            event_data={"previous_kind": document.kind},
+        )
+        document.kind = "INVOICE"
 
     add_audit_event(
         database,

@@ -1,5 +1,5 @@
 "use strict";
-console.log("CapaFiscal frontend real V60");
+console.log("CapaFiscal frontend real V61");
 
 const API_BASE = "/api";
 
@@ -7,7 +7,7 @@ const API_BASE = "/api";
 // Sin manejadores en línea, la política de seguridad (CSP) puede prohibir todo script que no venga
 // de /static: una inyección de HTML no puede ejecutar código.
 const CALLABLE = new Set(["showDetail", "approveInvoice", "rejectInvoice", "activateTab", "openTask", "resolveTask", "cancelPayment", "markPaid",
-  "saveInvoice", "reopenInvoice", "reprocessDocument", "convertToNotification", "connectOutlook", "syncOutlook", "disconnectOutlook"]);
+  "saveInvoice", "reopenInvoice", "reprocessDocument", "markAsInvoice", "convertToNotification", "connectOutlook", "syncOutlook", "disconnectOutlook"]);
 document.addEventListener("click", (event) => {
   const target = event.target.closest("[data-call]");
   const handler = target && CALLABLE.has(target.dataset.call) && window[target.dataset.call];
@@ -221,6 +221,7 @@ function translateStatus(status) {
     IN_PROGRESS: "En curso",
     RESOLVED: "Resuelta",
     CANCELLED: "Cancelada",
+    CLASSIFIED: "No es factura",
   };
   return statuses[String(status || "").toUpperCase()] || status || "Pendiente";
 }
@@ -257,8 +258,15 @@ function paymentInfo(invoice) {
   return { label: issued ? "Sin cobrar" : "Sin pagar", className: "status-neutral" };
 }
 
+/* Lo que no es factura ni notificación y el propio documento dice qué es (lo archiva el extractor). */
+const OTHER_DOCUMENT_LABELS = { ALBARAN: "Albarán", PRESUPUESTO: "Presupuesto u oferta", PEDIDO: "Pedido", PROFORMA: "Proforma", NOMINA: "Nómina" };
+const OTHER_DOCUMENT_PHRASES = { ALBARAN: "un albarán", PRESUPUESTO: "un presupuesto u oferta", PEDIDO: "un pedido", PROFORMA: "una factura proforma", NOMINA: "una nómina" };
+function otherDocumentLabel(documentItem) {
+  return OTHER_DOCUMENT_LABELS[documentItem?.kind] || "";
+}
+
 function requiresReview(documentItem) {
-  if (documentItem.kind === "NOTIFICATION") return false;
+  if (documentItem.kind === "NOTIFICATION" || otherDocumentLabel(documentItem)) return false;
   if (["APPROVED", "REJECTED", "EXPORTED", "RESOLVED"].includes(documentItem.status)) return false;
   const invoice = documentItem.invoice || {};
   const confidence = Number(invoice.confidence || 0);
@@ -529,6 +537,7 @@ function realDocumentCard(documentItem) {
   const documentId = Number(documentItem.id);
   const confidence = Number(invoice.confidence || 0);
   if (documentItem.kind === "NOTIFICATION") return notificationDocumentCard(documentItem, "");
+  if (otherDocumentLabel(documentItem)) return otherDocumentCard(documentItem);
 
   const issued = invoice.direction === "ISSUED";
   const partyName = issued ? invoice.customer_name : invoice.supplier_name;
@@ -554,6 +563,22 @@ function realDocumentCard(documentItem) {
   `;
 }
 
+/* Un albarán, presupuesto, pedido, proforma o nómina: qué es, de qué archivo y verlo. Sin importe ni «s/n»:
+   no es una factura y no entra en la contabilidad. */
+function otherDocumentCard(documentItem) {
+  return `
+  <article class="invoice-row">
+    <div class="invoice-row-main">
+      <strong>${escapeHtml(otherDocumentLabel(documentItem))}</strong>
+      <span class="muted">${escapeHtml([documentItem.original_filename, documentItem.created_at ? formatDay(documentItem.created_at) : null].filter(Boolean).join(" · "))}</span>
+    </div>
+    <span class="status-pill status-neutral">No es factura</span>
+    <span class="invoice-row-amount"></span>
+    <button class="btn-ghost" type="button" data-call="showDetail" data-args="${Number(documentItem.id)}">Ver</button>
+  </article>
+  `;
+}
+
 /* Qué tiene de raro esta factura, en pocas palabras (o nada). */
 function invoiceIssue(documentItem) {
   const invoice = documentItem.invoice || {};
@@ -566,9 +591,10 @@ function invoiceIssue(documentItem) {
 
 /* Vistas rápidas por estado de trabajo, sobre lo ya cargado (sin pedir nada al servidor). */
 const INVOICE_VIEWS = {
-  review: { label: "Para revisar", test: (doc) => doc.kind !== "NOTIFICATION" && (doc.invoice?.review_status === "PENDING" || requiresReview(doc)) },
-  issues: { label: "Con incidencias", test: (doc) => doc.kind !== "NOTIFICATION" && Boolean(invoiceIssue(doc)) },
+  review: { label: "Para revisar", test: (doc) => doc.kind !== "NOTIFICATION" && !otherDocumentLabel(doc) && (doc.invoice?.review_status === "PENDING" || requiresReview(doc)) },
+  issues: { label: "Con incidencias", test: (doc) => doc.kind !== "NOTIFICATION" && !otherDocumentLabel(doc) && Boolean(invoiceIssue(doc)) },
   unpaid: { label: "Sin pagar", test: (doc) => doc.invoice?.review_status === "APPROVED" && !doc.invoice?.paid_at },
+  other: { label: "Otros documentos", test: (doc) => Boolean(otherDocumentLabel(doc)) },
   all: { label: "Todas", test: () => true },
 };
 let invoiceView = null;
@@ -1308,9 +1334,10 @@ async function showDetail(documentId, focus = null) {
     const editable = Boolean(invoice.id && invoice.review_status !== "APPROVED");
     const readonly = editable ? "" : "disabled";
 
+    const otherLabel = otherDocumentLabel(documentItem);
     setText(
       "documentDetailTitle",
-      invoice.supplier_name ? `${invoice.supplier_name}` : (documentItem.original_filename || "Detalle de documento")
+      invoice.supplier_name ? `${invoice.supplier_name}` : (otherLabel || documentItem.original_filename || "Detalle de documento")
     );
 
     const categoryOptions = categoriesCache.map((item) => `
@@ -1360,7 +1387,12 @@ async function showDetail(documentId, focus = null) {
           ${documentItem.requires_ocr ? `<div class="detail-check"><span>OCR necesario</span><p>El documento no tiene texto seleccionable suficiente. Revisa la vista previa y completa los datos manualmente.</p></div>` : ""}
           ${invoice.rejection_reason ? `<div class="detail-check"><span>Motivo del rechazo</span><p>${escapeHtml(invoice.rejection_reason)}</p></div>` : ""}
 
-          ${invoice.id ? validationMessagesHtml(invoice) : `
+          ${invoice.id ? validationMessagesHtml(invoice) : otherLabel ? `
+            <div class="detail-check">
+              <span>${escapeHtml(otherLabel)}, no factura</span>
+              <p>Por su título o su contenido, es ${escapeHtml(OTHER_DOCUMENT_PHRASES[documentItem.kind] || otherLabel.toLowerCase())}. Queda archivado aquí y no entra en la contabilidad ni en el IVA. Si en realidad es una factura, elige «Es una factura» en «Más acciones».</p>
+            </div>
+          ` : `
             <div class="detail-check">
               <span>Sin factura</span>
               <p>El documento no se ha identificado como factura. Puedes reprocesarlo o revisarlo en la vista previa.</p>
@@ -1451,6 +1483,7 @@ async function showDetail(documentId, focus = null) {
             <div class="detail-more-menu">
               ${invoice.review_status !== "APPROVED" ? `
                 <button type="button" class="btn-ghost" data-call="reprocessDocument" data-args="${docId}">Volver a leer el documento</button>
+                ${otherLabel ? `<button type="button" class="btn-ghost" data-call="markAsInvoice" data-args="${docId}">Es una factura</button>` : ""}
                 <button type="button" class="btn-ghost" data-call="convertToNotification" data-args="${docId}">Es una notificación</button>
               ` : ""}
               <a class="btn-ghost" href="${fileUrl}" target="_blank" rel="noopener noreferrer">Abrir el archivo original</a>
@@ -1804,6 +1837,21 @@ async function reprocessDocument(documentId) {
   }
 }
 
+/* Lo archivado como albarán, presupuesto, pedido o nómina que en realidad es una factura: se vuelve a leer como
+   factura y queda para revisar. */
+async function markAsInvoice(documentId) {
+  if (!await window.askConfirm("¿Es una factura? Se leerá como factura y quedará para revisar.", { confirmLabel: "Leer como factura" })) return;
+
+  try {
+    const result = await apiRequest(`/documents/${documentId}/reprocess?as_invoice=true`, { method: "POST" });
+    showMessage(result.success === false ? (result.message || "No se pudo leer como factura.") : "Leída como factura: revisa los datos.", result.success === false ? "error" : "success");
+    await refreshAll();
+    await showDetail(documentId);
+  } catch (error) {
+    showMessage(`No se pudo leer como factura: ${error.message}`, "error");
+  }
+}
+
 /* ================================================================
 OUTLOOK CONNECTOR
 ================================================================ */
@@ -2051,6 +2099,7 @@ Object.assign(window, {
   markPaid,
   cancelPayment,
   reprocessDocument,
+  markAsInvoice,
   openTask,
   resolveTask,
   connectOutlook,

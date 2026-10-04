@@ -246,7 +246,7 @@ INVOICE_FIELDS = (
     "invoice_date", "due_date", "subtotal", "tax_total", "withholding_total", "total", "tax_rate", "concept", "category",
 )
 # Las mismas categorías que las reglas (evaluation.core.DOCUMENT_TYPES; extractor.non_invoice_title).
-DOCUMENT_TYPES = ("factura", "presupuesto", "albaran", "proforma", "pedido", "otro")
+DOCUMENT_TYPES = ("factura", "presupuesto", "albaran", "proforma", "pedido", "nomina", "otro")
 INVOICE_AMOUNTS = ("subtotal", "tax_total", "withholding_total", "total", "tax_rate")
 
 
@@ -265,7 +265,7 @@ INVOICE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "is_invoice": {"type": "boolean", "description": "true solo si el documento es una factura (también simplificada, rectificativa o albarán-factura)."},
-        "document_type": {"type": "string", "enum": list(DOCUMENT_TYPES), "description": "Tipo de documento según su título: una proforma, un presupuesto, un albarán o un pedido no son factura."},
+        "document_type": {"type": "string", "enum": list(DOCUMENT_TYPES), "description": "Tipo de documento según su título: una proforma, un presupuesto, un albarán, un pedido o una nómina no son factura."},
         "supplier_name": _nullable("string", "Razón social o nombre de quien EMITE el documento."),
         "supplier_tax_id": _nullable("string", "NIF/CIF del emisor, sin guiones ni espacios."),
         "customer_name": _nullable("string", "Nombre de quien RECIBE el documento."),

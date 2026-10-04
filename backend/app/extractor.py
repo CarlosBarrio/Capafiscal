@@ -1049,6 +1049,10 @@ def choose_tax_ids(
     return supplier, customer
 
 
+# Confianza del sentido cuando solo lo decide qué NIF aparece primero.
+DIRECTION_BY_POSITION = 80
+
+
 def detect_direction(
     candidates: list[dict[str, Any]],
     company_tax_id: Any,
@@ -1082,9 +1086,9 @@ def detect_direction(
     first = min(candidates, key=lambda item: item["line_index"])
 
     if first["value"] in configured_ids:
-        return "ISSUED", 80
+        return "ISSUED", DIRECTION_BY_POSITION
 
-    return "RECEIVED", 80
+    return "RECEIVED", DIRECTION_BY_POSITION
 
 
 def choose_tax_ids_for_issued(
@@ -2619,14 +2623,39 @@ NUMBERED_TITLE_TAIL = (
     r"(?:\s+(?:de\s+)?(?:fecha\s*:?\s*)?\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})?"
     r"(?:\s*\([^)]*\))?\s*$"
 )
+# «OFERTA DE HONORARIOS 12/24»: sin la marca de número, unas pocas palabras y un identificador con separador
+# («12/24», «P-7») también hacen título. Una fecha completa no es un identificador: «Pedido realizado el 01/09/2026»
+# es una frase.
+SEPARATED_TITLE_TAIL = (
+    rf"(?:\s+{TITLE_WORD}){{0,3}}"
+    r"\s+(?!\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}\b)(?=[\w.\-]*\d)[\w.\-]*\d[\w.\-]*[/\-][\w/.\-]*"
+    r"(?:\s*\([^)]*\))?\s*$"
+)
+NON_INVOICE_HEADS = (
+    ("proforma", r"(?:factura\s+)?pro\s*-?\s*forma"),
+    ("presupuesto", r"presupuesto|oferta(?:\s+comercial)?|cotizacion"),
+    ("albarán", r"albaran(?:\s+(?:de\s+entrega|valorado))?|nota\s+de\s+entrega"),
+    ("pedido", r"(?:(?:nota|orden|hoja)\s+de\s+)?pedido|orden\s+de\s+compra"),
+)
 NON_INVOICE_TITLES = tuple(
-    (kind, re.compile(rf"^\s*(?:{head})(?:{NUMBERED_TITLE_TAIL}|{TITLE_TAIL})"))
-    for kind, head in (
-        ("proforma", r"(?:factura\s+)?pro\s*-?\s*forma"),
-        ("presupuesto", r"presupuesto|oferta(?:\s+comercial)?|cotizacion"),
-        ("albarán", r"albaran(?:\s+(?:de\s+entrega|valorado))?|nota\s+de\s+entrega"),
-        ("pedido", r"(?:(?:nota|orden|hoja)\s+de\s+)?pedido"),
-    )
+    (kind, re.compile(rf"^\s*(?:{head})(?:{NUMBERED_TITLE_TAIL}|{TITLE_TAIL}|{SEPARATED_TITLE_TAIL})"))
+    for kind, head in NON_INVOICE_HEADS
+)
+# El número propio del documento como campo, en cualquier punto de la línea (las columnas se juntan al leer el
+# PDF): «Albarán: 26-14», «Nº albarán AE-5», «… S.L. Pedido nº 4500012345». Con «:» o con la marca de número, y
+# siempre con un identificador que lleva cifras: «Albarán  Fecha  Importe» o «Ref. presupuesto 88» no lo son.
+# Es una pista más débil que un título: solo cuenta si el documento no habla de facturar en ninguna parte. Las facturas
+# reales citan «Nº de pedido: …» o «Albarán: …» junto a un «Factura: 24-07» o un «Factura de venta …» que no tiene la
+# forma estricta de título; un albarán o un pedido que dice «factura» se queda en lo que diga su título.
+INVOICING_WORDS = re.compile(r"\bfactur|\bfra\.?\b")
+NUMBER_MARK = r"(?:n\.?\s?[o°º]\.?|num(?:ero)?\.?)"
+FIELD_ID = r"(?=[\w/.\-]*\d)[\w/.\-]+"
+NON_INVOICE_FIELDS = tuple(
+    (kind, re.compile(
+        rf"(?:^|\s)(?:{head})\s*(?::|{NUMBER_MARK}\s*:?)\s*{FIELD_ID}"
+        rf"|(?:^|\s){NUMBER_MARK}\s*(?:de(?:l)?\s+)?(?:{head})\s*:?\s+{FIELD_ID}"
+    ))
+    for kind, head in NON_INVOICE_HEADS if kind != "proforma"
 )
 INVOICE_TITLE = re.compile(
     r"^\s*(?:albaran\s*-\s*)?factura(?:\s*-\s*albaran|\s+(?:simplificada|rectificativa|completa|original|duplicado|copia"
@@ -2643,19 +2672,53 @@ def title_text(line: str) -> str:
     return SPACED_LETTERS.sub(lambda match: match.group(0).replace(" ", ""), folded)
 
 
+# La nómina se reconoce por la estructura del recibo oficial de salarios (Orden ESS/2098/2014), no por la palabra
+# «nómina» (la gestoría que factura «confección de nóminas» emite una factura). El encabezado de las bases de
+# cotización es obligatorio y sobrevive a un escaneo malo; si no está, hacen falta tres apartados del recibo.
+PAYSLIP_HEADING = re.compile(r"determinacion de (?:las )?bases de cotizacion")
+PAYSLIP_PARTS = (
+    r"liquido(?: total)? a percibir",
+    r"total devengado|total devengo|\bdevengos\b",
+    r"total a deducir|total dedu|\bdeducciones\b",
+    r"bases? de cotizacion",
+    r"aportacion(?:es)? del trabajador|apor\.?\s*trab",
+)
+
+
+def non_invoice_kind(signals: list[str]) -> str | None:
+    """«albaran», «presupuesto», «pedido», «proforma» o «nomina» según la señal not_invoice (sin tildes)."""
+    kind = next((signal.split(":", 1)[1] for signal in signals if signal.startswith("not_invoice:")), None)
+    return unicodedata.normalize("NFKD", kind).encode("ascii", "ignore").decode() if kind else None
+
+
+def is_payslip(text: str) -> bool:
+    normalized = normalize_search_text(text or "")
+    if PAYSLIP_HEADING.search(normalized):
+        return True
+    return sum(1 for part in PAYSLIP_PARTS if re.search(part, normalized)) >= 3
+
+
 def non_invoice_title(text: str, head_lines: int = 25) -> str | None:
-    """«proforma», «presupuesto», «albarán» o «pedido» si la cabecera tiene ese título y nada la identifica como factura.
+    """«proforma», «presupuesto», «albarán», «pedido» o «nómina» si el documento lo dice y nada lo identifica como factura.
 
     Identifica como factura un título de factura («FACTURA Nº 12», «F A C T U R A», «Factura simplificada») o el
     campo de su número («Nº de factura: F-12»), esté donde esté en la cabecera: una factura que lleva
-    «Albarán: 4471» o «Pedido nº 45» encima de su título sigue siendo factura."""
+    «Albarán: 4471» o «Pedido nº 45» encima de su título sigue siendo factura. Si no, lo que aparece primero
+    dice qué es: un título, o el número propio del documento si el documento no habla de facturar
+    («Pedido nº 45» arriba manda entonces sobre un «según oferta 23-45» más abajo)."""
     lines = [title_text(line) for line in (text or "").splitlines() if line.strip()][:head_lines]
     if any(INVOICE_TITLE.match(line) or INVOICE_NUMBER_FIELD.search(line) for line in lines):
         return None
+    fields = not INVOICING_WORDS.search(title_text(text or ""))
     for line in lines:
         for kind, pattern in NON_INVOICE_TITLES:
             if pattern.match(line):
                 return kind
+        for kind, pattern in NON_INVOICE_FIELDS if fields else ():
+            if pattern.search(line):
+                return kind
+    if is_payslip(text):
+        return "nómina"
     return None
 
 
@@ -3040,14 +3103,20 @@ def extract_invoice(
         invoice_likelihood,
     )
 
+    # «Emitida» solo porque nuestro NIF aparece antes que el otro (ni etiqueta de emisor/cliente ni pie legal):
+    # es la única pista y, si falla, el IVA cae del lado equivocado. Una persona lo confirma: la confianza queda
+    # por debajo de la aprobación automática y el motivo queda en las señales.
+    if direction == "ISSUED" and direction_confidence <= DIRECTION_BY_POSITION:
+        from app.config import settings
+
+        signals.append("direction_by_position")
+        overall_confidence = min(overall_confidence, settings.minimum_auto_confidence - 1)
+
     return {
         "extractor_name": EXTRACTOR_NAME,
         "extractor_version": EXTRACTOR_VERSION,
-        "document_type": (
-            "invoice"
-            if is_invoice
-            else "unknown"
-        ),
+        # «invoice», el tipo de no-factura que dice el propio documento («albaran», «nomina»…) o «unknown»
+        "document_type": "invoice" if is_invoice else non_invoice_kind(signals) or "unknown",
         "is_invoice": is_invoice,
         "invoice_likelihood": invoice_likelihood,
         "direction": direction,
@@ -3175,52 +3244,6 @@ def is_aeat(text: str, filename: str) -> bool:
         keyword in haystack
         for keyword in keywords
     )
-
-
-def is_laboral(text: str, filename: str) -> bool:
-    haystack = normalize_search_text(
-        f"{text} {filename}"
-    )
-
-    keywords = (
-        "nomina",
-        "liquido a percibir",
-        "contrato de trabajo",
-        "alta en seguridad social",
-        "modelo 145",
-        "comunicacion de datos al pagador",
-    )
-
-    return any(
-        keyword in haystack
-        for keyword in keywords
-    )
-
-
-def detect_laboral_subtype(
-    text: str,
-    filename: str,
-) -> str:
-    haystack = normalize_search_text(
-        f"{text} {filename}"
-    )
-
-    if "contrato" in haystack:
-        return "Contrato de trabajo"
-
-    if (
-        "modelo 145" in haystack
-        or "comunicacion de datos al pagador" in haystack
-    ):
-        return "Modelo 145 (IRPF)"
-
-    if (
-        "alta" in haystack
-        and "seguridad social" in haystack
-    ):
-        return "Alta en Seguridad Social"
-
-    return "Nómina del mes"
 
 
 def detect_aeat_type(

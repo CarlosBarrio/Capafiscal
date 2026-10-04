@@ -116,7 +116,7 @@ clientes ficticios de distintos sectores, NIF con prefijo B00 e IBAN de la entid
 - `expected` lleva solo lo que se evalúa:
   - en una factura, todos sus campos;
   - en lo que no es factura, `is_invoice: false` y `document_type`
-    (`factura`, `albaran`, `presupuesto`, `proforma`, `pedido` u `otro`).
+    (`factura`, `albaran`, `presupuesto`, `proforma`, `pedido`, `nomina` u `otro`).
 - Un campo ausente **no se evalúa**.
 - Un documento sin ningún campo evaluable cuenta como no evaluado, nunca como acierto.
 
@@ -131,7 +131,7 @@ clientes ficticios de distintos sectores, NIF con prefijo B00 e IBAN de la entid
 
 **Qué devuelve Claude** (`app/agents/llm.py`, `INVOICE_SCHEMA`, salidas estructuradas):
 
-- `is_invoice` (booleano) y `document_type` (enum: `factura`, `presupuesto`, `albaran`, `proforma`, `pedido`, `otro`;
+- `is_invoice` (booleano) y `document_type` (enum: `factura`, `presupuesto`, `albaran`, `proforma`, `pedido`, `nomina`, `otro`;
   las mismas categorías que las reglas, sin ninguna nueva);
 - textos y fechas: cadena o `null` (fechas con formato `date`); importes y tipo de IVA: número o `null`;
 - todos los campos obligatorios y `additionalProperties: false`. `schema_errors()` comprueba la respuesta; si algo no

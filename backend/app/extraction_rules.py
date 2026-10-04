@@ -180,6 +180,18 @@ def clean_name(value: str) -> str | None:
     return value
 
 
+# Datos del Registro Mercantil abreviados (sobre texto normalizado): hoja con su provincia, folio, libro, tomo,
+# «R.M.» e inscripción. «T. 947…» y «F. 947…» (teléfono y fax) son solo dos: por eso se piden tres.
+ABBREVIATED_REGISTRY = (
+    r"\bh(?:oja)?\s*[/.:]\s*[a-z]{1,2}\s*-?\s*\d|\bhoja\s+[a-z]{1,2}\s*-?\s*\d",
+    r"\bf(?:olio)?\.\s*\d|\bfolio\s+\d",
+    r"\bl(?:ibro)?\.\s*\d|\blibro\s+\d",
+    r"\bt(?:omo)?\.\s*\d|\btomo\s+\d",
+    r"\br\.\s?m\.|registro mercantil",
+    r"\binscrip(?:cion|\.)|\binscrita\b",
+)
+
+
 def legal_identities(text: str) -> list[LegalIdentity]:
     from app.extractor import TAX_ID_PATTERN
     from app.extractor import is_valid_spanish_tax_id
@@ -214,6 +226,18 @@ def legal_identities(text: str) -> list[LegalIdentity]:
                 head = re.match(r"\s*([^|:\d]{4,80}?)\s*[|,\-–]?\s*(?:C\.?\s?I\.?\s?F|N\.?\s?I\.?\s?F)\b", line, re.IGNORECASE)
                 name = clean_name(head.group(1)) if head and not rotated_registry else None
                 identities.append(LegalIdentity(name, ids[0], "registro_mercantil"))
+
+    # 1c) Registro abreviado junto al CIF, a menudo en líneas sueltas: «B… / C.I.F. / H/BU-123 / F.45 / L.6 / T.789 /
+    # R.M.». Hacen falta tres datos registrales distintos cerca del NIF: una sola «T.12» o «F.3» no basta.
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        ids = tax_ids_in(line)
+        if not ids or any(item.tax_id == ids[0] for item in identities):
+            continue
+        window = normalize(" ".join(lines[max(0, index - 2):index + 8]))
+        marks = sum(1 for pattern in ABBREVIATED_REGISTRY if re.search(pattern, window))
+        if marks >= 3:
+            identities.append(LegalIdentity(None, ids[0], "registro_mercantil"))
 
     # 2) Protección de datos: quién es el responsable
     patterns = (

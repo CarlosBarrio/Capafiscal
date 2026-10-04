@@ -52,7 +52,7 @@ def test_types_document_type_and_is_invoice():
     assert properties["is_invoice"]["type"] == "boolean"
     assert properties["document_type"]["type"] == "string"
     # Exactamente las categorías de las reglas, sin ninguna nueva
-    assert set(properties["document_type"]["enum"]) == set(DOCUMENT_TYPES) == {"factura", "presupuesto", "albaran", "proforma", "pedido", "otro"}
+    assert set(properties["document_type"]["enum"]) == set(DOCUMENT_TYPES) == {"factura", "presupuesto", "albaran", "proforma", "pedido", "nomina", "otro"}
     for name in NULLABLE_TEXT:
         assert [option["type"] for option in properties[name]["anyOf"]] == ["string", "null"], name
     for name in NUMBERS:

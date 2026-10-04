@@ -245,6 +245,7 @@ def synchronize_document_task(
         "REJECTED",
         "EXPORTED",
         "RESOLVED",
+        "CLASSIFIED",
     } or document.kind == "NOTIFICATION":
         if task is not None and task.status in OPEN_TASK_STATUSES:
             task.status = "RESOLVED"

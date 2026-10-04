@@ -151,6 +151,10 @@ secundario.
 - **Detalle de un documento**: cabecera de decisión (`.detail-head`: qué es, estado, lectura y total arriba) y
   barra de acciones fija al pie (`.detail-actions-bar`): una acción principal, una secundaria y el resto en
   «Más acciones». «Guardar cambios» solo aparece cuando hay cambios.
+- **Documentos que no son factura** (albarán, presupuesto u oferta, pedido, proforma, nómina): no van a «Para
+  revisar» ni se pintan como facturas rotas («s/n», «—»). Fila con su tipo, archivo y fecha, pill neutra «No es
+  factura» y «Ver», en la vista «Otros documentos». En el detalle, qué es y que no entra en la contabilidad; si la
+  clasificación se equivoca, «Es una factura» en «Más acciones».
 - **Campos**: borde `line-strong`, foco con contorno de marca (`:focus-visible`), deshabilitado
   con fondo `surface-3`.
 - **Estados vacíos** `.board-empty` / `emptyState()`: una frase con contexto y, si existe, la acción.
