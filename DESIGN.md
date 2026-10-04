@@ -146,7 +146,11 @@ secundario.
   suave y con el foco en «Cancelar».
 - **Plurales** `pl(n, "factura(s) aprobada(s)")`: nunca «(s)» a la vista.
 - **Formularios largos**: agrupados con `.form-section` (p. ej. detalle de factura: quién, factura, importes);
-  importes alineados a la derecha con cifras tabulares.
+  importes alineados a la derecha con cifras tabulares, escritos con coma decimal («1234,56»). Un importe que
+  no se entiende no se guarda: se marca y se explica.
+- **Detalle de un documento**: cabecera de decisión (`.detail-head`: qué es, estado, lectura y total arriba) y
+  barra de acciones fija al pie (`.detail-actions-bar`): una acción principal, una secundaria y el resto en
+  «Más acciones». «Guardar cambios» solo aparece cuando hay cambios.
 - **Campos**: borde `line-strong`, foco con contorno de marca (`:focus-visible`), deshabilitado
   con fondo `surface-3`.
 - **Estados vacíos** `.board-empty` / `emptyState()`: una frase con contexto y, si existe, la acción.

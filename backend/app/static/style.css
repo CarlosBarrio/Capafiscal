@@ -1072,7 +1072,6 @@ dialog {
 }
 
 .detail-preview iframe { width: 100%; height: 100%; border: none; background: white; }
-.detail-summary-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 14px; }
 .detail-file { color: var(--muted); font-size: 12.5px; }
 
 .detail-check {
@@ -3164,4 +3163,45 @@ h1, h2, h3, .case-headline { text-wrap: balance; }
 
 @media (prefers-reduced-motion: reduce) {
     .skip-link, input[type="file"]::file-selector-button { transition: none; }
+}
+
+/* =====================================================================
+   Detalle de factura (P1-1): qué es, cómo está y cuánto suma arriba;
+   la decisión siempre a mano al pie. Solo tokens existentes.
+===================================================================== */
+.detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin: -4px 0 18px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.detail-head-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.detail-head-meta { margin: 0; color: var(--ink-2); font-size: 14px; font-weight: 500; }
+.detail-head-state { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 0; }
+.detail-confidence { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.detail-confidence.is-low { color: var(--amber); font-weight: 600; }
+.detail-head .detail-file { margin: 0; }
+.detail-see-doc { margin-left: 8px; font-size: 12.5px; }
+.detail-head-total { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
+.detail-head-total-label { color: var(--muted); font-size: 12px; }
+.detail-head-total strong { color: var(--ink); font: 600 26px/1.15 var(--serif); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.detail-head-total strong + span { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+@media (min-width: 1181px) { .detail-see-doc { display: none; } }
+
+.detail-form-grid input[data-amount] { text-align: right; font-variant-numeric: tabular-nums; }
+#detailConcept { resize: vertical; overflow: hidden; }
+
+.detail-history > summary { padding: 2px 0; color: var(--ink); font: 600 14px var(--font); cursor: pointer; }
+.detail-history[open] > summary { margin-bottom: 10px; }
+
+.detail-actions-bar { position: sticky; bottom: -22px; z-index: 2; margin: 18px -26px -22px; padding: 12px 26px 14px; border-top: 1px solid var(--line); border-bottom: none; background: var(--surface); }
+.detail-actions-bar .detail-dirty { margin: 0 0 8px; }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.detail-more { position: relative; margin-left: auto; }
+.detail-more > summary { list-style: none; }
+.detail-more > summary::-webkit-details-marker { display: none; }
+.detail-more-menu { position: absolute; right: 0; bottom: calc(100% + 6px); display: flex; flex-direction: column; min-width: 240px; padding: 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-lg); }
+.detail-more-menu .btn-ghost { justify-content: flex-start; width: 100%; border-color: transparent; box-shadow: none; }
+.detail-more-menu .btn-ghost:hover { background: var(--surface-2); border-color: transparent; }
+
+@media (max-width: 640px) {
+    .detail-head { flex-direction: column; gap: 12px; }
+    .detail-head-total { align-items: flex-start; text-align: left; }
+    .detail-actions-bar { bottom: -16px; margin: 16px -16px -16px; padding: 10px 16px 12px; }
+    .detail-actions .act-btn, .detail-actions > .btn-ghost, .detail-more > summary { height: 40px; }
 }

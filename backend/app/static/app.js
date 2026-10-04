@@ -161,11 +161,25 @@ function inputValue(elementId) {
   return value || null;
 }
 
+/* «1.234,56», «1234,56» o «1234.56» → 1234.56; vacío → null; texto que no es un importe → NaN */
+function parseAmount(text) {
+  const value = String(text ?? "").replace(/[\s€]/g, "");
+  if (!value) return null;
+  const normalized = value.includes(",") ? value.replace(/\./g, "").replace(",", ".") : value;
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : NaN;
+}
+
 function nullableNumber(elementId) {
-  const value = inputValue(elementId);
-  if (value === null) return null;
-  const number = Number(value.replace(",", "."));
-  return Number.isFinite(number) ? number : null;
+  const number = parseAmount(inputValue(elementId));
+  return Number.isNaN(number) ? null : number;
+}
+
+/* Importe para escribir en un campo: coma decimal, sin separador de miles (lo que se teclea en España) */
+function amountInputValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(2).replace(".", ",") : String(value);
 }
 
 function normalizeList(data, keys = []) {
@@ -1050,7 +1064,20 @@ function ensureDetailDialog() {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) requestClose();
   });
+  // «Más acciones»: Escape o un clic fuera lo cierran antes que el panel
+  const openMenu = () => dialog.querySelector(".detail-more[open]");
+  dialog.addEventListener("click", (event) => {
+    const menu = openMenu();
+    if (menu && !menu.contains(event.target)) menu.removeAttribute("open");
+  });
   dialog.addEventListener("cancel", (event) => {
+    const menu = openMenu();
+    if (menu) {
+      event.preventDefault();
+      menu.removeAttribute("open");
+      menu.querySelector("summary")?.focus();
+      return;
+    }
     if (!detailHasChanges()) return;
     event.preventDefault();
     requestClose();
@@ -1069,21 +1096,36 @@ function fieldConfidenceAttributes(invoice, fieldName) {
   return `title="${escapeHtml(title)}" class="${lowClass}"`;
 }
 
-function detailInput({ id, field, label, type = "text", value = "", invoice, extra = "" }) {
+function detailInput({ id, field, label, type = "text", value = "", invoice, extra = "", wide = false }) {
+  const amount = type === "number";
   return `
-    <label>
+    <label${wide ? ' class="span-2"' : ""}>
       ${escapeHtml(label)}
       <input
         id="${id}"
         data-invoice-field="${field}"
-        type="${type}"
-        value="${escapeHtml(value ?? "")}"
-        ${type === "number" ? 'step="0.01"' : ""}
+        type="${amount ? "text" : type}"
+        ${amount ? 'inputmode="decimal" autocomplete="off" data-amount' : ""}
+        value="${escapeHtml(amount ? amountInputValue(value) : (value ?? ""))}"
         ${fieldConfidenceAttributes(invoice, field)}
         ${extra}
       >
     </label>
   `;
+}
+
+/* Un importe que no se entiende no se guarda como vacío: se marca y se explica */
+function checkAmountFields() {
+  const invalid = [...document.querySelectorAll("#documentDetailContent input[data-amount]")]
+    .filter((input) => Number.isNaN(parseAmount(input.value)));
+  document.querySelectorAll("#documentDetailContent input[data-amount]").forEach((input) => {
+    input.toggleAttribute("aria-invalid", invalid.includes(input));
+    input.classList.toggle("field-missing", invalid.includes(input));
+  });
+  if (!invalid.length) return;
+  invalid[0].focus();
+  const label = invalid[0].closest("label")?.firstChild?.textContent.trim() || "Un importe";
+  throw new Error(`«${label}» no es un importe válido (usa, por ejemplo, 1234,56)`);
 }
 
 function validationMessagesHtml(invoice) {
@@ -1278,16 +1320,41 @@ async function showDetail(documentId, focus = null) {
     `).join("");
 
     const fileUrl = `/api/documents/${docId}/file`;
+    const payment = paymentInfo(invoice);
+    const confidence = Number(invoice.confidence || 0);
+    const headMeta = invoice.id ? [
+      `Factura ${invoice.invoice_number || "sin número"}`,
+      invoice.invoice_date ? formatDay(invoice.invoice_date) : null,
+      invoice.direction === "ISSUED" ? "emitida (ingreso)" : "recibida (gasto)",
+    ].filter(Boolean).join(" · ") : "";
+    const breakdown = [
+      invoice.subtotal !== null && invoice.subtotal !== undefined ? `Base ${formatMoney(invoice.subtotal, invoice.currency)}` : null,
+      invoice.tax_total !== null && invoice.tax_total !== undefined ? `IVA ${formatMoney(invoice.tax_total, invoice.currency)}` : null,
+      Number(invoice.withholding_total) ? `Retención ${formatMoney(invoice.withholding_total, invoice.currency)}` : null,
+    ].filter(Boolean).join(" · ");
 
     content.innerHTML = `
+      <header class="detail-head">
+        <div class="detail-head-main">
+          ${headMeta ? `<p class="detail-head-meta">${escapeHtml(headMeta)}</p>` : ""}
+          <p class="detail-head-state">
+            <span class="status-pill ${statusClass(documentItem.status)}">${escapeHtml(translateStatus(documentItem.status))}</span>
+            ${payment ? `<span class="status-pill ${payment.className}">${escapeHtml(payment.label)}</span>` : ""}
+            ${invoice.id ? `<span class="detail-confidence ${confidence && confidence < 80 ? "is-low" : ""}" title="Seguridad con la que CapaFiscal ha leído los datos del documento">Lectura ${confidence} %</span>` : ""}
+          </p>
+          <p class="detail-file">${escapeHtml(documentItem.original_filename || "—")} · ${formatDate(documentItem.created_at)}
+            <a class="link-button detail-see-doc" href="#documentPreview">Ver documento</a></p>
+        </div>
+        ${invoice.id ? `
+          <div class="detail-head-total">
+            <span class="detail-head-total-label">Total</span>
+            <strong>${invoice.total !== null && invoice.total !== undefined ? formatMoney(invoice.total, invoice.currency) : "—"}</strong>
+            ${breakdown ? `<span>${escapeHtml(breakdown)}</span>` : ""}
+          </div>` : ""}
+      </header>
+
       <div class="detail-layout">
         <div class="detail-main">
-          <div class="detail-summary-bar">
-            <span class="status-pill ${statusClass(documentItem.status)}">${escapeHtml(translateStatus(documentItem.status))}</span>
-            ${invoice.id ? `<span class="status-pill status-neutral">Confianza ${Number(invoice.confidence || 0)}%</span>` : ""}
-            ${paymentInfo(invoice) ? `<span class="status-pill ${paymentInfo(invoice).className}">${escapeHtml(paymentInfo(invoice).label)}</span>` : ""}
-            <span class="detail-file">${escapeHtml(documentItem.original_filename || "—")} · ${formatDate(documentItem.created_at)}</span>
-          </div>
 
           ${documentItem.failure_reason ? `<div class="detail-check"><span>Error de extracción</span><p>${escapeHtml(documentItem.failure_reason)}</p></div>` : ""}
           ${documentItem.requires_ocr ? `<div class="detail-check"><span>OCR necesario</span><p>El documento no tiene texto seleccionable suficiente. Revisa la vista previa y completa los datos manualmente.</p></div>` : ""}
@@ -1319,7 +1386,7 @@ async function showDetail(documentId, focus = null) {
               </label>
               ${detailInput({ id: "detailInvoiceDate", field: "invoice_date", label: "Fecha de factura", type: "date", value: dateInputValue(invoice.invoice_date), invoice })}
               ${detailInput({ id: "detailDueDate", field: "due_date", label: "Fecha de vencimiento", type: "date", value: dateInputValue(invoice.due_date), invoice })}
-              <label>
+              <label class="span-2">
                 Categoría
                 <select id="detailCategory" data-invoice-field="category">
                   <option value="">Sin categoría</option>
@@ -1329,7 +1396,7 @@ async function showDetail(documentId, focus = null) {
               ${detailInput({ id: "detailCurrency", field: "currency", label: "Moneda", value: invoice.currency || "EUR", invoice, extra: 'maxlength="3"' })}
               <label class="span-2">
                 Concepto
-                <textarea id="detailConcept" data-invoice-field="concept" rows="2">${escapeHtml(invoice.concept || "")}</textarea>
+                <textarea id="detailConcept" data-invoice-field="concept" rows="3">${escapeHtml(invoice.concept || "")}</textarea>
               </label>
 
               <p class="span-2 form-section">Importes</p>
@@ -1346,55 +1413,49 @@ async function showDetail(documentId, focus = null) {
           ${taxLinesHtml(invoice)}
           ${paymentSectionHtml(invoice, docId)}
 
-          ${editable ? `
-            <p class="detail-dirty hidden" id="detailDirty" role="status">
-              Hay cambios sin guardar.${canReview ? " «Aprobar» los guarda antes de aprobar." : ""}
-            </p>
-          ` : ""}
-          <div class="card-actions detail-actions-bar">
-            ${editable ? `
-              <button type="button" class="act-btn ${canReview ? "" : "act-primary"}" data-call="saveInvoice" data-args="${invoiceId}, ${docId}">
-                Guardar correcciones
-              </button>
-            ` : ""}
-            ${canReview ? `
-              <button type="button" class="act-btn act-primary" data-call="approveInvoice" data-args="${invoiceId}, ${docId}, this">
-                Aprobar
-              </button>
-              <button type="button" class="act-btn act-danger" data-call="rejectInvoice" data-args="${invoiceId}, ${docId}">
-                Rechazar
-              </button>
-            ` : ""}
-            ${canReopen ? `
-              <button type="button" class="act-btn act-warning" data-call="reopenInvoice" data-args="${invoiceId}, ${docId}">
-                Reabrir
-              </button>
-            ` : ""}
-            ${invoice.review_status !== "APPROVED" ? `
-              <button type="button" class="btn-ghost" data-call="reprocessDocument" data-args="${docId}">
-                Reprocesar
-              </button>
-              <button type="button" class="btn-ghost" data-call="convertToNotification" data-args="${docId}">
-                Es una notificación
-              </button>
-            ` : ""}
-            <a class="btn-ghost" href="${fileUrl}" target="_blank" rel="noopener noreferrer">
-              Abrir archivo
-            </a>
-          </div>
-
-          <div class="detail-section">
-            <h3>Historial</h3>
+          <details class="detail-section detail-history">
+            <summary>Historial</summary>
             <div id="detailHistory"><p class="empty-inline">Cargando…</p></div>
-          </div>
+          </details>
         </div>
 
-        <div class="detail-preview">
+        <div class="detail-preview" id="documentPreview">
           <iframe
             src="${fileUrl}"
             title="Vista previa de ${escapeHtml(documentItem.original_filename || "documento")}"
             loading="lazy"
           ></iframe>
+        </div>
+      </div>
+
+      <div class="detail-actions-bar">
+        ${editable ? `
+          <p class="detail-dirty hidden" id="detailDirty" role="status">
+            Cambios sin guardar${canReview ? ": «Aprobar» los guarda antes de aprobar" : ""}
+          </p>
+        ` : ""}
+        <div class="detail-actions">
+          ${canReview ? `
+            <button type="button" class="act-btn act-primary" data-call="approveInvoice" data-args="${invoiceId}, ${docId}, this">Aprobar</button>
+            <button type="button" class="btn-ghost" data-call="rejectInvoice" data-args="${invoiceId}, ${docId}">Rechazar</button>
+          ` : ""}
+          ${editable ? `
+            <button type="button" class="${canReview ? "btn-ghost hidden" : "act-btn act-primary"}" id="detailSaveButton"
+              ${canReview ? "data-only-dirty" : ""} data-call="saveInvoice" data-args="${invoiceId}, ${docId}">Guardar cambios</button>
+          ` : ""}
+          ${canReopen ? `
+            <button type="button" class="btn-ghost" data-call="reopenInvoice" data-args="${invoiceId}, ${docId}">Reabrir</button>
+          ` : ""}
+          <details class="detail-more">
+            <summary class="btn-ghost">Más acciones</summary>
+            <div class="detail-more-menu">
+              ${invoice.review_status !== "APPROVED" ? `
+                <button type="button" class="btn-ghost" data-call="reprocessDocument" data-args="${docId}">Volver a leer el documento</button>
+                <button type="button" class="btn-ghost" data-call="convertToNotification" data-args="${docId}">Es una notificación</button>
+              ` : ""}
+              <a class="btn-ghost" href="${fileUrl}" target="_blank" rel="noopener noreferrer">Abrir el archivo original</a>
+            </div>
+          </details>
         </div>
       </div>
     `;
@@ -1468,7 +1529,17 @@ function setupDirtyTracking(invoiceId, editable) {
   const fieldset = document.querySelector("#documentDetailContent .detail-form-grid");
   const notice = document.getElementById("detailDirty");
   if (!detailEdit || !fieldset || !notice) return;
-  const update = () => notice.classList.toggle("hidden", !detailHasChanges());
+  const save = document.getElementById("detailSaveButton");
+  const concept = document.getElementById("detailConcept");
+  const update = () => {
+    const dirty = detailHasChanges();
+    notice.classList.toggle("hidden", !dirty);
+    if (save?.hasAttribute("data-only-dirty")) save.classList.toggle("hidden", !dirty);
+  };
+  // El concepto crece con su texto en lugar de cortarse a tres líneas
+  const fit = () => { if (concept) { concept.style.height = "auto"; concept.style.height = `${concept.scrollHeight + 2}px`; } };
+  concept?.addEventListener("input", fit);
+  fit();
   fieldset.addEventListener("input", update);
   fieldset.addEventListener("change", update);
 }
@@ -1512,6 +1583,7 @@ function invoiceEditBody(documentId) {
 
 /* Guarda lo que hay en el formulario; lanza el error si el servidor no lo acepta. */
 async function persistInvoiceEdits(invoiceId, documentId) {
+  checkAmountFields();
   await jsonRequest(`/invoices/${invoiceId}`, "PATCH", invoiceEditBody(documentId));
   if (detailEdit?.invoiceId === Number(invoiceId)) detailEdit.snapshot = detailFormValues();
 }
