@@ -339,6 +339,11 @@ async def lifespan(application: FastAPI):
         database = SessionLocal()
         set_tenant(database, tenant)
         try:
+            # Lo subido con reglas anteriores (albaranes, ofertas, pedidos, nóminas tomados por facturas o
+            # notificaciones) se pone en su sitio con el texto ya leído; después, las tareas de revisión.
+            from app.invoice_service import reclassify_stored_documents
+
+            reclassify_stored_documents(database)
             synchronize_all_review_tasks(database)
             database.commit()
         except Exception:
@@ -1381,6 +1386,9 @@ def reprocess_pending_documents(
                 }
             )
 
+    from app.invoice_service import reclassify_stored_documents
+
+    reclassify_stored_documents(database)
     synchronize_all_review_tasks(database)
     database.commit()
 

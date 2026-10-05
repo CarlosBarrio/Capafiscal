@@ -111,3 +111,43 @@ def test_a_person_puts_a_document_in_its_place(client, tmp_path):
     client.post(f"/api/documents/{document['id']}/reprocess")
     assert client.get(f"/api/documents/{document['id']}").json()["kind"] == "PEDIDO"
     assert client.post(f"/api/documents/{document['id']}/classify", json={"kind": "CONTRATO"}).status_code == 422
+
+
+def test_documents_read_with_older_rules_are_put_in_their_place(client, tmp_path):
+    """Una base de antes: un albarán guardado como factura por revisar y una nómina convertida en notificación de la
+    Seguridad Social. Al arrancar (o con «Reprocesar pendientes») cada uno va a su sitio con el texto ya leído; la
+    notificación falsa se cierra. Lo que hizo una persona no se toca."""
+    from app.database import SessionLocal
+    from app.invoice_service import reclassify_stored_documents
+    from app.models import Document
+    from app.models import FiscalNotification
+    from app.models import Invoice
+    from app.notification_service import create_notification
+
+    note = upload(client, write(tmp_path, "albaran.txt", "TRANSPORTES EJEMPLO S.L.\nALBARÁN Nº AE-55120" + BODY))["document"]
+    payslip = upload(client, write(tmp_path, "nomina.txt",
+                                   "EMPRESA EJEMPLO S.L.\nI. DEVENGOS\nA. TOTAL DEVENGADO 1.500,00\nB. TOTAL A DEDUCIR 300,00\n"
+                                   "LÍQUIDO TOTAL A PERCIBIR 1.200,00\nDETERMINACIÓN DE LAS BASES DE COTIZACIÓN A LA "
+                                   "SEGURIDAD SOCIAL\nSIMULACIÓN — NO OFICIAL\n"))["document"]
+    person = upload(client, write(tmp_path, "oferta.txt", "ESTUDIO EJEMPLO S.L.\nOFERTA Nº 12/26" + BODY))["document"]
+    client.post(f"/api/documents/{person['id']}/reprocess", params={"as_invoice": True})
+
+    with SessionLocal() as database:  # como lo dejaban las reglas anteriores
+        old_note = database.get(Document, note["id"])
+        old_note.kind, old_note.status = None, "NEEDS_REVIEW"
+        database.add(Invoice(document=old_note, supplier_name="ALBARÁN", total=121))
+        old_payslip = database.get(Document, payslip["id"])
+        old_payslip.kind, old_payslip.status = None, "NEEDS_REVIEW"
+        create_notification(database, document=old_payslip, data={"issuer": "TGSS", "notification_type": "OTRO", "title": "Otro"}, actor="extractor")
+        database.commit()
+
+    with SessionLocal() as database:
+        assert reclassify_stored_documents(database) == 2
+        database.commit()
+
+    documents = {item["id"]: item for item in client.get("/api/documents").json()}
+    assert (documents[note["id"]]["kind"], documents[note["id"]]["invoice"]) == ("ALBARAN", None)
+    assert documents[payslip["id"]]["kind"] == "NOMINA"
+    assert documents[person["id"]]["kind"] == "INVOICE"  # la persona dijo que era factura
+    with SessionLocal() as database:
+        assert database.query(FiscalNotification).filter_by(document_id=payslip["id"]).one().status == "CLOSED"

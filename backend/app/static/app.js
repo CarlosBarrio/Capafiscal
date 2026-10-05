@@ -433,6 +433,17 @@ function renderOtherDocuments() {
       : "";
   }
 
+  // Las nóminas subidas también están en su pantalla, «Nóminas», además de en Documentos.
+  const payslips = documentsCache.filter((doc) => doc.kind === "NOMINA")
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  setText("payslipDocumentsCount", payslips.length ? window.pl(payslips.length, "documento(s)") : "");
+  const payslipList = document.getElementById("payslipDocumentsList");
+  if (payslipList) {
+    payslipList.innerHTML = payslips.length
+      ? payslips.map(realDocumentCard).join("")
+      : `<p class="muted">Las nóminas que subas (PDF, Word…) aparecerán aquí.</p>`;
+  }
+
   const bar = document.getElementById("docKindViews");
   const list = document.getElementById("otherDocumentsList");
   if (!bar || !list) return;

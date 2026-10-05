@@ -3084,6 +3084,7 @@ code { padding: 1px 5px; border-radius: 5px; background: var(--surface-3); font:
 
 /* Facturas: una fila por factura (tercero · estado · importe · acción); el detalle, al abrirla. */
 .invoice-views { margin-bottom: 14px; }
+#payslipDocumentsList { display: flex; flex-direction: column; gap: 0; }
 #documentsList, #otherDocumentsList { display: flex; flex-direction: column; gap: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 #documentsList:has(.section-empty), #otherDocumentsList:has(.section-empty) { background: none; border: 0; }
 .other-docs-hint { margin: -4px 0 14px; font-size: 13px; }

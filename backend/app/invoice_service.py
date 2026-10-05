@@ -513,6 +513,70 @@ OTHER_DOCUMENT_KINDS = {
 CLASSIFIED = "CLASSIFIED"
 
 
+def reclassify_stored_documents(database: Session) -> int:
+    """Pone en su sitio lo que una lectura anterior (con reglas más antiguas) dejó como factura por revisar o como
+    notificación, cuando el propio documento dice que es albarán, presupuesto, pedido, proforma o nómina.
+
+    Usa el texto ya guardado de la última lectura: no vuelve a abrir el archivo ni pasa OCR. Nunca toca lo aprobado,
+    rechazado o exportado, lo que una persona clasificó o marcó como factura, ni una notificación que creó, contestó
+    o cerró una persona (o cuyo expediente ya avanzó). Devuelve cuántos documentos ha recolocado."""
+    from sqlalchemy import select
+
+    from app.extractor import non_invoice_kind
+    from app.extractor import non_invoice_title
+    from app.models import Case
+    from app.models import FiscalNotification
+
+    moved = 0
+    candidates = database.scalars(
+        select(Document).where(
+            Document.status.not_in(("APPROVED", "REJECTED", "EXPORTED", CLASSIFIED)),
+            (Document.kind.is_(None)) | (Document.kind == "NOTIFICATION"),
+        )
+    ).all()
+    for document in candidates:
+        if document.invoice is not None and document.invoice.review_status in ("APPROVED", "REJECTED"):
+            continue
+        run = document.extraction_runs[0] if document.extraction_runs else None
+        text = run.raw_text if run is not None else None
+        kind_title = non_invoice_title(text or "")
+        if not kind_title:
+            continue
+        notification = None
+        cases: list[Case] = []
+        if document.kind == "NOTIFICATION":
+            notification = database.scalar(select(FiscalNotification).where(FiscalNotification.document_id == document.id))
+            if notification is not None:
+                by_person = database.scalar(select(AuditEvent.id).where(
+                    AuditEvent.entity_type == "notification", AuditEvent.entity_id == str(notification.id),
+                    AuditEvent.action == "notification.created").limit(1))
+                cases = list(database.scalars(select(Case).where(Case.notification_id == notification.id)).all())
+                if by_person is not None or notification.status not in ("PENDING", "IN_PROGRESS") or any(
+                        case.status not in ("OPEN", "WAITING_HUMAN", "WAITING_DOCS") for case in cases):
+                    continue
+        kind = non_invoice_kind([f"not_invoice:{kind_title}"])
+        if notification is not None:
+            notification.status = "CLOSED"
+            notification.closed_at = utc_now()
+            for case in cases:
+                case.status = "DISMISSED"
+                case.resolution = "No era una notificación: el documento es " + kind + "."
+                case.resolved_at = utc_now()
+        document.kind = None
+        classify_other_document(database, document, kind, {"signals": [f"not_invoice:{kind_title}"]})
+        add_audit_event(
+            database,
+            action="document.reclassified_on_upgrade",
+            entity_type="document",
+            entity_id=document.id,
+            actor="system",
+            event_data={"kind": document.kind, "notification_closed": notification.id if notification is not None else None},
+        )
+        moved += 1
+    database.flush()
+    return moved
+
+
 def classified_by_person(database: Session, document: Document) -> bool:
     from sqlalchemy import select
 
