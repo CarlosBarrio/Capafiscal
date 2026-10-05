@@ -250,6 +250,13 @@ def legal_identities(text: str) -> list[LegalIdentity]:
             name = clean_name(match.group(1))
             if name:
                 identities.append(LegalIdentity(name, None, "proteccion_de_datos"))
+    # «el responsable del tratamiento de sus datos es NOMBRE S.L., con NIF B…»: nombre y NIF juntos
+    for match in re.finditer(r"responsable del tratamiento(?: de (?:sus|los) datos(?: personales)?)? es (.{3,90}?" + LEGAL_FORM
+                             + r"),? con (?:N\.?\s?I\.?\s?F|C\.?\s?I\.?\s?F)\.?:?\s*([A-Z0-9][A-Z0-9 .\-]{7,12})", flat, re.IGNORECASE):
+        name = clean_name(rejoin_split_words(match.group(1), text))
+        ids = tax_ids_in(match.group(2))
+        if name:
+            identities.append(LegalIdentity(name, ids[0] if ids else None, "proteccion_de_datos"))
     return identities
 
 
@@ -317,6 +324,119 @@ def weak_name(value: str | None, company_name: str | None) -> bool:
     if len(words) <= 1 or all(word in CITY_WORDS for word in words):
         return True
     return bool(company_name) and name_overlap(value, company_name) >= 0.6
+
+
+# ---------------------------------------------------------------------
+# Partes con etiqueta y nombres que no son nombres
+# ---------------------------------------------------------------------
+
+# «Emisor: X», «Destinatario: Y», «Cliente» y debajo «Nombre Y»: lo que la factura dice expresamente manda sobre
+# la cercanía al NIF.
+PARTY_LABELS = {
+    "supplier": r"emisor|proveedor|datos del (?:emisor|proveedor)|vendedor",
+    "customer": r"destinatario|cliente|datos del cliente|facturar a|receptor",
+}
+NAME_LABEL = re.compile(r"^(?:nombre|raz[oó]n social|nombre o raz[oó]n social)\s*:?\s*", re.IGNORECASE)
+# Lo que corta el nombre en la misma línea: otra etiqueta («Fecha», «CIF», «Nº…»)
+NAME_END = re.compile(r"(?i)\s+(?:fecha|c\.?\s?i\.?\s?f|n\.?\s?i\.?\s?f|dni|n[º°]|tel[eé]?f?|tlf)\b.*$")
+# Ni rótulos de oficina ni datos del registro son el nombre de una empresa
+NOT_A_NAME = re.compile(
+    r"\b(?:delegaci[oó]n|sucursal|oficina central|inscripci[oó]n|inscrita|tomo|folio|hoja|libro|secci[oó]n|"
+    r"registro mercantil)\b|:\s*$",
+    re.IGNORECASE,
+)
+
+
+def not_a_name(value: str | None) -> bool:
+    return bool(value) and bool(NOT_A_NAME.search(value))
+
+
+def labelled_party(text: str, role: str) -> str | None:
+    """El nombre que sigue a la etiqueta de su parte, en la misma línea o en la siguiente («Emisor:» y debajo el
+    nombre). «CLIENTE Nº 5123» no es una etiqueta de nombre: lo que sigue es un código."""
+    from app.extractor import TAX_ID_PATTERN
+    from app.extractor import looks_like_company_name
+
+    label = re.compile(r"^\s*(?:" + PARTY_LABELS[role] + r")\b\s*(:?)\s*(.*)$", re.IGNORECASE)
+    lines = [line.strip() for line in text.splitlines()][:60]
+    for index, line in enumerate(lines):
+        match = label.match(line)
+        if not match:
+            continue
+        rest = match.group(2).strip()
+        if rest:
+            candidates = [rest]
+        elif index + 1 < len(lines):
+            # Etiqueta sola: el nombre va debajo, a veces tras «Nombre» (dos líneas como mucho)
+            candidates = [next_line for next_line in lines[index + 1:index + 3] if NAME_LABEL.match(next_line)][:1] or [lines[index + 1]]
+        else:
+            continue
+        for candidate in candidates:
+            candidate = NAME_LABEL.sub("", candidate)
+            candidate = TAX_ID_PATTERN.split(candidate)[0]
+            candidate = NAME_END.sub("", candidate).strip(" ,;:-|")
+            if candidate and looks_like_company_name(candidate) and not not_a_name(candidate) and not profession_only(candidate):
+                return candidate
+    return None
+
+
+def other_company_in_header(text: str, company_name: str | None) -> str | None:
+    """Respaldo del emisor: la primera línea de la cabecera con forma jurídica que no es la nuestra. «EMISOR S.L.
+    NOSOTROS S.L.P.» en dos columnas se parte por la forma jurídica."""
+    from app.extractor import TAX_ID_PATTERN
+    from app.extractor import looks_like_company_name
+
+    for line in [line.strip() for line in text.splitlines()][:15]:
+        line = TAX_ID_PATTERN.sub(" ", line)
+        parts = [part.strip(" ,;") for part in re.findall(r"[^,;]*?\S.*?" + LEGAL_FORM + r"(?=[\s,;]|$)", line)]
+        for part in parts:
+            part = re.sub(r"^[,;\s]+", "", part)
+            if not re.search(r"\b" + LEGAL_FORM + r"$", part) or not looks_like_company_name(part) or not_a_name(part):
+                continue
+            if company_name and name_overlap(part, company_name) >= 0.6:
+                continue
+            return part
+    return None
+
+
+def without_own_company(value: str | None, company_name: str | None) -> str | None:
+    """«EMISOR S.L. NOSOTROS S.L.P.» (dos columnas en una línea): se queda la que no es la nuestra."""
+    if not value or not company_name:
+        return value
+    parts = [part.strip(" ,;") for part in re.findall(r"\S.*?" + LEGAL_FORM + r"(?=[\s,;]|$)", value)]
+    if len(parts) < 2:
+        return value
+    others = [part for part in parts if name_overlap(part, company_name) < 0.6]
+    return others[0] if len(others) == 1 else value
+
+
+def first_line_person(text: str, company_name: str | None) -> str | None:
+    """Autónomos: «Nombre Apellido Apellido  Nº Factura: 123» en la primera línea."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return None
+    head = re.split(r"(?i)\s+(?:n[º°]\s*(?:de\s*)?factura|factura\b|n\.?\s?i\.?\s?f|dni)", lines[0])[0].strip(" ,;:-")
+    words = head.split()
+    if not 2 <= len(words) <= 5 or not all(re.fullmatch(r"[A-ZÁÉÍÓÚÑ][a-záéíóúñü]+|[A-ZÁÉÍÓÚÑ]{2,}|de|del|la|y", word) for word in words):
+        return None
+    if company_name and name_overlap(head, company_name) >= 0.6:
+        return None
+    return head
+
+
+def rejoin_split_words(name: str, text: str) -> str:
+    """«GONZÁL EZ» (el PDF parte la palabra): se une si la palabra entera aparece en otro sitio del documento."""
+    words = set(re.findall(r"[a-z]{4,}", normalize(text)))
+    tokens = name.split(" ")
+    index = 0
+    while index < len(tokens) - 1:
+        joined = tokens[index] + tokens[index + 1]
+        if (re.fullmatch(r"[^\W\d_]+", joined) and normalize(joined) in words
+                and normalize(tokens[index + 1]) not in {"de", "del", "la", "el", "y", "e", "sl", "sa"} and len(tokens[index + 1]) <= 4):
+            tokens[index:index + 2] = [joined]
+            continue
+        index += 1
+    return " ".join(tokens)
 
 
 # ---------------------------------------------------------------------
@@ -467,6 +587,22 @@ def number_from_header_row(text: str) -> str | None:
             numbers = [token for token in tokens if re.search(r"\d", token) and len(re.sub(r"[^A-Z0-9]", "", token.upper())) >= 4 and not re.fullmatch(r"[A-Z]?\d{8}[A-Z]?", token.upper()) and not re.fullmatch(r"\d+,\d{2}", token)]
             if numbers:
                 return numbers[0]
+    return None
+
+
+def number_with_series(text: str, number: str | None) -> str | None:
+    """Columnas «SERIE NÚMERO» con «B2S 204060» debajo: la serie es parte del número de la factura."""
+    if not number:
+        return None
+    lines = [line.strip() for line in text.splitlines()]
+    for index, line in enumerate(lines[:-1]):
+        normalized = normalize(line)
+        if not re.search(r"\bserie\s+(?:n(?:umero|º|o\.?)|num\.?)", normalized) or re.search(r"\d", line):
+            continue
+        for values in lines[index + 1:index + 3]:
+            match = re.search(r"(?<!\S)([A-Z0-9]{1,5})\s+" + re.escape(number) + r"(?!\S)", values)
+            if match and re.search(r"[A-Z]", match.group(1)):
+                return f"{match.group(1)} {number}"
     return None
 
 

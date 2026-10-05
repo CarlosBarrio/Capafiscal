@@ -26,7 +26,7 @@ from typing import Any
 from typing import Callable
 
 FIELDS = (
-    "is_invoice", "document_type", "direction", "supplier_name", "supplier_tax_id", "customer_tax_id", "invoice_number",
+    "is_invoice", "document_type", "direction", "supplier_name", "supplier_tax_id", "customer_name", "customer_tax_id", "invoice_number",
     "invoice_date", "due_date", "subtotal", "tax_total", "withholding_total", "total", "category",
 )
 # Campos que un motor no produce: no se le cuentan como fallo. Hoy los tres motores producen todos.
@@ -42,6 +42,7 @@ FIELD_LABELS = {
     "direction": "Sentido (recibida/emitida)",
     "supplier_name": "Proveedor",
     "supplier_tax_id": "NIF proveedor",
+    "customer_name": "Cliente",
     "customer_tax_id": "NIF cliente",
     "invoice_number": "Nº de factura",
     "invoice_date": "Fecha",
@@ -228,6 +229,7 @@ ERROR_TYPES = {
     "direction": "error_sentido",
     "supplier_name": "error_proveedor",
     "supplier_tax_id": "error_nif",
+    "customer_name": "error_cliente",
     "customer_tax_id": "error_nif",
     "invoice_number": "error_numero",
     "invoice_date": "error_fecha",

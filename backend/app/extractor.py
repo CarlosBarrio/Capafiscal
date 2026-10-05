@@ -74,8 +74,14 @@ DATE_PATTERN = re.compile(
     r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"
     r"|"
     r"\d{4}[/-]\d{1,2}[/-]\d{1,2}"
+    r"|"
+    r"\d{1,2}[/-](?i:ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)[/-]\d{2,4}"
     r")\b"
 )
+SHORT_MONTHS = {"ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6, "jul": 7, "ago": 8, "sep": 9, "set": 9,
+                "oct": 10, "nov": 11, "dic": 12}
+
+PLAIN_VOWELS = str.maketrans("áéíóúÁÉÍÓÚ", "aeiouAEIOU")
 
 INVOICE_NUMBER_PATTERNS = (
     re.compile(
@@ -432,6 +438,11 @@ def parse_date_value(raw_value: str | None) -> date | None:
         return None
 
     value = raw_value.strip()
+
+    # «05-mar-26»: mes abreviado en castellano
+    short = re.fullmatch(r"(\d{1,2})[/-]([A-Za-z]{3})[/-](\d{2}|\d{4})", value)
+    if short and short.group(2).lower() in SHORT_MONTHS:
+        value = f"{short.group(1)}-{SHORT_MONTHS[short.group(2).lower()]}-{short.group(3)}"
 
     formats = (
         "%d/%m/%Y",
@@ -1153,7 +1164,7 @@ def choose_tax_ids_for_issued(
 
 STREET_PREFIX = re.compile(
     r"(?i)^\s*(?:c/|c\.|calle|avda?\.?|avenida|av\.|plaza|pza\.?|pl\.|paseo|p[º°]|ctra\.?|crta\.?|cra\.?|carretera|camino|ronda|traves[ií]a"
-    r"|pol\.?\s*ind|pol[ií]gono|urb\.?|urbanizaci[oó]n|glorieta|rambla|v[ií]a|apartado|apdo\.?)\b"
+    r"|pol\.?\s*ind|pol[ií]gono|urb\.?|urbanizaci[oó]n|glorieta|rambla|v[ií]a|apartado|apdo\.?|cl\.?)(?!\w)"
 )
 POSTAL_CODE = re.compile(r"\b(?:0[1-9]|[1-4]\d|5[0-2])\d{3}\b\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]")
 
@@ -1221,7 +1232,8 @@ def clean_company_name_candidate(
         r"|\bC\.?\s*I\.?\s*F\.?\s*[:.]"
         r"|\bN\.?\s*I\.?\s*F\.?\s*[:.]"
         r"|\binscrita?\b"
-        r"|\bregistro mercantil\b",
+        r"|\bregistro mercantil\b"
+        r"|\s+N[º°]\s*(?:de\s*)?factura\b",
         candidate,
         maxsplit=1,
     )[0]
@@ -1307,7 +1319,7 @@ def company_name_near_tax_id(
 
         if looks_like_company_name(
             same_line_candidate
-        ):
+        ) and not extraction_rules.not_a_name(same_line_candidate):
             score = 96
 
             normalized_candidate = normalize_search_text(
@@ -1372,7 +1384,11 @@ def company_name_near_tax_id(
                 if len(halves) == 2:
                     candidate = halves[column]
 
-            if not looks_like_company_name(candidate):
+            if not looks_like_company_name(candidate) or extraction_rules.not_a_name(candidate):
+                continue
+
+            # Una fila con importes («SERVICIO MENSUAL 1 4,50») es una línea de detalle, no un nombre
+            if extraction_rules.AMOUNT_TOKEN.search(candidate):
                 continue
 
             # «MADRID BURGOS»: solo nombres de ciudad (provincias de dos columnas) no es una empresa
@@ -1491,6 +1507,10 @@ def find_invoice_number(
     )
 
     for line_index, line in enumerate(lines):
+        # La lectura reconstruida del texto girado junta palabras de toda la columna: no da el número
+        if line.startswith("[texto girado]"):
+            continue
+
         normalized_line = normalize_search_text(line)
 
         has_invoice_label = (
@@ -1510,15 +1530,16 @@ def find_invoice_number(
         if re.search(r"total|importe|base|cuota|iva", normalized_line) and not re.search(r"\bn\s*[º°o.]|numero|num\.", normalized_line):
             continue
 
-        # Etiqueta y número en la misma línea.
+        # Etiqueta y número en la misma línea («Fáctura: 7-26»: la tilde no cambia la etiqueta).
+        plain_line = line.translate(PLAIN_VOWELS)
         for pattern in INVOICE_NUMBER_PATTERNS:
-            match = pattern.search(line)
+            match = pattern.search(plain_line)
 
             if not match:
                 continue
 
             # «FECHA FACTURA: 01/02/2026»: la etiqueta es de la fecha, no del número.
-            if re.search(r"fecha\s*(?:de\s*(?:la\s*)?)?\W*$", normalize_search_text(line[:match.start()])):
+            if re.search(r"fecha\s*(?:de\s*(?:la\s*)?)?\W*$", normalize_search_text(plain_line[:match.start()])):
                 continue
 
             value = clean_invoice_number(
@@ -1533,6 +1554,17 @@ def find_invoice_number(
                         line,
                     )
                 )
+
+        # «Factura:» y el número partido en varias líneas cortas («A», «-01», «-26»)
+        if re.fullmatch(r"(?:n[º°o.]?\s*(?:de\s*)?)?factura\s*:?", normalized_line):
+            pieces = []
+            for piece in lines[line_index + 1:line_index + 6]:
+                if not re.fullmatch(r"[A-Z0-9/\-]{1,4}", piece.strip(), re.IGNORECASE):
+                    break
+                pieces.append(piece.strip())
+            joined = "".join(pieces)
+            if len(pieces) >= 2 and re.search(r"\d", joined) and not DATE_PATTERN.fullmatch(joined):
+                candidates.append((95, joined, f"{line} | {' '.join(pieces)}"))
 
         # Etiqueta en una línea y número debajo.
         for offset in range(1, 5):
@@ -1554,6 +1586,12 @@ def find_invoice_number(
             }:
                 continue
 
+            # «C.C.: 0005555», «Cliente 45», «Nº pedido 4500…»: es otro código, no el de la factura
+            if re.match(r"(?:c\.?\s?c\.?|cod(?:igo)?\.?|cliente|cuenta|tel(?:efono|f)?\.?|[cn]\.?\s?i\.?\s?f\.?)(?:\s|:|$)", normalized_candidate) or (
+                re.search(r"\b(?:pedido|albaran|presupuesto)\b", normalized_candidate) and "factura" not in normalized_candidate
+            ):
+                continue
+
             # Un importe («550,55 €») no es un número de factura.
             if re.fullmatch(r"[-+(]?\s*[\d.\s]+,\d{2}\s*(?:€|eur(?:os)?)?\)?", normalized_candidate):
                 continue
@@ -1566,7 +1604,7 @@ def find_invoice_number(
 
             if standalone_number_pattern.fullmatch(
                 compact_candidate
-            ):
+            ) and not is_valid_spanish_tax_id(normalize_tax_id(compact_candidate)):
                 value = clean_invoice_number(
                     compact_candidate
                 )
@@ -1601,6 +1639,10 @@ def find_invoice_number(
                 if DATE_PATTERN.fullmatch(value):
                     continue
 
+                # Un NIF suelto bajo «FACTURA» es de una de las partes
+                if is_valid_spanish_tax_id(normalize_tax_id(value)):
+                    continue
+
                 score = 90 - offset * 3
 
                 if "/" in value or "-" in value:
@@ -1632,6 +1674,9 @@ def find_invoice_number(
     )
 
 
+OTHER_DOCUMENT_DATE = re.compile(r"albaran|\bpedido\b|presupuesto")
+
+
 def find_date_near_labels(
     text: str,
     labels: tuple[str, ...],
@@ -1659,6 +1704,10 @@ def find_date_near_labels(
         if not matched_labels:
             continue
 
+        # «NºALBARÁN: … FECHA: 02/03»: la fecha del albarán (o del pedido) que cita la factura no es la suya.
+        if OTHER_DOCUMENT_DATE.search(normalized_line) and "factura" not in normalized_line:
+            continue
+
         # Una etiqueta genérica ("fecha") dentro de una línea con
         # etiqueta excluida ("fecha de vencimiento") no cuenta.
         if is_excluded(normalized_line) and not any(
@@ -1684,6 +1733,9 @@ def find_date_near_labels(
                 normalize_search_text(candidate_line)
             ):
                 break
+
+            if offset > 0 and OTHER_DOCUMENT_DATE.search(normalize_search_text(candidate_line)) and "factura" not in normalize_search_text(candidate_line):
+                continue
 
             for match in DATE_PATTERN.finditer(candidate_line):
                 parsed = parse_date_value(match.group(1))
@@ -2924,9 +2976,41 @@ def extract_invoice(
             elif supplier_name.source == "configured_company_name" or extraction_rules.weak_name(supplier_name.value, company_name):
                 # El nombre que había era el nuestro (se creyó emitida): se busca junto al CIF del emisor; si no, vacío
                 supplier_name = company_name_near_tax_id(primary_text, issuer.tax_id, "supplier")
-        elif direction != "ISSUED" and issuer.name and extraction_rules.weak_name(supplier_name.value, company_name):
+        elif direction != "ISSUED" and issuer.name and (
+            extraction_rules.weak_name(supplier_name.value, company_name)
+            or (issuer.tax_id == supplier_tax_id.value and len(issuer.name) > len(supplier_name.value)
+                and extraction_rules.name_overlap(supplier_name.value, issuer.name) >= 0.5)
+        ):
             supplier_name = ExtractedField(value=issuer.name, confidence=80, source="legal_footer", evidence=issuer.source)
             real_world_signals.append("supplier_name_from_legal_footer")
+
+    # Lo que la factura dice expresamente («Emisor:», «Destinatario:», «Cliente / Nombre») manda sobre la cercanía al
+    # NIF, que a menudo cae en una línea del domicilio. Solo la otra parte: la nuestra ya es la configurada.
+    other_role = "customer" if direction == "ISSUED" else "supplier"
+    labelled = extraction_rules.labelled_party(primary_text, other_role)
+    if labelled and not (company_name and extraction_rules.name_overlap(labelled, company_name) >= 0.6):
+        labelled_field = ExtractedField(value=labelled, confidence=90, source=f"{other_role}_name_label", evidence=labelled)
+        if other_role == "customer":
+            customer_name = labelled_field
+        else:
+            supplier_name = labelled_field
+    elif direction != "ISSUED" and (
+        not supplier_name.value
+        or (supplier_name.confidence < 85 and not any(suffix in normalize_search_text(supplier_name.value) for suffix in LEGAL_SUFFIXES))
+    ):
+        # Sin etiqueta y sin un nombre claro junto al NIF: la empresa de la cabecera que no es la nuestra, o el
+        # profesional que firma en la primera línea
+        fallback = extraction_rules.other_company_in_header(primary_text, company_name)
+        if not fallback and not supplier_name.value:
+            fallback = extraction_rules.first_line_person(primary_text, company_name)
+        if fallback:
+            supplier_name = ExtractedField(value=fallback, confidence=70, source="supplier_name_header", evidence=fallback)
+            real_world_signals.append("supplier_name_from_header")
+
+    if direction == "ISSUED":
+        customer_name.value = extraction_rules.without_own_company(customer_name.value, company_name)
+    else:
+        supplier_name.value = extraction_rules.without_own_company(supplier_name.value, company_name)
 
     # Solo nuestro NIF y ningún cliente: no es una emitida nuestra si la pagamos por domiciliación
     # («recibo domiciliado»): el emisor está en imágenes que no se han podido leer. Mejor vacío que nosotros.
@@ -2945,6 +3029,9 @@ def extract_invoice(
         if better:
             invoice_number = ExtractedField(value=clean_invoice_number(better) or better, confidence=80, source="table_header_row", evidence=better)
             real_world_signals.append("invoice_number_from_table")
+    with_series = extraction_rules.number_with_series(primary_text, invoice_number.value)
+    if with_series:
+        invoice_number = ExtractedField(value=with_series, confidence=invoice_number.confidence, source="invoice_number_with_series", evidence=with_series)
 
     invoice_date = find_date_near_labels(
         primary_text,
