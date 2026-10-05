@@ -151,3 +151,24 @@ def test_documents_read_with_older_rules_are_put_in_their_place(client, tmp_path
     assert documents[person["id"]]["kind"] == "INVOICE"  # la persona dijo que era factura
     with SessionLocal() as database:
         assert database.query(FiscalNotification).filter_by(document_id=payslip["id"]).one().status == "CLOSED"
+
+
+def test_a_zip_puts_every_document_in_its_place(client, tmp_path):
+    """Se sube un .zip y cada documento va a su sitio; lo que no se puede leer se dice, no se pierde en silencio."""
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("facturas/factura-12.txt", "TALLERES EJEMPLO S.L.\nFACTURA Nº 12" + BODY)
+        archive.writestr("albaranes/albaran.txt", "TRANSPORTES EJEMPLO S.L.\nALBARÁN Nº AE-55120" + BODY)
+        archive.writestr("pedidos/pedido.htm", "<h1>PEDIDO Nº 4500123</h1><p>Condiciones generales de compra</p>")
+        archive.writestr("otros/foto.jpg", b"\xff\xd8\xff")
+        archive.writestr("__MACOSX/._factura-12.txt", b"x")
+    response = client.post("/api/upload-zip", files={"uploaded_file": ("lote.zip", buffer.getvalue())})
+
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["counts"] == {"INVOICE": 1, "ALBARAN": 1, "PEDIDO": 1}
+    assert [item["file"] for item in result["skipped"]] == ["foto.jpg"]
+    assert client.post("/api/upload-zip", files={"uploaded_file": ("x.zip", b"no es un zip")}).status_code == 400

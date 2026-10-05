@@ -809,6 +809,70 @@ def export_ledger(
 # Carga manual
 # -------------------------------------------------------------------
 
+# Un .zip con muchos documentos (facturas, albaranes, ofertas, pedidos, nóminas…). Límites para que un zip
+# malicioso no llene el disco: número de archivos y tamaño total descomprimido.
+ZIP_MAX_FILES = 500
+ZIP_MAX_TOTAL = 500 * 1024 * 1024
+
+
+@app.post(
+    "/api/upload-zip",
+    status_code=status.HTTP_201_CREATED,
+    tags=["Documentos"],
+)
+async def upload_zip(
+    database: DatabaseDependency,
+    uploaded_file: UploadFile = File(...),
+    actor_header: ActorHeader = None,
+) -> dict[str, Any]:
+    """Sube un .zip: cada documento de dentro pasa por la subida normal (mismas comprobaciones de formato, tamaño y
+    duplicados) y va a su sitio. Devuelve qué se cargó, de qué tipo, y qué no y por qué."""
+    import io
+    import zipfile
+
+    data = await uploaded_file.read(ZIP_MAX_TOTAL + 1)
+    await uploaded_file.close()
+    if len(data) > ZIP_MAX_TOTAL:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El zip es demasiado grande.")
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El archivo no es un zip válido.") from error
+
+    entries = [item for item in archive.infolist()
+               if not item.is_dir() and "__MACOSX" not in item.filename and not Path(item.filename).name.startswith(".")]
+    if len(entries) > ZIP_MAX_FILES or sum(item.file_size for item in entries) > ZIP_MAX_TOTAL:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"El zip tiene demasiados archivos o es demasiado grande (máximo {ZIP_MAX_FILES} archivos).")
+
+    loaded: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+    for item in entries:
+        name = Path(item.filename.replace("\\", "/")).name
+        if item.file_size > settings.max_upload_size:
+            skipped.append({"file": name, "reason": "demasiado grande"})
+            continue
+        try:
+            content = archive.read(item)
+            result = await upload_document(
+                database,
+                uploaded_file=UploadFile(file=io.BytesIO(content), filename=name),
+                actor_header=actor_header,
+            )
+        except HTTPException as error:
+            database.rollback()
+            skipped.append({"file": name, "reason": str(error.detail)})
+            continue
+        document = result.document
+        kind = (document.kind if document else None) or ("INVOICE" if document and document.invoice else "SIN_IDENTIFICAR")
+        loaded.append({"file": name, "document_id": document.id if document else None, "kind": kind, "duplicate": result.duplicate})
+
+    counts: dict[str, int] = {}
+    for item in loaded:
+        counts[item["kind"]] = counts.get(item["kind"], 0) + 1
+    return {"loaded": loaded, "skipped": skipped, "counts": counts}
+
+
 @app.post(
     "/api/upload",
     response_model=UploadResponse,

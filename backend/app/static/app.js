@@ -1101,6 +1101,41 @@ function setupUpload() {
   });
 }
 
+const UPLOAD_EXTENSIONS = [".pdf", ".txt", ".doc", ".docx", ".odt", ".rtf", ".htm", ".html", ".xml"];
+const UPLOAD_KIND_LABELS = {
+  INVOICE: ["factura", "facturas"], PRESUPUESTO: ["presupuesto u oferta", "presupuestos u ofertas"], PEDIDO: ["pedido", "pedidos"],
+  ALBARAN: ["albarán", "albaranes"], NOMINA: ["nómina", "nóminas"], PROFORMA: ["proforma", "proformas"],
+  NOTIFICATION: ["notificación", "notificaciones"], SIN_IDENTIFICAR: ["por identificar", "por identificar"],
+};
+
+/* Un .zip con muchos documentos: el servidor lo abre y cada uno va a su sitio (Facturas, Documentos, Notificaciones). */
+async function uploadZips(zips) {
+  uploadInProgress = true;
+  try {
+    for (const zip of zips) {
+      showMessage(`Abriendo "${zip.name}" y leyendo cada documento… puede tardar unos minutos.`, "info");
+      const formData = new FormData();
+      formData.append("uploaded_file", zip, zip.name);
+      try {
+        const result = await apiRequest("/upload-zip", { method: "POST", body: formData });
+        const parts = Object.entries(result.counts || {})
+          .map(([kind, count]) => {
+            const [one, many] = UPLOAD_KIND_LABELS[kind] || [kind.toLowerCase(), kind.toLowerCase()];
+            return `${count} ${count === 1 ? one : many}`;
+          });
+        const skipped = (result.skipped || []).length;
+        showMessage(`«${zip.name}»: ${parts.join(", ") || "ningún documento"}${skipped ? `; ${window.pl(skipped, "archivo(s) sin cargar")}` : ""}.`, skipped ? "warning" : "success");
+      } catch (error) {
+        showMessage(`No se pudo cargar "${zip.name}": ${error.message}`, "error");
+      }
+    }
+  } finally {
+    uploadInProgress = false;
+  }
+  await refreshAll();
+  if (documentsCache.some((doc) => otherDocumentLabel(doc) || isUnidentifiedDocument(doc))) activateTab("documentos");
+}
+
 async function uploadFiles(files) {
   if (uploadInProgress) {
     showMessage("Espera a que termine la carga en curso.", "warning");
@@ -1108,10 +1143,13 @@ async function uploadFiles(files) {
   }
 
   const valid = [];
+  const zips = [];
   for (const file of files) {
     const lowerName = file.name.toLowerCase();
-    if (!lowerName.endsWith(".pdf") && !lowerName.endsWith(".txt")) {
-      showMessage(`"${file.name}" no es PDF ni TXT y se ha omitido.`, "error");
+    if (lowerName.endsWith(".zip")) {
+      zips.push(file);
+    } else if (!UPLOAD_EXTENSIONS.some((extension) => lowerName.endsWith(extension))) {
+      showMessage(`"${file.name}" no es un formato que CapaFiscal sepa leer (PDF, Word, RTF, HTML, XML, texto o un .zip) y se ha omitido.`, "error");
     } else if (file.size > MAX_UPLOAD_BYTES) {
       showMessage(`"${file.name}" supera el límite de 15 MB.`, "error");
     } else {
@@ -1119,6 +1157,7 @@ async function uploadFiles(files) {
     }
   }
 
+  if (zips.length) await uploadZips(zips);
   if (!valid.length) return;
 
   uploadInProgress = true;
