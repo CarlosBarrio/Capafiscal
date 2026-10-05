@@ -1,0 +1,14 @@
+{
+  "id": "invoice_anomaly_001",
+  "descripcion": "Factura de un proveedor habitual casi 5 veces más alta de lo normal: expediente de factura sospechosa, IVA en riesgo y retener el pago.",
+  "entrada": {
+    "tipo": "invoice",
+    "historial": {"supplier": "ENDESA ENERGIA S.A.", "tax_id": "A81948077", "totals": [110, 95, 120, 105, 100]},
+    "factura": {"number": "FAC-1032", "total": 520, "days_ago": 2}
+  },
+  "ruta_esperada": "factura_sospechosa",
+  "agentes_esperados": ["vigilante", "expedientes", "memoria", "detector", "fiscal", "gestor", "director"],
+  "resultado_esperado": {"expediente": true, "kind": "ANOMALY", "procedure": "FACTURA_SOSPECHOSA", "status": "WAITING_HUMAN", "hallazgos": ["IMPORTE_ATIPICO", "IVA_EN_RIESGO"], "riesgo": "high"},
+  "evidencias_esperadas": ["FAC-1032", "Histórico: ENDESA ENERGIA S.A. · E-4"],
+  "accion_esperada": "Retener el pago de esta factura hasta aclararlo"
+}

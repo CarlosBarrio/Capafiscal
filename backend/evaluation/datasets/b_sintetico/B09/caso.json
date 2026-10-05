@@ -1,0 +1,46 @@
+{
+  "case_id": "B09",
+  "conjunto": "B",
+  "bloque": "seguridad_social",
+  "titulo": "TGSS: requerimiento de documentación",
+  "descripcion": "Requerimiento de la Tesorería con código de cuenta de cotización: nóminas, contratos y RNT.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "tgss_requerimiento.pdf",
+      "tipo": "requerimiento",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "tgss_requerimiento.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "requerimiento",
+        "procedure": "REQUERIMIENTO",
+        "issuer": "TGSS",
+        "deadline": "2026-10-08",
+        "requires_human": true,
+        "requested_documents": [
+          "NOMINAS",
+          "CONTRATOS_TRABAJO",
+          "RNT"
+        ]
+      }
+    }
+  ],
+  "expected": {}
+}

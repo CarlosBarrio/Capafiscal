@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from app import clock
 from datetime import datetime
-from datetime import timezone
 from typing import Any
 
+from sqlalchemy import case
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
@@ -20,6 +21,26 @@ OPEN_TASK_STATUSES = {
     "IN_PROGRESS",
 }
 
+# Orden explícito: ordenar el texto daría HIGH < LOW < NORMAL.
+PRIORITY_ORDER = case(
+    {
+        "HIGH": 0,
+        "NORMAL": 1,
+        "LOW": 2,
+    },
+    value=Task.priority,
+    else_=3,
+)
+
+STATUS_ORDER = case(
+    {
+        "IN_PROGRESS": 0,
+        "OPEN": 1,
+    },
+    value=Task.status,
+    else_=2,
+)
+
 REVIEW_DOCUMENT_STATUSES = {
     "NEEDS_REVIEW",
     "READY_FOR_APPROVAL",
@@ -28,7 +49,7 @@ REVIEW_DOCUMENT_STATUSES = {
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return clock.now()
 
 
 def add_task_event(
@@ -156,6 +177,9 @@ def calculate_task_reason(
 def document_requires_review_task(
     document: Document,
 ) -> bool:
+    if document.kind == "NOTIFICATION":
+        return False
+
     if document.status in {
         "APPROVED",
         "REJECTED",
@@ -220,12 +244,20 @@ def synchronize_document_task(
         "APPROVED",
         "REJECTED",
         "EXPORTED",
-    }:
+        "RESOLVED",
+        "CLASSIFIED",
+    } or document.kind == "NOTIFICATION":
         if task is not None and task.status in OPEN_TASK_STATUSES:
             task.status = "RESOLVED"
-            task.resolution = document.status
+            task.resolution = (
+                "NOTIFICATION"
+                if document.kind == "NOTIFICATION"
+                else document.status
+            )
             task.resolution_notes = (
-                "Tarea resuelta automáticamente por "
+                "Documento clasificado como notificación administrativa."
+                if document.kind == "NOTIFICATION"
+                else "Tarea resuelta automáticamente por "
                 f"el estado {document.status}."
             )
             task.resolved_at = utc_now()
@@ -329,6 +361,10 @@ def synchronize_all_review_tasks(
         if previous_task is None or previous_state != current_state:
             changed_count += 1
 
+    from app.notification_service import sync_all_notification_tasks
+
+    sync_all_notification_tasks(database)
+
     return changed_count
 
 
@@ -340,7 +376,7 @@ def list_review_tasks(
 ) -> list[Task]:
     statement = (
         select(Task)
-        .where(Task.task_type == "REVIEW_INVOICE")
+        .where(Task.task_type.in_({"REVIEW_INVOICE", "NOTIFICATION"}))
         .options(
             selectinload(Task.document)
             .selectinload(Document.invoice)
@@ -361,8 +397,8 @@ def list_review_tasks(
     statement = (
         statement
         .order_by(
-            Task.status.asc(),
-            Task.priority.asc(),
+            STATUS_ORDER,
+            PRIORITY_ORDER,
             Task.created_at.asc(),
             Task.id.asc(),
         )

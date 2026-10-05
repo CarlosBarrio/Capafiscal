@@ -1,0 +1,428 @@
+{
+  "nota": "SIMULACIÓN — NO OFICIAL. Generado por generar.py: no editar a mano.",
+  "empresa": {
+    "name": "EMPRESA EJEMPLO S.L.",
+    "tax_id": "B00100016"
+  },
+  "casos": [
+    {
+      "id": "normal_papeleria",
+      "file": "normal_papeleria.pdf",
+      "set": "A",
+      "tags": [
+        "normal",
+        "IVA 21"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "PAPELERÍA LA PLUMA S.L.",
+        "supplier_tax_id": "B00001016",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "PL-2026/0457",
+        "invoice_date": "2026-09-03",
+        "subtotal": "138.90",
+        "tax_total": "29.17",
+        "total": "168.07",
+        "due_date": "2026-10-03"
+      }
+    },
+    {
+      "id": "normal_restaurante",
+      "file": "normal_restaurante.pdf",
+      "set": "A",
+      "tags": [
+        "normal",
+        "IVA 10"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "RESTAURANTE EL FOGÓN S.L.",
+        "supplier_tax_id": "B00001024",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "F-88213",
+        "invoice_date": "2026-09-12",
+        "subtotal": "136.36",
+        "tax_total": "13.64",
+        "total": "150.00"
+      }
+    },
+    {
+      "id": "normal_fruteria",
+      "file": "normal_fruteria.pdf",
+      "set": "A",
+      "tags": [
+        "normal",
+        "IVA 4"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "FRUTAS DEL CAMPO S.L.",
+        "supplier_tax_id": "B00001032",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "2026-0912",
+        "invoice_date": "2026-09-12",
+        "subtotal": "48.08",
+        "tax_total": "1.92",
+        "total": "50.00"
+      }
+    },
+    {
+      "id": "normal_software",
+      "file": "normal_software.pdf",
+      "set": "A",
+      "tags": [
+        "normal",
+        "suscripción"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "SOFTWARE NUBE S.L.",
+        "supplier_tax_id": "B00001073",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "SN-26-1093",
+        "invoice_date": "2026-09-01",
+        "subtotal": "145.00",
+        "tax_total": "30.45",
+        "total": "175.45",
+        "due_date": "2026-09-15"
+      }
+    },
+    {
+      "id": "normal_transportes",
+      "file": "normal_transportes.pdf",
+      "set": "A",
+      "tags": [
+        "normal",
+        "varias líneas"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "TRANSPORTES RÁPIDOS S.L.",
+        "supplier_tax_id": "B00001081",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "TR/2026/3321",
+        "invoice_date": "2026-09-18",
+        "subtotal": "392.40",
+        "tax_total": "82.40",
+        "total": "474.80"
+      }
+    },
+    {
+      "id": "normal_emitida",
+      "file": "normal_emitida.pdf",
+      "set": "A",
+      "tags": [
+        "normal",
+        "emitida"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "ISSUED",
+        "supplier_name": "EMPRESA EJEMPLO S.L.",
+        "supplier_tax_id": "B00100016",
+        "customer_tax_id": "B00001107",
+        "invoice_number": "EE-2026-0031",
+        "invoice_date": "2026-09-25",
+        "subtotal": "2400.00",
+        "tax_total": "504.00",
+        "total": "2904.00",
+        "due_date": "2026-10-25"
+      }
+    },
+    {
+      "id": "irpf_asesoria",
+      "file": "irpf_asesoria.pdf",
+      "set": "A",
+      "tags": [
+        "IRPF",
+        "profesional"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "ASESORÍA NÚMEROS CLAROS S.L.",
+        "supplier_tax_id": "B00001008",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "A-2026-118",
+        "invoice_date": "2026-09-30",
+        "subtotal": "350.00",
+        "tax_total": "73.50",
+        "total": "371.00",
+        "withholding_total": "52.50"
+      }
+    },
+    {
+      "id": "irpf_alquiler",
+      "file": "irpf_alquiler.pdf",
+      "set": "A",
+      "tags": [
+        "IRPF",
+        "alquiler"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "INMUEBLES CASTILLA S.L.",
+        "supplier_tax_id": "B00001057",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "ALQ-09-2026",
+        "invoice_date": "2026-09-01",
+        "subtotal": "1200.00",
+        "tax_total": "252.00",
+        "total": "1224.00",
+        "due_date": "2026-09-05",
+        "withholding_total": "228.00"
+      }
+    },
+    {
+      "id": "rectificativa_precio",
+      "file": "rectificativa_precio.pdf",
+      "set": "A",
+      "tags": [
+        "rectificativa",
+        "negativa"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "IMPRENTA GUTENBERG S.L.",
+        "supplier_tax_id": "B00001040",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "R-2026-004",
+        "invoice_date": "2026-09-20",
+        "subtotal": "-45.00",
+        "tax_total": "-9.45",
+        "total": "-54.45"
+      }
+    },
+    {
+      "id": "rectificativa_devolucion",
+      "file": "rectificativa_devolucion.pdf",
+      "set": "A",
+      "tags": [
+        "rectificativa",
+        "devolución"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "TALLER MECÁNICO RUEDA S.L.",
+        "supplier_tax_id": "B00001065",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "RECT-0012",
+        "invoice_date": "2026-09-22",
+        "subtotal": "-75.00",
+        "tax_total": "-15.75",
+        "total": "-90.75"
+      }
+    },
+    {
+      "id": "formato_marca",
+      "file": "formato_marca.pdf",
+      "set": "A",
+      "tags": [
+        "formato",
+        "NIF solo en el pie",
+        "marca comercial"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "ELECTRICIDAD VOLTIO S.L.",
+        "supplier_tax_id": "B00001099",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "VOL-2026-77812",
+        "invoice_date": "2026-09-08",
+        "subtotal": "150.57",
+        "tax_total": "31.62",
+        "total": "182.19",
+        "due_date": "2026-09-28"
+      }
+    },
+    {
+      "id": "formato_tres_paginas",
+      "file": "formato_tres_paginas.pdf",
+      "set": "A",
+      "tags": [
+        "formato",
+        "varias páginas",
+        "resumen partido"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "IMPRENTA GUTENBERG S.L.",
+        "supplier_tax_id": "B00001040",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "IG-2026-0901",
+        "invoice_date": "2026-09-09",
+        "subtotal": "580.00",
+        "tax_total": "121.80",
+        "total": "701.80"
+      }
+    },
+    {
+      "id": "ocr_errores",
+      "file": "ocr_errores.pdf",
+      "set": "A",
+      "tags": [
+        "OCR",
+        "errores de reconocimiento"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "TALLER MECÁNICO RUEDA S.L.",
+        "supplier_tax_id": "B00001065",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "TM-2026-0517",
+        "invoice_date": "2026-09-14",
+        "subtotal": "238.00",
+        "tax_total": "49.98",
+        "total": "287.98"
+      }
+    },
+    {
+      "id": "ocr_escaneado",
+      "file": "ocr_escaneado.pdf",
+      "set": "A",
+      "tags": [
+        "OCR",
+        "escaneado",
+        "necesita Tesseract"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "PAPELERÍA LA PLUMA S.L.",
+        "supplier_tax_id": "B00001016",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "PL-2026/0471",
+        "invoice_date": "2026-09-19",
+        "subtotal": "32.00",
+        "tax_total": "6.72",
+        "total": "38.72"
+      }
+    },
+    {
+      "id": "complejo_decimales",
+      "file": "complejo_decimales.pdf",
+      "set": "A",
+      "tags": [
+        "importes complejos",
+        "cantidades con decimales"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "FRUTAS DEL CAMPO S.L.",
+        "supplier_tax_id": "B00001032",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "2026-0930",
+        "invoice_date": "2026-09-30",
+        "subtotal": "115.00",
+        "tax_total": "4.60",
+        "total": "119.60"
+      }
+    },
+    {
+      "id": "complejo_miles",
+      "file": "complejo_miles.pdf",
+      "set": "A",
+      "tags": [
+        "importes complejos",
+        "miles"
+      ],
+      "expected": {
+        "is_invoice": true,
+        "direction": "RECEIVED",
+        "supplier_name": "INMUEBLES CASTILLA S.L.",
+        "supplier_tax_id": "B00001057",
+        "customer_tax_id": "B00100016",
+        "invoice_number": "OBR-2026-002",
+        "invoice_date": "2026-09-26",
+        "subtotal": "18345.67",
+        "tax_total": "3852.59",
+        "total": "22198.26",
+        "due_date": "2026-10-26"
+      }
+    },
+    {
+      "id": "ambiguo_presupuesto",
+      "file": "ambiguo_presupuesto.pdf",
+      "set": "A",
+      "tags": [
+        "ambiguo",
+        "presupuesto"
+      ],
+      "expected": {
+        "is_invoice": false
+      }
+    },
+    {
+      "id": "ambiguo_albaran",
+      "file": "ambiguo_albaran.pdf",
+      "set": "A",
+      "tags": [
+        "ambiguo",
+        "albarán"
+      ],
+      "expected": {
+        "is_invoice": false
+      }
+    },
+    {
+      "id": "notificacion_requerimiento",
+      "file": "notificacion_requerimiento.pdf",
+      "set": "A",
+      "tags": [
+        "notificación",
+        "requerimiento"
+      ],
+      "expected": {
+        "is_invoice": false
+      }
+    },
+    {
+      "id": "notificacion_providencia",
+      "file": "notificacion_providencia.pdf",
+      "set": "A",
+      "tags": [
+        "notificación",
+        "apremio"
+      ],
+      "expected": {
+        "is_invoice": false
+      }
+    },
+    {
+      "id": "administrativo_certificado",
+      "file": "administrativo_certificado.pdf",
+      "set": "A",
+      "tags": [
+        "administrativo",
+        "certificado"
+      ],
+      "expected": {
+        "is_invoice": false
+      }
+    },
+    {
+      "id": "administrativo_justificante",
+      "file": "administrativo_justificante.pdf",
+      "set": "A",
+      "tags": [
+        "administrativo",
+        "justificante"
+      ],
+      "expected": {
+        "is_invoice": false
+      }
+    }
+  ]
+}

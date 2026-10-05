@@ -1,170 +1,1291 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1.0"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
   >
-  <title>CapaFiscal · Gestión de facturas</title>
+  <title>CapaFiscal · Administrativo digital</title>
+  <meta name="description" content="CapaFiscal: facturas, impuestos, banco y notificaciones de tu empresa, al día y revisados.">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
     rel="stylesheet"
-    href="/static/style.css?v=41"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap"
+  >
+  <link
+    rel="stylesheet"
+    href="/static/style.css?v=116"
   >
 </head>
 <body>
-<header class="site-header">
-  <div class="header-inner">
-    <div class="brand">
+<a class="skip-link" href="#contenido">Saltar al contenido</a>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.9L19 9.7l-5.2 1.8L12 16.5l-1.8-5L5 9.7l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></symbol>
+  <symbol id="i-landmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21v-10M9.5 21v-10M14.5 21v-10M19 21v-10M2.5 10 12 4l9.5 6z"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 7 4-14 3 7h4"/></symbol>
+  <symbol id="i-trending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></symbol>
+  <symbol id="i-receipt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21z"/><path d="M9 8h6M9 12h6M9 16h3"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M7 17v-5M12 17V7M17 17v-8"/></symbol>
+  <symbol id="i-briefcase" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2A6.5 6.5 0 0 1 21.5 20"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V5a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a2 2 0 0 1-2-2V6"/><circle cx="16.5" cy="13.5" r="1"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v6c0 4.6 3.2 7.9 7.5 9 4.3-1.1 7.5-4.4 7.5-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0zM12 17v4"/></symbol>
+  <symbol id="i-building" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M16 9h3a1 1 0 0 1 1 1v11M2 21h20M8 7h4M8 11h4M8 15h4"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l3-8h12l3 8v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h5l1.5 3h5l1.5-3h5"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h3"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-coins" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="6"/><path d="M15.4 9.6A6 6 0 1 1 9.6 15.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-org" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-2.5h12V16"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></symbol>
+  <symbol id="i-invoice" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9.5 8.5h5M9.5 12h5M13 15.5h1.5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5v15l12-7.5z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></symbol>
+  <symbol id="i-radar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6-6"/><circle cx="12" cy="12" r="1"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="i-brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 3 3h1V4zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-3 3h-1V4z"/></symbol>
+</svg>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar" aria-label="Menú principal">
+    <div class="sidebar-brand">
       <div class="brand-mark">CF</div>
       <div class="brand-text">
         <span class="brand-name">CapaFiscal</span>
-        <span class="brand-tagline">
-          Gestión administrativa para pymes
-        </span>
+        <span class="brand-tagline">Administrativo digital</span>
       </div>
+      <button type="button" class="icon-button sidebar-close" id="sidebarClose" aria-label="Cerrar menú"><svg class="icon"><use href="#i-close"/></svg></button>
     </div>
-    <div class="header-actions">
-      <label for="fileInput" class="btn-solid-light">
-        Subir documento
-      </label>
+
+    <nav class="sidebar-nav nav-tabs" id="navTabs">
+      <div class="nav-group">
+        <button type="button" class="nav-tab active" data-tab="panel">
+          <svg class="icon"><use href="#i-home"/></svg><span class="nav-label">Hoy</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="cierre">
+          <svg class="icon"><use href="#i-lock"/></svg><span class="nav-label">Cierre del mes</span><span class="tab-count tab-count-alert hidden" id="cntClose">0</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="expedientes">
+          <svg class="icon"><use href="#i-archive"/></svg><span class="nav-label">Expedientes</span><span class="tab-count tab-count-alert hidden" id="cntCases">0</span>
+        </button>
+      </div>
+      <div class="nav-group">
+        <p class="nav-group-label">Operación</p>
+        <button type="button" class="nav-tab" data-tab="facturas">
+          <svg class="icon"><use href="#i-file"/></svg><span class="nav-label">Facturas recibidas</span><span class="tab-count hidden" id="cntFacturas">0</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="documentos">
+          <svg class="icon"><use href="#i-doc"/></svg><span class="nav-label">Documentos</span><span class="tab-count hidden" id="cntDocumentos">0</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="ventas">
+          <svg class="icon"><use href="#i-invoice"/></svg><span class="nav-label">Ventas y cobros</span><span class="tab-count tab-count-alert hidden" id="cntOverdue">0</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="notificaciones">
+          <svg class="icon"><use href="#i-landmark"/></svg><span class="nav-label">Notificaciones</span><span class="tab-count tab-count-alert hidden" id="cntNotifications">0</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="salida">
+          <svg class="icon"><use href="#i-send"/></svg><span class="nav-label">Bandeja de salida</span><span class="tab-count hidden" id="cntOutbox">0</span>
+        </button>
+      </div>
+      <div class="nav-group">
+        <p class="nav-group-label">Finanzas</p>
+        <button type="button" class="nav-tab" data-tab="negocio">
+          <svg class="icon"><use href="#i-trending"/></svg><span class="nav-label">Negocio</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="impuestos">
+          <svg class="icon"><use href="#i-receipt"/></svg><span class="nav-label">Impuestos</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="informes">
+          <svg class="icon"><use href="#i-chart"/></svg><span class="nav-label">Informes y cierre</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="proveedores">
+          <svg class="icon"><use href="#i-briefcase"/></svg><span class="nav-label">Terceros</span>
+        </button>
+      </div>
+      <div class="nav-group">
+        <p class="nav-group-label">Empresa</p>
+        <button type="button" class="nav-tab" data-tab="automatizaciones">
+          <svg class="icon"><use href="#i-zap"/></svg><span class="nav-label">Automatizaciones</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="cumplimiento">
+          <svg class="icon"><use href="#i-shield"/></svg><span class="nav-label">Cumplimiento</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="conectores">
+          <svg class="icon"><use href="#i-plug"/></svg><span class="nav-label">Conectores</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="actividad">
+          <svg class="icon"><use href="#i-activity"/></svg><span class="nav-label">Actividad</span><span class="tab-count hidden" id="cntActivity">0</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="empresa">
+          <svg class="icon"><use href="#i-building"/></svg><span class="nav-label">Mi empresa</span>
+        </button>
+      </div>
+      <details class="nav-group nav-more" id="navMore">
+        <summary class="nav-group-label">Más</summary>
+        <button type="button" class="nav-tab" data-tab="inteligencia">
+          <svg class="icon"><use href="#i-radar"/></svg><span class="nav-label">Radar jurídico</span><span class="tab-count hidden" id="cntIntel">0</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="asistente">
+          <svg class="icon"><use href="#i-sparkles"/></svg><span class="nav-label">Asistente</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="equipo">
+          <svg class="icon"><use href="#i-users"/></svg><span class="nav-label">Equipo</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="jornada">
+          <svg class="icon"><use href="#i-clock"/></svg><span class="nav-label">Jornada</span><span class="nav-parked">aparcado</span><span class="tab-count hidden" id="cntWorking">0</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="nominas">
+          <svg class="icon"><use href="#i-wallet"/></svg><span class="nav-label">Nóminas</span><span class="nav-parked">aparcado</span>
+        </button>
+      </details>
+    </nav>
+  </aside>
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+  <div class="main-area">
+    <header class="topbar site-header">
+      <button type="button" class="icon-button menu-toggle" id="menuToggle" aria-label="Abrir menú"><svg class="icon"><use href="#i-menu"/></svg></button>
+      <nav class="breadcrumb" id="breadcrumb" aria-label="Estás en">
+        <span class="breadcrumb-group" id="breadcrumbGroup">Inicio</span>
+        <svg class="icon"><use href="#i-chevron"/></svg>
+        <span class="breadcrumb-current" id="breadcrumbCurrent">Hoy</span>
+      </nav>
+      <button type="button" class="search-trigger" id="searchTrigger">
+        <svg class="icon"><use href="#i-search"/></svg><span>Buscar o ir a…</span><kbd>Ctrl K</kbd>
+      </button>
+      <button type="button" class="btn-solid-light upload-button" id="uploadTrigger" aria-controls="fileInput" aria-label="Subir documentos">
+        <svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg><span>Subir documentos</span>
+      </button>
       <input
         type="file"
         id="fileInput"
-        accept=".pdf,.txt,application/pdf,text/plain"
+        accept=".pdf,.txt,.doc,.docx,.odt,.rtf,.htm,.html,.xml,.zip,application/pdf,text/plain,application/zip"
+        multiple
         hidden
       >
-      <nav class="nav-tabs" id="navTabs">
-        <button
-          type="button"
-          class="nav-tab active"
-          data-tab="panel"
-        >
-          Panel
-        </button>
-        <button
-          type="button"
-          class="nav-tab"
-          data-tab="facturas"
-        >
-          Facturas
-          <span class="tab-count" id="cntFacturas">0</span>
-        </button>
-        <button
-          type="button"
-          class="nav-tab"
-          data-tab="actividad"
-        >
-          Actividad
-          <span class="tab-count" id="cntActivity">0</span>
-        </button>
-        <button
-          type="button"
-          class="nav-tab"
-          data-tab="conectores"
-        >
-          Conectores
-        </button>
-        <button
-          type="button"
-          class="nav-tab"
-          data-tab="informes"
-        >
-          Informes
-        </button>
-      </nav>
-    </div>
-  </div>
-</header>
+    </header>
 
-<main class="page">
-  <!-- PANEL -->
+<main class="page" id="contenido" tabindex="-1">
+  <!-- PANEL: CENTRO DE TRABAJO -->
   <section class="tab-panel active" id="tab-panel">
+    <div class="section-title work-title">
+      <div>
+        <h1 id="greetingLine">Hoy</h1>
+        <p id="panelPeriodNote">Qué ha pasado, qué ha hecho CapaFiscal y qué necesita de ti.</p>
+      </div>
+    </div>
+
+    <ul class="hoy-summary" id="hoySummary" aria-live="polite"></ul>
+
+    <div class="work-groups" id="workGroups">
+      <p class="board-empty">Cargando…</p>
+    </div>
+  </section>
+
+  <!-- CIERRE -->
+  <section class="tab-panel" id="tab-cierre">
+    <div class="section-title close-title">
+      <div>
+        <h1 id="closeTitle">Cierre del mes</h1>
+        <p>CapaFiscal revisa facturas, banco, conciliación, documentos, IVA, anomalías e impuestos, y te dice qué bloquea el cierre.</p>
+      </div>
+      <div class="close-nav" role="group" aria-label="Mes">
+        <button type="button" class="icon-button" id="closePrev" aria-label="Mes anterior"><svg class="icon" style="transform:rotate(180deg)"><use href="#i-chevron"/></svg></button>
+        <span id="closePeriodLabel"></span>
+        <button type="button" class="icon-button" id="closeNext" aria-label="Mes siguiente"><svg class="icon"><use href="#i-chevron"/></svg></button>
+      </div>
+    </div>
+    <div class="card close-card" id="closeCard"></div>
+    <div class="card">
+      <div class="card-head"><h2>Comprobaciones</h2><span class="card-sub" id="closeChecksSub"></span></div>
+      <ol class="close-checks" id="closeChecks"></ol>
+    </div>
+    <div class="card" id="closeHistoryCard">
+      <div class="card-head"><h2>Meses cerrados</h2></div>
+      <div id="closeHistory"></div>
+    </div>
+  </section>
+
+  <!-- INTELIGENCIA -->
+  <section class="tab-panel" id="tab-inteligencia">
     <div class="section-title">
-      <h1 id="greetingLine">
-        Resumen de documentación
-      </h1>
-      <p>
-        Información calculada a partir de documentos reales.
-      </p>
+      <h1>Inteligencia</h1>
+      <p>Lo relevante que CapaFiscal ha encontrado fuera de tu empresa, con su fuente oficial.</p>
     </div>
 
-    <div class="kpi-row">
-      <div class="kpi kpi-risk">
-        <span class="kpi-value" id="mRisks">0</span>
-        <span class="kpi-label">
-          documentos para revisar
-        </span>
+    <div class="intel-bar">
+      <div class="segmented" id="intelRadars" role="tablist" aria-label="Radar">
+        <button type="button" class="segment" role="tab" data-radar="arquitectura">Arquitectura</button>
+        <button type="button" class="segment active" role="tab" data-radar="juridico" aria-selected="true">Jurídico</button>
+        <button type="button" class="segment" role="tab" data-radar="subvenciones">Subvenciones</button>
       </div>
-      <div class="kpi">
-        <span class="kpi-value" id="mIva">0 €</span>
-        <span class="kpi-label">
-          IVA aprobado
-        </span>
-      </div>
-      <div class="kpi">
-        <span class="kpi-value" id="mSpend">0 €</span>
-        <span class="kpi-label">
-          gasto aprobado
-        </span>
-      </div>
-      <div class="kpi">
-        <span class="kpi-value" id="mPending">0</span>
-        <span class="kpi-label">
-          documentos pendientes
-        </span>
-      </div>
-
-      <div
-        id="openRisksPanel"
-        class="open-risks-card hidden"
-      >
-        <div class="open-risks-header">
-          <span class="open-risks-icon">⚠️</span>
-          <div>
-            <h3>Documentos para revisar</h3>
-            <p id="openRisksText">
-              No hay incidencias abiertas.
-            </p>
-          </div>
-          <div id="openRisksList"></div>
-        </div>
+      <div class="card-actions">
+        <button type="button" class="btn-ghost" id="intelProfileToggle" aria-expanded="false"><svg class="icon"><use href="#i-edit"/></svg> Perfil del radar</button>
+        <button type="button" class="btn-ghost" id="intelRefresh"><svg class="icon"><use href="#i-repeat"/></svg> Consultar ahora</button>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-head">
-        <h2>Bandeja de revisión</h2>
-        <span class="card-sub" id="reviewInboxSub">
-          Tareas persistentes pendientes
-        </span>
-      </div>
-      <div id="inboxList" class="tasks-list"></div>
-    </div>
+    <form class="card intel-profile hidden" id="intelProfile"></form>
 
-    <div class="card">
-      <div class="card-head">
-        <h2>Últimos documentos</h2>
-        <span class="card-sub">
-          Documentos incorporados al sistema
-        </span>
-      </div>
-      <div id="recentDocuments"></div>
-    </div>
+    <div class="intel-status" id="intelStatus" aria-live="polite"></div>
+    <div class="intel-list" id="intelList"></div>
   </section>
 
   <!-- FACTURAS -->
   <section class="tab-panel" id="tab-facturas">
     <div class="section-title">
       <h1>Facturas</h1>
-      <p>
-        Documentos recibidos, extraídos, revisados y aprobados.
-      </p>
+      <p>Lo que hay que revisar primero; el archivo completo en «Todas».</p>
     </div>
+
+    <div class="segmented invoice-views" id="invoiceViews" role="group" aria-label="Vista de facturas"></div>
+    <p class="muted other-docs-hint hidden" id="otherDocsHint"></p>
+
+    <div class="card filter-card">
+      <form class="filter-toolbar" id="invoiceFilters">
+        <label class="filter-search">
+          Buscar
+          <input
+            type="search"
+            name="q"
+            placeholder="Proveedor, NIF, número, concepto o archivo…"
+            autocomplete="off"
+          >
+        </label>
+        <label>
+          Tipo
+          <select name="direction">
+            <option value="">Todas</option>
+            <option value="RECEIVED">Recibidas (gastos)</option>
+            <option value="ISSUED">Emitidas (ingresos)</option>
+          </select>
+        </label>
+        <label>
+          Revisión
+          <select name="review_status">
+            <option value="">Todas</option>
+            <option value="PENDING">Pendientes</option>
+            <option value="APPROVED">Aprobadas</option>
+            <option value="REJECTED">Rechazadas</option>
+          </select>
+        </label>
+        <label>
+          Pago
+          <select name="payment">
+            <option value="">Todos</option>
+            <option value="unpaid">Sin pagar</option>
+            <option value="overdue">Vencidas</option>
+            <option value="paid">Pagadas</option>
+          </select>
+        </label>
+        <label>
+          Periodo
+          <select name="period" id="invoicePeriodSelect">
+            <option value="">Todas las fechas</option>
+          </select>
+        </label>
+        <label>
+          Categoría
+          <select name="category" id="invoiceCategorySelect">
+            <option value="">Todas</option>
+          </select>
+        </label>
+        <button type="reset" class="btn-ghost">Limpiar</button>
+        <button type="button" class="link-button filters-toggle" id="invoiceMoreFilters" aria-expanded="false">Más filtros</button>
+      </form>
+      <div class="filter-footer">
+        <p class="filter-summary" id="invoiceFilterSummary"></p>
+        <button
+          type="button"
+          class="btn-ghost"
+          id="reprocessPendingButton"
+          title="Vuelve a leer todos los documentos no aprobados ni rechazados con el extractor actual."
+        >
+          Reprocesar pendientes
+        </button>
+      </div>
+    </div>
+
     <div
       id="documentsList"
       class="documents-list"
     ></div>
+  </section>
+
+  <!-- DOCUMENTOS: lo que no es factura ni notificación -->
+  <section class="tab-panel" id="tab-documentos">
+    <div class="section-title">
+      <h1>Documentos</h1>
+      <p>Lo que no es factura ni notificación, cada cosa en su sitio: presupuestos y ofertas, pedidos, albaranes, nóminas y lo que falta por identificar.</p>
+    </div>
+
+    <div class="segmented invoice-views" id="docKindViews" role="group" aria-label="Tipo de documento"></div>
+
+    <div class="card filter-card">
+      <label class="filter-search">
+        Buscar
+        <input type="search" id="otherDocsSearch" placeholder="Nombre del archivo…" autocomplete="off">
+      </label>
+      <p class="filter-summary" id="otherDocsSummary"></p>
+    </div>
+
+    <div id="otherDocumentsList" class="documents-list"></div>
+  </section>
+
+  <!-- NEGOCIO -->
+  <section class="tab-panel" id="tab-negocio">
+    <div class="section-title">
+      <h1>Salud del negocio</h1>
+      <p>
+        Cómo va tu negocio: ingresos, gastos, resultado, IVA, cobros,
+        pagos y caja prevista.
+      </p>
+    </div>
+
+    <div class="card filter-card">
+      <div class="filter-toolbar compact-toolbar">
+        <label>
+          Año
+          <select id="healthYear"></select>
+        </label>
+        <label>
+          Periodo
+          <select id="healthQuarter">
+            <option value="1">1er trimestre</option>
+            <option value="2">2º trimestre</option>
+            <option value="3">3er trimestre</option>
+            <option value="4">4º trimestre</option>
+            <option value="">Año completo</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi kpi-income">
+        <span class="kpi-value" id="hIncome">—</span>
+        <span class="kpi-label">ingresos (base)</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-value" id="hExpenses">—</span>
+        <span class="kpi-label">gastos (base)</span>
+      </div>
+      <div class="kpi kpi-result">
+        <span class="kpi-value" id="hResult">—</span>
+        <span class="kpi-label" id="hResultLabel">resultado</span>
+      </div>
+      <div class="kpi kpi-payments">
+        <span class="kpi-value" id="hBalance">—</span>
+        <span class="kpi-label" id="hBalanceLabel">saldo en banco</span>
+      </div>
+    </div>
+
+    <div id="healthInsights"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Ingresos y gastos · últimos 12 meses</h2>
+        <div class="chart-legend" aria-hidden="true">
+          <span><i class="legend-swatch legend-income"></i>Ingresos</span>
+          <span><i class="legend-swatch legend-expense"></i>Gastos</span>
+        </div>
+      </div>
+      <div id="healthChart" class="month-chart"></div>
+    </div>
+
+    <div class="panel-grid">
+      <div class="card">
+        <div class="card-head">
+          <h2>Cobros pendientes</h2>
+          <span class="card-sub" id="receivablesSub"></span>
+        </div>
+        <div id="receivablesList" class="payments-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Indicadores</h2>
+        </div>
+        <div id="healthIndicators" class="indicator-list"></div>
+      </div>
+    </div>
+
+    <div class="card" id="cashflowCard">
+      <div class="card-head">
+        <h2>Previsión de tesorería · 90 días</h2>
+        <span class="card-sub" id="cashflowSub"></span>
+      </div>
+      <div id="cashflowWarnings"></div>
+      <div class="table-scroll">
+        <table class="data-table" id="cashflowTable">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Movimiento previsto</th>
+              <th class="num">Importe</th>
+              <th class="num">Saldo previsto</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="report-note" id="cashflowNote"></p>
+    </div>
+
+    <div class="card" id="bankCard">
+      <div class="card-head">
+        <h2>Banco y conciliación</h2>
+        <span class="card-sub" id="bankSub"></span>
+      </div>
+      <div class="bank-connections" id="bankConnections" aria-live="polite"></div>
+      <form class="bank-import" id="bankImportForm">
+        <label class="file-drop">
+          <input type="file" name="uploaded_file" accept=".csv,.txt,.xlsx,.xlsm" required>
+          <span>Extracto CSV o Excel descargado de tu banca online</span>
+        </label>
+        <label>
+          Cuenta
+          <input type="text" name="account_label" maxlength="100" placeholder="Ej.: Santander nómina">
+        </label>
+        <button type="submit" class="act-btn act-primary">Importar movimientos</button>
+      </form>
+      <dl class="today-stats bank-summary" id="bankSummary"></dl>
+      <div class="bank-toolbar">
+        <div class="segmented" id="bankFilter">
+          <button type="button" class="segment active" data-status="">Todos</button>
+          <button type="button" class="segment" data-status="SUGGESTED">Propuestos</button>
+          <button type="button" class="segment" data-status="UNMATCHED">Sin conciliar</button>
+          <button type="button" class="segment" data-status="MATCHED">Conciliados</button>
+        </div>
+        <button type="button" class="btn-ghost" id="confirmSafeMatches">
+          Confirmar coincidencias seguras
+        </button>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table" id="bankTable">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Concepto</th>
+              <th class="num">Importe</th>
+              <th>Factura</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- IMPUESTOS -->
+  <section class="tab-panel" id="tab-impuestos">
+    <div class="section-title">
+      <h1>Impuestos</h1>
+      <p>
+        Calendario fiscal y borradores de los modelos calculados en
+        continuo con tus facturas aprobadas.
+      </p>
+    </div>
+
+    <div class="card filter-card">
+      <div class="filter-toolbar compact-toolbar">
+        <label>
+          Año
+          <select id="taxYear"></select>
+        </label>
+        <p class="filter-summary" id="taxFormNote"></p>
+      </div>
+    </div>
+
+    <div class="card" id="taxPositionCard">
+      <div class="card-head">
+        <h2>Posición del trimestre</h2>
+        <span class="card-sub" id="taxPositionSub"></span>
+      </div>
+      <div id="taxPosition" class="position-list"></div>
+    </div>
+
+    <div class="tax-layout">
+      <div class="card">
+        <div class="card-head">
+          <h2>Calendario fiscal</h2>
+          <span class="card-sub" id="taxCalendarSub"></span>
+        </div>
+        <div id="taxCalendar" class="tax-calendar"></div>
+        <p class="report-note" id="taxCalendarNote"></p>
+      </div>
+
+      <div class="card" id="taxDraftCard">
+        <div class="card-head">
+          <h2 id="taxDraftTitle">Borrador</h2>
+          <span class="card-sub" id="taxDraftPeriod"></span>
+        </div>
+        <div id="taxDraft">
+          <p class="empty-inline">Elige un modelo del calendario para ver su borrador.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Modelo 347 · operaciones con terceros</h2>
+        <span class="card-sub" id="model347Sub"></span>
+      </div>
+      <div id="model347"></div>
+    </div>
+  </section>
+
+  <!-- NOTIFICACIONES -->
+  <section class="tab-panel" id="tab-notificaciones">
+    <div class="section-title">
+      <h1>Notificaciones</h1>
+      <p>
+        Requerimientos, liquidaciones, apremios y comunicaciones de AEAT,
+        Seguridad Social y otros organismos, con su plazo calculado.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Bandeja de notificaciones</h2>
+        <div class="segmented" id="notificationFilter">
+          <button type="button" class="segment active" data-open="true">Abiertas</button>
+          <button type="button" class="segment" data-open="false">Todas</button>
+        </div>
+      </div>
+      <div id="notificationList" class="aeat-list"></div>
+    </div>
+
+    <details class="card manual-form" id="notificationFormCard">
+      <summary><h2>Registrar notificación manualmente</h2></summary>
+      <form id="notificationForm" class="detail-form-grid notification-form">
+        <label>
+          Organismo
+          <select name="issuer" id="notificationIssuer"></select>
+        </label>
+        <label>
+          Tipo
+          <select name="notification_type" id="notificationType"></select>
+        </label>
+        <label>
+          Referencia / expediente
+          <input type="text" name="reference" maxlength="100">
+        </label>
+        <label>
+          Importe (si lo hay)
+          <input type="number" name="amount" step="0.01">
+        </label>
+        <label>
+          Puesta a disposición
+          <input type="date" name="available_at">
+        </label>
+        <label>
+          Fecha de notificación (acceso)
+          <input type="date" name="notified_at">
+        </label>
+        <label class="span-2">
+          Notas
+          <textarea name="notes" rows="2"></textarea>
+        </label>
+        <div class="span-2 card-actions">
+          <button type="submit" class="act-btn act-primary">Registrar y calcular plazo</button>
+        </div>
+      </form>
+    </details>
+  </section>
+
+  <!-- CUMPLIMIENTO -->
+  <section class="tab-panel" id="tab-expedientes">
+    <div class="section-title">
+      <h1>Expedientes</h1>
+      <p>Cada notificación llega preparada: qué piden, qué documentos hay y el borrador de respuesta. Tú revisas y apruebas.</p>
+    </div>
+
+    <ul class="hoy-summary cases-summary" aria-live="polite">
+      <li class="state-red hidden"><span class="board-dot"></span><strong id="casesWaiting">0</strong> esperan tu revisión</li>
+      <li class="hidden"><span class="board-dot"></span><strong id="casesDocs">0</strong> esperan documentación</li>
+      <li class="state-done hidden"><span class="board-dot"></span><strong id="casesReady">0</strong> listos para presentar</li>
+      <li class="state-orange hidden"><span class="board-dot"></span><strong id="casesAnomalies">0</strong> anomalías abiertas</li>
+    </ul>
+
+    <div class="view-switch">
+      <div class="segmented" id="caseViews">
+        <button type="button" class="segment active" data-view="open">Bandeja</button>
+        <button type="button" class="segment" data-view="anomalies">Anomalías</button>
+        <button type="button" class="segment" data-view="closed">Cerrados</button>
+        <button type="button" class="segment" data-view="agents">Agentes</button>
+        <button type="button" class="segment" data-view="memory">Memoria</button>
+      </div>
+      <div class="card-actions">
+        <button type="button" class="btn-ghost" id="scanAnomalies"><svg class="icon"><use href="#i-alert"/></svg> Buscar anomalías</button>
+        <button type="button" class="btn-ghost" id="watchDeadlines"><svg class="icon"><use href="#i-calendar"/></svg> Preparar plazos</button>
+        <button type="button" class="btn-ghost" id="processPending"><svg class="icon"><use href="#i-play"/></svg> Procesar pendientes</button>
+      </div>
+    </div>
+
+    <div class="case-view" data-case-view="list">
+      <div class="case-list" id="caseList"></div>
+    </div>
+
+    <div class="case-view hidden" data-case-view="agents">
+      <div class="agents-intro card" id="agentsIntro"></div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Entradas</h2>
+          <span class="card-sub" id="intakeCounts">Todo lo que llega: subidas, correo, plazos y otras fuentes</span>
+          <div class="card-actions">
+            <button type="button" class="btn-ghost" id="pollInbox"><svg class="icon"><use href="#i-mail"/></svg> Revisar buzón</button>
+            <button type="button" class="btn-ghost" id="importEml"><svg class="icon"><use href="#i-upload"/></svg> Importar correo (.eml)</button>
+            <input type="file" id="emlInput" accept=".eml,message/rfc822" hidden>
+          </div>
+        </div>
+        <div class="intake-list" id="intakeList"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Reglas aprendidas</h2><span class="card-sub" id="learningSub">Correcciones → propuesta → simulación → aprobación → versión</span></div>
+        <div class="rule-list" id="learningRules"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Rutas</h2><span class="card-sub">Ha ocurrido algo → expediente → el orquestador decide qué agentes hacen falta</span></div>
+        <div class="route-list" id="agentRoutes"></div>
+      </div>
+      <div class="agents-grid" id="agentsGrid"></div>
+      <div class="card">
+        <div class="card-head"><h2>Últimos recorridos</h2><span class="card-sub">Cada ejecución del orquestador, paso a paso</span></div>
+        <div class="run-feed" id="agentRuns"></div>
+      </div>
+    </div>
+
+    <div class="case-view hidden" data-case-view="memory">
+      <div class="card memory-card">
+        <div class="card-head">
+          <h2>Pregunta a la memoria</h2>
+          <span class="card-sub">Responde con evidencia: documentos, notificaciones y expedientes</span>
+        </div>
+        <form class="memory-form" id="memoryForm">
+          <input type="text" name="question" maxlength="300" placeholder="¿Qué nos pidió Hacienda sobre el IVA del segundo trimestre?" autocomplete="off">
+          <button type="submit" class="act-btn act-primary"><svg class="icon"><use href="#i-search"/></svg> Preguntar</button>
+        </form>
+        <div class="memory-suggestions" id="memorySuggestions">
+          <button type="button" class="chip" data-question="¿Qué requerimientos hemos recibido de Hacienda?">¿Qué requerimientos hemos recibido de Hacienda?</button>
+          <button type="button" class="chip" data-question="¿Qué pasó con el último embargo?">¿Qué pasó con el último embargo?</button>
+          <button type="button" class="chip" data-question="¿Qué facturas tenemos de Repsol?">¿Qué facturas tenemos de Repsol?</button>
+        </div>
+        <div id="memoryAnswer"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tab-panel" id="tab-ventas">
+    <div class="section-title">
+      <h1>Ventas y cobros</h1>
+      <p>Emite facturas con registro de facturación encadenado, automatiza las que se repiten y deja que el agente reclame los impagos.</p>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi kpi-income">
+        <span class="kpi-label">facturado este mes</span>
+        <span class="kpi-value" id="salesMonth">—</span>
+        <span class="kpi-foot">base imponible</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">facturado en el año</span>
+        <span class="kpi-value" id="salesYear">—</span>
+        <span class="kpi-foot" id="salesYearFoot"></span>
+      </div>
+      <div class="kpi kpi-risk">
+        <span class="kpi-label">pendiente de cobro</span>
+        <span class="kpi-value" id="salesPending">—</span>
+        <span class="kpi-foot" id="salesOverdueFoot"></span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">ingresos recurrentes</span>
+        <span class="kpi-value" id="salesRecurring">—</span>
+        <span class="kpi-foot" id="salesRecurringFoot">al mes</span>
+      </div>
+    </div>
+
+    <div class="view-switch">
+      <div class="segmented" id="salesViews">
+        <button type="button" class="segment active" data-view="facturas">Facturas</button>
+        <button type="button" class="segment" data-view="cobros">Cobros <span class="segment-count hidden" id="salesOverdueCount"></span></button>
+        <button type="button" class="segment" data-view="recurrentes">Recurrentes</button>
+        <button type="button" class="segment" data-view="clientes">Clientes</button>
+      </div>
+      <div class="card-actions">
+        <button type="button" class="act-btn act-primary" id="newInvoiceButton"><svg class="icon"><use href="#i-plus"/></svg> Nueva factura</button>
+      </div>
+    </div>
+
+    <div class="sales-view" data-sales-view="facturas">
+      <div class="card">
+        <div class="card-head">
+          <h2>Facturas emitidas</h2>
+          <span class="card-sub" id="salesChain"></span>
+        </div>
+        <form class="filter-toolbar sales-toolbar" id="salesFilter">
+          <label class="grow">Buscar <input type="search" name="q" placeholder="Número, cliente, NIF o concepto"></label>
+          <label>Estado
+            <select name="status">
+              <option value="">Todas</option>
+              <option value="DRAFT">Borradores</option>
+              <option value="pending">Pendientes de cobro</option>
+              <option value="overdue">Vencidas</option>
+              <option value="paid">Cobradas</option>
+            </select>
+          </label>
+        </form>
+        <div class="table-scroll">
+          <table class="data-table stack-table" id="salesTable">
+            <thead>
+              <tr><th>Número</th><th>Cliente</th><th>Fecha</th><th class="num">Total</th><th>Cobro</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="sales-view hidden" data-sales-view="cobros">
+      <div class="collections-hero" id="collectionsHero"></div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Facturas vencidas</h2>
+          <div class="card-actions">
+            <button type="button" class="act-btn act-primary" id="remindAllButton"><svg class="icon"><use href="#i-send"/></svg> Preparar reclamaciones pendientes</button>
+          </div>
+        </div>
+        <p class="detail-hint">El agente redacta el mensaje que toca según el retraso: recordatorio amable, segundo aviso a los 15 días y requerimiento formal con intereses (Ley 3/2004) a partir de 30. Los revisas en la bandeja de salida antes de enviarlos.</p>
+        <div class="table-scroll">
+          <table class="data-table stack-table" id="collectionsTable">
+            <thead>
+              <tr><th>Factura</th><th>Cliente</th><th class="num">Retraso</th><th class="num">Importe</th><th class="num">Intereses</th><th>Reclamación</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel-grid">
+        <div class="card">
+          <div class="card-head"><h2>Vencen esta semana</h2></div>
+          <div id="upcomingCollections"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Quién te debe más</h2><span class="card-sub">retraso medio histórico</span></div>
+          <div id="customerRisk"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sales-view hidden" data-sales-view="recurrentes">
+      <div class="card">
+        <div class="card-head">
+          <h2>Facturas recurrentes</h2>
+          <div class="card-actions">
+            <button type="button" class="act-btn" id="newRecurringButton"><svg class="icon"><use href="#i-repeat"/></svg> Nueva recurrente</button>
+          </div>
+        </div>
+        <p class="detail-hint">Cuotas, igualas, alquileres o mantenimientos. Cada mañana el agente genera las que tocan; puede dejarlas en borrador o emitirlas y preparar el envío. Usa <code>{mes}</code> o <code>{trimestre}</code> en la descripción y se sustituye solo.</p>
+        <div class="recurring-list" id="recurringList"></div>
+      </div>
+    </div>
+
+    <div class="sales-view hidden" data-sales-view="clientes">
+      <div class="card">
+        <div class="card-head">
+          <h2>Clientes</h2>
+          <div class="card-actions">
+            <button type="button" class="btn-ghost" id="importCustomersButton"><svg class="icon"><use href="#i-download"/></svg> Importar de facturas leídas</button>
+            <button type="button" class="act-btn" id="newCustomerButton"><svg class="icon"><use href="#i-plus"/></svg> Nuevo cliente</button>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table stack-table" id="customersTable">
+            <thead>
+              <tr><th>Cliente</th><th>Email</th><th class="num">Plazo</th><th class="num">Facturado</th><th class="num">Pendiente</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tab-panel" id="tab-salida">
+    <div class="section-title">
+      <h1>Bandeja de salida</h1>
+      <p>Todo lo que el agente ha redactado por ti: facturas, reclamaciones, recibos, resúmenes y el cierre para la gestoría. Nada sale sin tu visto bueno.</p>
+    </div>
+
+    <div id="smtpBanner"></div>
+
+    <div class="view-switch">
+      <div class="segmented" id="outboxFilter">
+        <button type="button" class="segment active" data-status="DRAFT">Pendientes</button>
+        <button type="button" class="segment" data-status="SENT">Enviados</button>
+        <button type="button" class="segment" data-status="">Todos</button>
+      </div>
+    </div>
+
+    <div class="outbox-layout">
+      <div class="card outbox-list-card">
+        <div class="outbox-list" id="outboxList"></div>
+      </div>
+      <div class="card outbox-detail" id="outboxDetail"></div>
+    </div>
+  </section>
+
+  <section class="tab-panel" id="tab-jornada">
+    <div class="section-title">
+      <h1>Registro de jornada</h1>
+      <p>Obligatorio para toda empresa con personal (art. 34.9 del Estatuto de los Trabajadores). Fichar lleva un segundo; el agente vigila olvidos, excesos y descansos.</p>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi">
+        <span class="kpi-label">trabajando ahora</span>
+        <span class="kpi-value" id="tsWorking">—</span>
+        <span class="kpi-foot" id="tsClock"></span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">horas registradas hoy</span>
+        <span class="kpi-value" id="tsToday">—</span>
+      </div>
+      <div class="kpi kpi-risk">
+        <span class="kpi-label">incidencias</span>
+        <span class="kpi-value" id="tsAlertCount">—</span>
+        <span class="kpi-foot">últimos 14 días</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">horas del mes</span>
+        <span class="kpi-value" id="tsMonthHours">—</span>
+        <span class="kpi-foot" id="tsMonthBalance"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Hoy</h2>
+        <span class="card-sub">Pulsa sobre una persona para fichar su entrada o su salida</span>
+      </div>
+      <div class="clock-board" id="clockBoard"></div>
+    </div>
+
+    <div id="timesheetAlerts"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 id="tsMonthTitle">Resumen del mes</h2>
+        <div class="card-actions">
+          <button type="button" class="icon-button" id="tsPrev" aria-label="Mes anterior"><svg class="icon flip"><use href="#i-chevron"/></svg></button>
+          <button type="button" class="icon-button" id="tsNext" aria-label="Mes siguiente"><svg class="icon"><use href="#i-chevron"/></svg></button>
+          <a class="btn-ghost" id="tsPdf" target="_blank" rel="noopener noreferrer"><svg class="icon"><use href="#i-doc"/></svg> PDF para firmar</a>
+          <a class="btn-ghost" id="tsXlsx"><svg class="icon"><use href="#i-download"/></svg> Excel</a>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table stack-table" id="tsMonthTable">
+          <thead>
+            <tr><th>Persona</th><th class="num">Días</th><th class="num">Trabajadas</th><th class="num">Previstas</th><th class="num">Diferencia</th><th>Incidencias</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Registros</h2>
+        <div class="card-actions">
+          <select id="tsPerson" class="status-select" aria-label="Persona"></select>
+          <button type="button" class="act-btn" id="tsAddEntry"><svg class="icon"><use href="#i-plus"/></svg> Registro manual</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table compact stack-table" id="tsEntries">
+          <thead>
+            <tr><th>Día</th><th>Persona</th><th>Entrada</th><th>Salida</th><th class="num">Horas</th><th>Observaciones</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="report-note">Las correcciones y los registros manuales guardan quién los hizo y por qué. El registro se conserva cuatro años.</p>
+    </div>
+  </section>
+
+  <section class="tab-panel" id="tab-automatizaciones">
+    <div class="section-title">
+      <h1>Automatizaciones</h1>
+      <p>Tu administrativo digital trabaja solo. Esto es lo que hace cada día sin que nadie tenga que acordarse, y lo que te ha ahorrado este mes.</p>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi">
+        <span class="kpi-label">tareas resueltas este mes</span>
+        <span class="kpi-value" id="autoItems">—</span>
+        <span class="kpi-foot" id="autoRuns"></span>
+      </div>
+      <div class="kpi kpi-income">
+        <span class="kpi-label">horas ahorradas</span>
+        <span class="kpi-value" id="autoHours">—</span>
+        <span class="kpi-foot">estimación por tarea</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">coste evitado</span>
+        <span class="kpi-value" id="autoCost">—</span>
+        <span class="kpi-foot">con tu coste/hora</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">planificador</span>
+        <span class="kpi-value kpi-value-sm" id="autoScheduler">—</span>
+        <span class="kpi-foot" id="autoSchedulerFoot"></span>
+      </div>
+    </div>
+
+    <div class="automation-grid" id="automationGrid"></div>
+
+    <div class="panel-grid">
+      <div class="card">
+        <div class="card-head">
+          <h2>Resumen de hoy</h2>
+          <span class="card-sub">Lo que recibirías por email a las 07:30</span>
+        </div>
+        <pre class="digest-preview" id="digestPreview"></pre>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Últimas ejecuciones</h2></div>
+        <div class="run-list" id="automationRuns"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tab-panel" id="tab-cumplimiento">
+    <div class="section-title">
+      <h1>Estado de cumplimiento</h1>
+      <p>
+        Certificado digital, Verifactu, apoderamientos, protección de
+        datos y controles automáticos sobre tu documentación.
+      </p>
+    </div>
+
+    <div class="compliance-hero card">
+      <div class="compliance-score">
+        <strong id="complianceScore">—</strong>
+        <span>cumplimiento</span>
+      </div>
+      <div>
+        <h2>Tranquilidad normativa</h2>
+        <p id="complianceSummary" class="detail-hint"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Certificado digital</h2>
+        <span class="card-sub">Solo se guardan sus fechas y titular</span>
+      </div>
+      <form id="certificateForm" class="bank-import">
+        <label class="file-drop">
+          <input type="file" name="certificate" accept=".cer,.crt,.pem,.p12,.pfx" required>
+          <span>Certificado (.cer, .crt, .pem, .p12 o .pfx)</span>
+        </label>
+        <label>
+          Contraseña (solo .p12/.pfx)
+          <input type="password" name="password" autocomplete="off">
+        </label>
+        <button type="submit" class="act-btn act-primary">Leer caducidad</button>
+      </form>
+      <div id="certificateInfo"></div>
+    </div>
+
+    <div id="complianceGroups"></div>
+    <p class="report-note" id="complianceNote"></p>
+  </section>
+
+  <!-- PROVEEDORES -->
+  <section class="tab-panel" id="tab-proveedores">
+    <div class="section-title">
+      <h1>Proveedores y clientes</h1>
+      <p>
+        Agregado por NIF/CIF. Los importes incluyen solo facturas
+        aprobadas.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="segmented" id="supplierDirection" role="tablist">
+          <button type="button" class="segment active" data-direction="RECEIVED">Proveedores</button>
+          <button type="button" class="segment" data-direction="ISSUED">Clientes</button>
+        </div>
+        <label class="inline-search">
+          <input
+            type="search"
+            id="supplierSearch"
+            placeholder="Buscar por nombre o NIF…"
+            autocomplete="off"
+          >
+        </label>
+        <span class="card-sub" id="supplierSummary"></span>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table" id="supplierTable">
+          <thead>
+            <tr>
+              <th id="supplierColName">Proveedor</th>
+              <th>NIF/CIF</th>
+              <th>Categoría principal</th>
+              <th class="num">Facturas</th>
+              <th class="num" id="supplierColTotal">Gasto aprobado</th>
+              <th class="num">IVA</th>
+              <th class="num" id="supplierColPending">Pendiente de pago</th>
+              <th>Última factura</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- INFORMES -->
+  <section class="tab-panel" id="tab-informes">
+    <div class="section-title">
+      <h1>Informes y cierre</h1>
+      <p>
+        IVA, gasto por categoría y libros registro, y el paquete trimestral
+        que tu gestoría te pide cada trimestre, en un clic.
+      </p>
+    </div>
+
+    <div class="card advisor-card">
+      <div class="card-head">
+        <h2>Cierre trimestral para la gestoría</h2>
+        <span class="card-sub">Libros registro, borradores de modelos, facturas, nóminas y banco en un único ZIP</span>
+      </div>
+      <div class="advisor-layout">
+        <form class="filter-toolbar compact-toolbar" id="advisorForm">
+          <label>Trimestre <select name="quarter" id="advisorQuarter"></select></label>
+          <label>Año <select name="year" id="advisorYear"></select></label>
+        </form>
+        <div class="advisor-summary" id="advisorSummary"></div>
+        <div class="card-actions">
+          <a class="btn-ghost" id="advisorZip"><svg class="icon"><use href="#i-archive"/></svg> Descargar ZIP</a>
+          <button type="button" class="act-btn act-primary" id="advisorSend"><svg class="icon"><use href="#i-send"/></svg> Preparar envío a la gestoría</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="journalCard">
+      <div class="card-head">
+        <h2>Borrador contable</h2>
+        <span class="card-sub">Libro diario propuesto con el Plan General Contable a partir de facturas y banco conciliado · a revisar por la gestoría</span>
+      </div>
+      <form class="filter-toolbar compact-toolbar" id="journalForm">
+        <label>Desde <input type="date" name="date_from" id="journalFrom"></label>
+        <label>Hasta <input type="date" name="date_to" id="journalTo"></label>
+      </form>
+      <div id="journalSummary"><p class="board-empty">Cargando…</p></div>
+      <div class="card-actions">
+        <a class="btn-ghost" id="journalXlsx"><svg class="icon"><use href="#i-download"/></svg> Descargar Excel</a>
+        <a class="btn-ghost" id="journalCsv"><svg class="icon"><use href="#i-download"/></svg> Descargar CSV</a>
+      </div>
+    </div>
+
+    <div class="card filter-card">
+      <div class="filter-toolbar report-toolbar">
+        <label>
+          Año
+          <select id="reportYear"></select>
+        </label>
+        <label>
+          Periodo
+          <select id="reportQuarter">
+            <option value="1">1er trimestre</option>
+            <option value="2">2º trimestre</option>
+            <option value="3">3er trimestre</option>
+            <option value="4">4º trimestre</option>
+            <option value="">Año completo</option>
+          </select>
+        </label>
+        <label>
+          Libro
+          <select id="exportBook">
+            <option value="received">Facturas recibidas</option>
+            <option value="issued">Facturas expedidas</option>
+          </select>
+        </label>
+        <label class="activity-checkbox">
+          <input type="checkbox" id="exportIncludePending">
+          Incluir pendientes en la exportación
+        </label>
+        <div class="card-actions">
+          <button type="button" class="act-btn act-primary" id="exportXlsx">
+            Exportar Excel
+          </button>
+          <button type="button" class="btn-ghost" id="exportCsv">
+            Exportar CSV
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="reportWarnings"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2 id="reportTitle">Resumen del periodo</h2>
+        <span class="card-sub" id="reportRange"></span>
+      </div>
+      <div class="taxhealth-metrics">
+        <div>
+          <span id="txCount">—</span>
+          <p>facturas aprobadas</p>
+        </div>
+        <div>
+          <span id="txBase">—</span>
+          <p>base imponible</p>
+        </div>
+        <div class="tax-iva">
+          <span id="txIva">—</span>
+          <p>IVA soportado</p>
+        </div>
+        <div>
+          <span id="txTotal">—</span>
+          <p>total gasto</p>
+        </div>
+      </div>
+      <p class="report-extra" id="reportExtra"></p>
+      <p class="report-extra" id="reportIssued"></p>
+
+      <div class="report-grid">
+        <div>
+          <h3 class="report-subtitle">IVA por tipo impositivo</h3>
+          <div class="table-scroll">
+            <table class="data-table" id="rateTable">
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th class="num">Facturas</th>
+                  <th class="num">Base</th>
+                  <th class="num">Cuota</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <h3 class="report-subtitle">Gasto por mes</h3>
+          <div id="monthChart" class="bar-chart"></div>
+        </div>
+      </div>
+
+      <h3 class="report-subtitle">Gasto por categoría</h3>
+      <div class="table-scroll">
+        <table class="data-table" id="categoryTable">
+          <thead>
+            <tr>
+              <th>Categoría</th>
+              <th>Cuenta PGC</th>
+              <th class="num">Facturas</th>
+              <th class="num">Base</th>
+              <th class="num">IVA</th>
+              <th class="num">Total</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="report-note" id="reportNote"></p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Actividad del mes</h2>
+        <span class="card-sub" id="roiNote"></span>
+      </div>
+
+      <div class="roi-metrics">
+        <div class="roi-item">
+          <strong id="roiDocs">—</strong>
+          <span>documentos procesados</span>
+        </div>
+        <div class="roi-item">
+          <strong id="roiRisks">—</strong>
+          <span>incidencias detectadas</span>
+        </div>
+        <div class="roi-item roi-hero">
+          <strong id="roiHours">—</strong>
+          <span>tiempo ahorrado (estimado)</span>
+        </div>
+        <div class="roi-item roi-hero">
+          <strong id="roiCost">—</strong>
+          <span>coste evitado (estimado)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ASISTENTE -->
+  <section class="tab-panel" id="tab-asistente">
+    <div class="section-title">
+      <h1>Asistente</h1>
+      <p>
+        Pregunta por tus facturas, IVA, pagos, proveedores o riesgos.
+        Responde solo con los datos registrados en CapaFiscal.
+      </p>
+    </div>
+
+    <div class="chat-card">
+      <div class="chat-window" id="chatWindow"></div>
+      <div class="chat-suggestions" id="chatSuggestions">
+        <button type="button" class="chip">¿Cuánto IVA llevo este trimestre?</button>
+        <button type="button" class="chip">¿Qué modelos tengo que presentar?</button>
+        <button type="button" class="chip">¿Cómo va el negocio?</button>
+        <button type="button" class="chip">¿Qué notificaciones tengo pendientes?</button>
+        <button type="button" class="chip">¿Qué pagos tengo pendientes?</button>
+        <button type="button" class="chip">¿Qué riesgos hay abiertos?</button>
+      </div>
+      <form class="chat-input" id="chatForm">
+        <input
+          type="text"
+          id="chatInput"
+          placeholder="Escribe tu pregunta…"
+          autocomplete="off"
+          maxlength="2000"
+        >
+        <button type="submit" class="act-btn act-primary">Enviar</button>
+      </form>
+      <p class="chat-disclaimer">
+        Respuestas basadas en reglas y datos internos. No sustituye el
+        criterio de un asesor fiscal.
+      </p>
+    </div>
   </section>
 
   <!-- ACTIVIDAD -->
@@ -205,6 +1326,12 @@
             <option value="document">Documentos</option>
             <option value="invoice">Facturas</option>
             <option value="task">Tareas</option>
+            <option value="report">Informes</option>
+            <option value="notification">Notificaciones</option>
+            <option value="bank">Banco</option>
+            <option value="tax">Impuestos</option>
+            <option value="compliance">Cumplimiento</option>
+            <option value="company">Mi empresa</option>
             <option value="connector">Conectores</option>
           </select>
         </label>
@@ -254,83 +1381,594 @@
     </div>
     <div id="connectorsList"></div>
   </section>
-
-  <!-- INFORMES -->
-  <section class="tab-panel" id="tab-informes">
+  <!-- MI EMPRESA -->
+  <section class="tab-panel" id="tab-empresa">
     <div class="section-title">
-      <h1>Informes</h1>
+      <h1>Mi empresa</h1>
       <p>
-        Resumen calculado a partir de facturas aprobadas.
+        Con tus datos el agente distingue facturas emitidas y recibidas,
+        elige los modelos que te tocan y calcula el ahorro con tu coste real.
       </p>
     </div>
 
     <div class="card">
-      <div class="card-head">
-        <h2>Resumen de facturas</h2>
-      </div>
-      <div class="taxhealth-metrics">
-        <div>
-          <span id="txCount">0</span>
-          <p>facturas aprobadas</p>
+      <form id="companyForm" class="detail-form-grid">
+        <label>
+          Razón social / nombre
+          <input type="text" name="name" maxlength="255">
+        </label>
+        <label>
+          NIF / CIF
+          <input type="text" name="tax_id" maxlength="30">
+        </label>
+        <label>
+          Forma jurídica
+          <select name="legal_form">
+            <option value="SOCIEDAD">Sociedad</option>
+            <option value="AUTONOMO">Autónomo</option>
+          </select>
+        </label>
+        <label>
+          Actividad
+          <input type="text" name="activity" maxlength="255" placeholder="Ej.: taller mecánico, hostelería…">
+        </label>
+        <label>
+          Email de avisos
+          <input type="email" name="email" maxlength="255">
+        </label>
+        <label>
+          Coste por hora del trabajo administrativo (€)
+          <input type="number" name="hourly_cost" step="0.5" min="0">
+        </label>
+        <label>
+          Teléfono
+          <input type="tel" name="phone" maxlength="30">
+        </label>
+        <label>
+          Email de tu gestoría o asesor
+          <input type="email" name="advisor_email" maxlength="255" placeholder="Para el cierre trimestral">
+        </label>
+        <p class="span-2 form-section">Datos en tus facturas</p>
+        <label class="span-2">
+          Dirección fiscal
+          <input type="text" name="address" maxlength="255">
+        </label>
+        <label>
+          Código postal
+          <input type="text" name="postal_code" maxlength="10">
+        </label>
+        <label>
+          Población
+          <input type="text" name="city" maxlength="120">
+        </label>
+        <label>
+          Plazo de pago por defecto (días)
+          <input type="number" name="default_payment_days" min="0" max="365" placeholder="30">
+        </label>
+        <label>
+          Interés de demora (%) · vacío = oficial del BOE
+          <input type="number" name="late_interest_rate" step="0.01" min="0" max="30">
+        </label>
+        <label class="span-2">
+          Pie de factura (inscripción registral, texto legal…)
+          <input type="text" name="invoice_footer" maxlength="500">
+        </label>
+        <p class="span-2 form-section">Nóminas y pagos</p>
+        <label>
+          IBAN de la cuenta de pago
+          <input type="text" name="iban" maxlength="40" placeholder="ES00 0000 0000 0000 0000 0000">
+        </label>
+        <label>
+          BIC (opcional)
+          <input type="text" name="bic" maxlength="11">
+        </label>
+        <label>
+          Tipo AT/EP (%) según tu actividad
+          <input type="number" name="at_ep_rate" step="0.01" min="0" max="10">
+        </label>
+        <p class="span-2 detail-hint" id="companyHint"></p>
+        <div class="span-2 card-actions">
+          <button type="submit" class="act-btn act-primary">Guardar</button>
         </div>
-        <div>
-          <span id="txBase">0 €</span>
-          <p>base imponible</p>
-        </div>
-        <div class="tax-iva">
-          <span id="txIva">0 €</span>
-          <p>IVA soportado</p>
-        </div>
-        <div>
-          <span id="txTotal">0 €</span>
-          <p>total gasto</p>
-        </div>
-      </div>
+      </form>
+    </div>
 
+    <div class="card">
+      <div class="card-head">
+        <h2>Memoria del agente</h2>
+        <span class="card-sub">Categorías aprendidas de tus correcciones</span>
+      </div>
+      <p class="detail-hint">
+        Cuando corriges la categoría de una factura, el agente la recuerda
+        para ese proveedor o cliente y la aplica a las siguientes.
+      </p>
+      <div class="table-scroll">
+        <table class="data-table" id="rulesTable">
+          <thead>
+            <tr>
+              <th>NIF/CIF</th>
+              <th>Categoría</th>
+              <th class="num">Veces aplicada</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  <!-- EQUIPO -->
+  <section class="tab-panel" id="tab-equipo">
+    <div class="section-title">
+      <h1>Equipo</h1>
+      <p>Personas, organigrama, proyectos y ausencias. El agente vigila altas, bajas, contratos y documentación.</p>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi">
+        <span class="kpi-label">plantilla activa</span>
+        <span class="kpi-value" id="teamHeadcount">—</span>
+        <span class="kpi-foot" id="teamFte"></span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">incorporaciones próximas</span>
+        <span class="kpi-value" id="teamIncoming">—</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">coste anual estimado</span>
+        <span class="kpi-value" id="teamCost">—</span>
+        <span class="kpi-foot">salarios + Seguridad Social</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">fuera hoy</span>
+        <span class="kpi-value" id="teamAbsent">—</span>
+        <span class="kpi-foot" id="teamAbsentNames"></span>
+      </div>
+    </div>
+
+    <div id="teamAlerts"></div>
+
+    <div class="view-switch">
+      <div class="segmented" id="teamViews">
+        <button type="button" class="segment active" data-view="personas">Personas</button>
+        <button type="button" class="segment" data-view="organigrama">Organigrama</button>
+        <button type="button" class="segment" data-view="proyectos">Proyectos</button>
+        <button type="button" class="segment" data-view="ausencias">Ausencias</button>
+      </div>
+      <div class="card-actions">
+        <label class="btn-ghost">
+          <svg class="icon"><use href="#i-upload"/></svg> Crear desde CV
+          <input type="file" id="cvInput" accept=".pdf,.txt" hidden>
+        </label>
+        <button type="button" class="act-btn act-primary" id="newEmployeeButton"><svg class="icon"><use href="#i-plus"/></svg> Nueva persona</button>
+      </div>
+    </div>
+
+    <div class="team-view" data-team-view="personas">
+      <div class="card filter-card">
+        <div class="filter-toolbar team-toolbar">
+          <label class="filter-search">
+            Buscar
+            <input type="search" id="peopleSearch" placeholder="Nombre, puesto, habilidad…" autocomplete="off">
+          </label>
+          <label>
+            Departamento
+            <select id="peopleDepartment"><option value="">Todos</option></select>
+          </label>
+          <label>
+            Situación
+            <select id="peopleStatus">
+              <option value="">Todas</option>
+              <option value="ACTIVE">En plantilla</option>
+              <option value="INCOMING">Incorporación próxima</option>
+              <option value="TERMINATED">Baja</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div id="peopleGrid" class="people-grid"></div>
+    </div>
+
+    <div class="team-view hidden" data-team-view="organigrama">
       <div class="card">
         <div class="card-head">
-          <h2>Actividad del sistema</h2>
-          <span class="card-sub" id="roiNote"></span>
+          <h2>Organigrama</h2>
+          <span class="card-sub" id="orgSub"></span>
         </div>
-
-        <div class="roi-metrics">
-          <div class="roi-item">
-            <strong id="roiDocs">0</strong>
-            <span>documentos procesados</span>
-          </div>
-          <div class="roi-item">
-            <strong id="roiRisks">0</strong>
-            <span>documentos para revisar</span>
-          </div>
-          <div class="roi-item roi-hero">
-            <strong id="roiHours">—</strong>
-            <span>tiempo ahorrado</span>
-          </div>
-          <div class="roi-item roi-hero">
-            <strong id="roiCost">—</strong>
-            <span>coste evitado</span>
-          </div>
-        </div>
+        <p class="detail-hint">Se construye con el responsable de cada ficha. Pulsa una persona para abrirla.</p>
+        <div id="orgChart" class="org-chart"></div>
       </div>
+    </div>
+
+    <div class="team-view hidden" data-team-view="proyectos">
+      <details class="card manual-form">
+        <summary><h2>Nuevo proyecto</h2></summary>
+        <form id="projectForm" class="detail-form-grid">
+          <label>Nombre <input type="text" name="name" maxlength="150" required></label>
+          <label>Cliente <input type="text" name="client_name" maxlength="255"></label>
+          <label>Inicio <input type="date" name="start_date"></label>
+          <label>Fin previsto <input type="date" name="end_date"></label>
+          <label class="span-2">Descripción <textarea name="description" rows="2"></textarea></label>
+          <div class="span-2 card-actions"><button type="submit" class="act-btn act-primary">Crear proyecto</button></div>
+        </form>
+      </details>
+      <div id="projectList" class="project-grid"></div>
+    </div>
+
+    <div class="team-view hidden" data-team-view="ausencias">
+      <div class="card">
+        <div class="card-head">
+          <h2 id="absenceMonthTitle">Ausencias</h2>
+          <div class="card-actions">
+            <button type="button" class="btn-ghost" id="absencePrev" aria-label="Mes anterior">‹</button>
+            <button type="button" class="btn-ghost" id="absenceToday">Hoy</button>
+            <button type="button" class="btn-ghost" id="absenceNext" aria-label="Mes siguiente">›</button>
+          </div>
+        </div>
+        <div id="absenceCalendar" class="absence-calendar"></div>
+      </div>
+      <details class="card manual-form">
+        <summary><h2>Registrar ausencia</h2></summary>
+        <form id="absenceForm" class="detail-form-grid">
+          <label>Persona <select name="employee_id" id="absenceEmployee" required></select></label>
+          <label>Tipo <select name="kind" id="absenceKind"></select></label>
+          <label>Desde <input type="date" name="start_date" required></label>
+          <label>Hasta <input type="date" name="end_date" required></label>
+          <label class="span-2">Notas <input type="text" name="notes" maxlength="1000"></label>
+          <div class="span-2 card-actions"><button type="submit" class="act-btn act-primary">Registrar</button></div>
+        </form>
+      </details>
+    </div>
+  </section>
+
+  <!-- NÓMINAS -->
+  <section class="tab-panel" id="tab-nominas">
+    <div class="section-title">
+      <h1>Nóminas</h1>
+      <p>Cálculo mensual, recibos en PDF, remesa SEPA para pagar desde el banco y asiento para la gestoría.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Nóminas subidas</h2>
+        <span class="card-sub" id="payslipDocumentsCount"></span>
+      </div>
+      <div id="payslipDocumentsList" class="documents-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Preparar nómina</h2>
+        <span class="card-sub" id="payrollParams"></span>
+      </div>
+      <form id="payrollCreateForm" class="filter-toolbar compact-toolbar payroll-create">
+        <label>Mes <select name="month" id="payrollMonth"></select></label>
+        <label>Año <select name="year" id="payrollYear"></select></label>
+        <div class="card-actions"><button type="submit" class="act-btn act-primary"><svg class="icon"><use href="#i-plus"/></svg> Generar borrador</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Procesos de nómina</h2></div>
+      <div class="table-scroll">
+        <table class="data-table" id="payrollRunsTable">
+          <thead>
+            <tr>
+              <th>Periodo</th><th class="num">Personas</th><th class="num">Devengado</th>
+              <th class="num">Líquido</th><th class="num">Coste empresa</th><th>Estado</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card hidden" id="payrollRunCard">
+      <div class="card-head">
+        <h2 id="payrollRunTitle">Nómina</h2>
+        <span id="payrollRunStatus"></span>
+      </div>
+      <div class="card-actions payroll-actions" id="payrollRunActions"></div>
+      <div id="payrollRunWarnings"></div>
+      <div class="table-scroll">
+        <table class="data-table payroll-table" id="payslipTable">
+          <thead>
+            <tr>
+              <th>Persona</th><th class="num">Días</th><th class="num">H. extra</th><th class="num">Incentivos</th>
+              <th class="num">Anticipos</th><th class="num">Devengado</th><th class="num">SS trab.</th>
+              <th class="num">IRPF</th><th class="num">Líquido</th><th class="num">Coste</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+      <h3 class="report-subtitle">Asiento contable</h3>
+      <div class="table-scroll">
+        <table class="data-table compact" id="journalTable">
+          <thead><tr><th>Cuenta</th><th>Descripción</th><th class="num">Debe</th><th class="num">Haber</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="report-note">Borrador de gestión: revisa convenio, incapacidades, embargos y atrasos antes de entregar los recibos.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Simulador de coste de contratación</h2>
+        <span class="card-sub">Cuánto cuesta un sueldo y cuánto cobra la persona</span>
+      </div>
+      <form id="simulatorForm" class="filter-toolbar simulator-form">
+        <label>Salario bruto anual (€) <input type="number" name="annual_salary" min="0" step="500" value="24000"></label>
+        <label>Pagas
+          <select name="payments_per_year"><option value="14">14</option><option value="12">12</option></select>
+        </label>
+        <label>Contrato
+          <select name="contract_type"><option value="INDEFINIDO">Indefinido</option><option value="TEMPORAL">Temporal</option></select>
+        </label>
+        <label>Hijos <input type="number" name="children" min="0" max="10" value="0"></label>
+      </form>
+      <div id="simulatorResult" class="indicator-list simulator-result"></div>
     </div>
   </section>
 </main>
 
 <footer class="site-footer">
-  <div class="footer-inner">
-    <span>
-      CapaFiscal · Gestión administrativa para pymes
-    </span>
-    <span class="footer-note">
-      Los datos extraídos deben revisarse antes de utilizarse
-      fiscalmente.
-    </span>
+      <span>CapaFiscal · Administrativo digital para pymes</span>
+      <span class="footer-note">Los datos extraídos y los borradores deben revisarse antes de usarse fiscalmente.</span>
+    </footer>
   </div>
-</footer>
+</div>
+
+<dialog class="document-detail-dialog case-dialog sheet" id="caseDialog">
+  <div class="case-banner" id="caseBanner"></div>
+  <div class="segmented dialog-tabs" id="caseTabs">
+    <button type="button" class="segment active" data-pane="resumen">Resumen</button>
+    <button type="button" class="segment" data-pane="documentacion">Documentación</button>
+    <button type="button" class="segment" data-pane="respuesta">Respuesta</button>
+    <button type="button" class="segment" data-pane="traza">Cómo se ha preparado</button>
+    <button type="button" class="segment" data-pane="historial">Historial</button>
+  </div>
+  <div class="case-pane" data-pane="resumen" id="casePaneSummary"></div>
+  <div class="case-pane hidden" data-pane="documentacion" id="casePaneDocs"></div>
+  <div class="case-pane hidden" data-pane="respuesta" id="casePaneDraft"></div>
+  <div class="case-pane hidden" data-pane="traza" id="casePaneTrace"></div>
+  <div class="case-pane hidden" data-pane="historial" id="casePaneHistory"></div>
+  <div class="dialog-footer case-footer" id="caseActions"></div>
+  <input type="file" id="caseFileInput" class="hidden">
+</dialog>
+
+<dialog class="document-detail-dialog intel-dialog sheet" id="intelDialog" aria-labelledby="intelDialogTitle">
+  <div class="detail-dialog-header">
+    <div>
+      <p class="intel-dialog-eyebrow" id="intelDialogEyebrow"></p>
+      <h2 id="intelDialogTitle"></h2>
+    </div>
+    <button type="button" class="icon-button" data-close-dialog aria-label="Cerrar"><svg class="icon"><use href="#i-close"/></svg></button>
+  </div>
+  <div id="intelDialogBody"></div>
+  <div class="dialog-footer" id="intelDialogActions"></div>
+</dialog>
+
+<dialog class="document-detail-dialog invoice-dialog" id="invoiceDialog">
+  <div class="detail-dialog-header">
+    <div>
+      <h2 id="invoiceDialogTitle">Nueva factura</h2>
+      <p class="detail-hint" id="invoiceDialogSub"></p>
+    </div>
+    <button type="button" class="btn-ghost" data-close-dialog><svg class="icon"><use href="#i-close"/></svg> Cerrar</button>
+  </div>
+  <form id="invoiceForm" class="invoice-form">
+    <div class="detail-form-grid invoice-meta">
+      <label class="span-2">Cliente
+        <span class="input-with-action">
+          <select name="customer_id" id="invoiceCustomer" required></select>
+          <button type="button" class="btn-ghost" data-new-customer>Nuevo</button>
+        </span>
+      </label>
+      <label>Fecha de factura <input type="date" name="issue_date"></label>
+      <label>Vencimiento <input type="date" name="due_date"></label>
+      <label>Retención IRPF % <input type="number" name="withholding_rate" min="0" max="47" step="0.01" placeholder="0"></label>
+      <label>Forma de pago <input type="text" name="payment_terms" maxlength="255" placeholder="Transferencia a la cuenta de la empresa"></label>
+      <label class="span-2 hidden" id="rectificationField">Motivo de la rectificación <input type="text" name="rectification_reason" maxlength="255"></label>
+    </div>
+    <div class="line-editor" id="invoiceLines"></div>
+    <div class="invoice-bottom">
+      <label class="invoice-notes">Notas <textarea name="notes" rows="3" maxlength="2000" placeholder="Aparecen al pie de la factura"></textarea></label>
+      <div class="totals-box" id="invoiceTotals"></div>
+    </div>
+    <div class="record-box hidden" id="invoiceRecord"></div>
+    <div class="dialog-footer" id="invoiceActions"></div>
+  </form>
+</dialog>
+
+<dialog class="document-detail-dialog small-dialog" id="customerDialog">
+  <div class="detail-dialog-header">
+    <h2 id="customerDialogTitle">Nuevo cliente</h2>
+    <button type="button" class="btn-ghost" data-close-dialog><svg class="icon"><use href="#i-close"/></svg> Cerrar</button>
+  </div>
+  <form id="customerForm" class="detail-form-grid">
+    <label class="span-2">Nombre o razón social <input type="text" name="name" maxlength="255" required></label>
+    <label>NIF / CIF <input type="text" name="tax_id" maxlength="30"></label>
+    <label>Email para facturas <input type="email" name="email" maxlength="255"></label>
+    <label class="span-2">Dirección <input type="text" name="address" maxlength="255"></label>
+    <label>Código postal <input type="text" name="postal_code" maxlength="10"></label>
+    <label>Población <input type="text" name="city" maxlength="120"></label>
+    <label>Plazo de pago (días) <input type="number" name="payment_days" min="0" max="365" placeholder="30"></label>
+    <label>Retención IRPF habitual % <input type="number" name="withholding_rate" min="0" max="47" step="0.01"></label>
+    <label>Teléfono <input type="tel" name="phone" maxlength="30"></label>
+    <label class="span-2">Notas <textarea name="notes" rows="2" maxlength="5000"></textarea></label>
+    <div class="span-2 dialog-footer">
+      <button type="button" class="btn-ghost danger-text hidden" id="customerDelete">Eliminar</button>
+      <button type="submit" class="act-btn act-primary">Guardar cliente</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="document-detail-dialog invoice-dialog" id="recurringDialog">
+  <div class="detail-dialog-header">
+    <h2 id="recurringDialogTitle">Nueva factura recurrente</h2>
+    <button type="button" class="btn-ghost" data-close-dialog><svg class="icon"><use href="#i-close"/></svg> Cerrar</button>
+  </div>
+  <form id="recurringForm" class="invoice-form">
+    <div class="detail-form-grid invoice-meta">
+      <label>Nombre <input type="text" name="name" maxlength="150" placeholder="Cuota de mantenimiento" required></label>
+      <label>Cliente <select name="customer_id" id="recurringCustomer" required></select></label>
+      <label>Periodicidad
+        <select name="frequency"><option value="MONTHLY">Mensual</option><option value="QUARTERLY">Trimestral</option><option value="YEARLY">Anual</option></select>
+      </label>
+      <label>Próxima factura <input type="date" name="next_date" required></label>
+      <label>Hasta (opcional) <input type="date" name="end_date"></label>
+      <label>Retención IRPF % <input type="number" name="withholding_rate" min="0" max="47" step="0.01" placeholder="0"></label>
+      <label class="check-line span-2"><input type="checkbox" name="auto_issue"> Emitirla automáticamente (si no, queda en borrador para revisar)</label>
+      <label class="check-line span-2"><input type="checkbox" name="auto_send"> Y preparar el email al cliente en la bandeja de salida</label>
+      <label class="check-line span-2"><input type="checkbox" name="active" checked> Activa</label>
+    </div>
+    <div class="line-editor" id="recurringLines"></div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-ghost danger-text hidden" id="recurringDelete">Eliminar</button>
+      <button type="submit" class="act-btn act-primary">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="document-detail-dialog small-dialog" id="entryDialog">
+  <div class="detail-dialog-header">
+    <h2 id="entryDialogTitle">Registro manual</h2>
+    <button type="button" class="btn-ghost" data-close-dialog><svg class="icon"><use href="#i-close"/></svg> Cerrar</button>
+  </div>
+  <form id="entryForm" class="detail-form-grid">
+    <label class="span-2">Persona <select name="employee_id" id="entryPerson" required></select></label>
+    <label>Día <input type="date" name="work_date" required></label>
+    <span></span>
+    <label>Entrada <input type="time" name="start" required></label>
+    <label>Salida <input type="time" name="end"></label>
+    <label class="span-2">Motivo (obligatorio, queda en el historial) <input type="text" name="reason" maxlength="255" placeholder="Olvidó fichar, corrección de hora…" required></label>
+    <label class="span-2">Observaciones <input type="text" name="note" maxlength="255"></label>
+    <div class="span-2 dialog-footer">
+      <button type="button" class="btn-ghost danger-text hidden" id="entryDelete">Borrar registro</button>
+      <button type="submit" class="act-btn act-primary">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="document-detail-dialog employee-dialog" id="employeeDialog">
+  <div class="detail-dialog-header">
+    <div class="employee-dialog-title">
+      <span class="avatar avatar-lg" id="employeeAvatar"></span>
+      <div>
+        <h2 id="employeeDialogTitle">Nueva persona</h2>
+        <p class="detail-hint" id="employeeDialogSub"></p>
+      </div>
+    </div>
+    <button type="button" class="btn-ghost" id="employeeDialogClose"><svg class="icon"><use href="#i-close"/></svg> Cerrar</button>
+  </div>
+  <div class="segmented dialog-tabs" id="employeeTabs">
+    <button type="button" class="segment active" data-pane="ficha">Ficha</button>
+    <button type="button" class="segment" data-pane="documentos">Documentos</button>
+    <button type="button" class="segment" data-pane="incorporacion">Incorporación</button>
+    <button type="button" class="segment" data-pane="coste">Coste</button>
+  </div>
+  <div class="dialog-pane" data-pane="ficha">
+    <form id="employeeForm" class="detail-form-grid">
+      <p class="span-2 form-section">Datos personales</p>
+      <label>Nombre <input type="text" name="first_name" maxlength="100" required></label>
+      <label>Apellidos <input type="text" name="last_name" maxlength="150"></label>
+      <label>DNI / NIE <input type="text" name="tax_id" maxlength="20"></label>
+      <label>Nº afiliación Seguridad Social <input type="text" name="ss_number" maxlength="20"></label>
+      <label>Email <input type="email" name="email" maxlength="255"></label>
+      <label>Teléfono <input type="tel" name="phone" maxlength="30"></label>
+      <p class="span-2 form-section">Puesto</p>
+      <label>Puesto <input type="text" name="job_title" maxlength="150"></label>
+      <label>Departamento <input type="text" name="department" maxlength="100" list="departmentOptions"></label>
+      <label>Responsable <select name="manager_id" id="employeeManager"></select></label>
+      <label>Habilidades (separadas por comas) <input type="text" name="skills" maxlength="2000"></label>
+      <p class="span-2 form-section">Contrato y Seguridad Social</p>
+      <label>Tipo de contrato <select name="contract_type" id="employeeContract"></select></label>
+      <label>Jornada (%) <input type="number" name="workday_percent" min="1" max="100"></label>
+      <label>Fecha de alta en la empresa <input type="date" name="hire_date"></label>
+      <label>Fin de contrato (temporales) <input type="date" name="contract_end_date"></label>
+      <label>Estado en la Seguridad Social <select name="ss_status" id="employeeSsStatus"></select></label>
+      <label>Fecha de alta en la SS <input type="date" name="ss_registered_at"></label>
+      <label>Fecha de baja en la empresa <input type="date" name="termination_date"></label>
+      <label>Días de vacaciones al año <input type="number" name="vacation_days" min="0" max="60"></label>
+      <p class="span-2 form-section">Nómina</p>
+      <label>Salario bruto anual (€) <input type="number" name="annual_salary" min="0" step="100"></label>
+      <label>Pagas <select name="payments_per_year"><option value="14">14</option><option value="12">12 (prorrateadas)</option></select></label>
+      <label>IRPF % (vacío = estimado) <input type="number" name="irpf_rate" min="0" max="60" step="0.01"></label>
+      <label>Hijos a cargo <input type="number" name="children" min="0" max="20"></label>
+      <label>IBAN para la nómina <input type="text" name="iban" maxlength="40"></label>
+      <label>Convenio <input type="text" name="collective_agreement" maxlength="255"></label>
+      <label class="span-2">Notas <textarea name="notes" rows="2"></textarea></label>
+      <div class="span-2 card-actions">
+        <button type="submit" class="act-btn act-primary">Guardar</button>
+        <button type="button" class="btn-ghost danger-text hidden" id="employeeDelete">Eliminar ficha</button>
+      </div>
+    </form>
+    <datalist id="departmentOptions"></datalist>
+  </div>
+  <div class="dialog-pane hidden" data-pane="documentos">
+    <form id="employeeDocForm" class="bank-import">
+      <label class="file-drop">
+        <input type="file" name="uploaded_file" required>
+        <span>PDF, imagen o Word · máx. 10 MB</span>
+      </label>
+      <label>Tipo <select name="kind" id="employeeDocKind"></select></label>
+      <button type="submit" class="act-btn act-primary">Subir</button>
+    </form>
+    <div id="employeeDocs"></div>
+  </div>
+  <div class="dialog-pane hidden" data-pane="incorporacion">
+    <div id="employeeChecklist"></div>
+  </div>
+  <div class="dialog-pane hidden" data-pane="coste">
+    <div id="employeeCost"></div>
+  </div>
+</dialog>
+
+<div class="palette hidden" id="palette" role="dialog" aria-modal="true" aria-label="Buscar">
+  <div class="palette-box">
+    <div class="palette-input">
+      <svg class="icon"><use href="#i-search"/></svg>
+      <input type="text" id="paletteInput" placeholder="Busca una sección, factura, persona o acción…" autocomplete="off">
+      <kbd>Esc</kbd>
+    </div>
+    <div class="palette-results" id="paletteResults"></div>
+  </div>
+</div>
+
+<div id="dropOverlay" class="drop-overlay hidden" aria-hidden="true">
+  <div class="drop-overlay-inner">
+    <strong>Suelta aquí tus facturas</strong>
+    <span>PDF o TXT · hasta 15 MB por archivo</span>
+  </div>
+</div>
 
 <div id="appMessages" class="app-messages"></div>
 
-<script src="/static/app.js?v=41"></script>
-<script src="/static/activity.js?v=1"></script>
+<script src="/static/auth.js?v=3"></script>
+<script src="/static/dialogs.js?v=1"></script>
+<script src="/static/app.js?v=76"></script>
+<script src="/static/reports.js?v=6"></script>
+<script src="/static/assistant.js?v=3"></script>
+<script src="/static/activity.js?v=4"></script>
+<script src="/static/business.js?v=12"></script>
+<script src="/static/taxes.js?v=4"></script>
+<script src="/static/notifications.js?v=2"></script>
+<script src="/static/compliance.js?v=1"></script>
+<script src="/static/company.js?v=3"></script>
+<script src="/static/team.js?v=3"></script>
+<script src="/static/payroll.js?v=3"></script>
+<script src="/static/cases.js?v=12"></script>
+<script src="/static/sales.js?v=4"></script>
+<script src="/static/outbox.js?v=5"></script>
+<script src="/static/timesheet.js?v=5"></script>
+<script src="/static/automations.js?v=6"></script>
+<script src="/static/intelligence.js?v=2"></script>
+<script src="/static/close.js?v=6"></script>
+<script src="/static/work.js?v=14"></script>
+<script src="/static/accounting.js?v=3"></script>
+<script src="/static/bankconnect.js?v=2"></script>
+<script src="/static/shell.js?v=11"></script>
 </body>
 </html>

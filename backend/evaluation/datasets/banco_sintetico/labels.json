@@ -1,0 +1,390 @@
+{
+  "nota": "SIMULACIÓN — NO OFICIAL. Generado por generar.py: no editar a mano.",
+  "empresa": {
+    "name": "EMPRESA EJEMPLO S.L.",
+    "tax_id": "B00100016"
+  },
+  "extractos": [
+    {
+      "cuenta": "corriente",
+      "fichero": "cuenta_corriente.csv"
+    },
+    {
+      "cuenta": "ahorro",
+      "fichero": "cuenta_ahorro.csv"
+    }
+  ],
+  "facturas": [
+    {
+      "numero": "F-2026-101",
+      "sentido": "RECIBIDA",
+      "nombre": "PAPELERIA CENTRO S.L.",
+      "nif": "B00001008",
+      "fecha": "2026-08-20",
+      "vence": "2026-09-19",
+      "total": "145.20"
+    },
+    {
+      "numero": "TR-5521",
+      "sentido": "RECIBIDA",
+      "nombre": "TRANSPORTES RAPIDOS NORTE S.L.",
+      "nif": "B00001016",
+      "fecha": "2026-08-25",
+      "vence": "2026-09-24",
+      "total": "726.00",
+      "iban": "ES00 0000 0000 0000 0000 0042"
+    },
+    {
+      "numero": "TR-5530",
+      "sentido": "RECIBIDA",
+      "nombre": "TRANSPORTES RAPIDOS NORTE S.L.",
+      "nif": "B00001016",
+      "fecha": "2026-08-29",
+      "vence": "2026-09-28",
+      "total": "121.00",
+      "iban": "ES00 0000 0000 0000 0000 0042"
+    },
+    {
+      "numero": "TR-5544",
+      "sentido": "RECIBIDA",
+      "nombre": "TRANSPORTES RAPIDOS NORTE S.L.",
+      "nif": "B00001016",
+      "fecha": "2026-09-08",
+      "vence": "2026-10-08",
+      "total": "484.00",
+      "iban": "ES00 0000 0000 0000 0000 0042"
+    },
+    {
+      "numero": "SW-0091",
+      "sentido": "RECIBIDA",
+      "nombre": "SOFTWARE GESTION DIGITAL S.L.",
+      "nif": "B00001024",
+      "fecha": "2026-09-01",
+      "vence": "2026-09-05",
+      "total": "363.00"
+    },
+    {
+      "numero": "LB-778",
+      "sentido": "RECIBIDA",
+      "nombre": "LIMPIEZAS BRILLO S.L.",
+      "nif": "B00001032",
+      "fecha": "2026-09-01",
+      "vence": "2026-09-30",
+      "total": "242.00"
+    },
+    {
+      "numero": "AS-0907",
+      "sentido": "RECIBIDA",
+      "nombre": "ASESORIA NUMEROS CLAROS S.L.",
+      "nif": "B00001040",
+      "fecha": "2026-09-05",
+      "vence": "2026-09-05",
+      "total": "302.50"
+    },
+    {
+      "numero": "SE-201",
+      "sentido": "RECIBIDA",
+      "nombre": "SUMINISTROS ELECTRICOS ALFA S.L.",
+      "nif": "B00001057",
+      "fecha": "2026-09-02",
+      "vence": "2026-09-12",
+      "total": "98.01"
+    },
+    {
+      "numero": "SE-202",
+      "sentido": "RECIBIDA",
+      "nombre": "SUMINISTROS ELECTRICOS ALFA S.L.",
+      "nif": "B00001057",
+      "fecha": "2026-09-04",
+      "vence": "2026-09-14",
+      "total": "98.01"
+    },
+    {
+      "numero": "MO-33",
+      "sentido": "RECIBIDA",
+      "nombre": "MOBILIARIO OFICINA PLUS S.L.",
+      "nif": "B00001065",
+      "fecha": "2026-06-10",
+      "vence": "2026-07-10",
+      "total": "1210.00"
+    },
+    {
+      "numero": "E-2026-031",
+      "sentido": "EMITIDA",
+      "nombre": "CLIENTE ALFA S.L.",
+      "nif": "B00001073",
+      "fecha": "2026-08-28",
+      "vence": "2026-09-27",
+      "total": "1815.00"
+    },
+    {
+      "numero": "E-2026-032",
+      "sentido": "EMITIDA",
+      "nombre": "CLIENTE BETA S.L.",
+      "nif": "B00001081",
+      "fecha": "2026-09-03",
+      "vence": "2026-10-03",
+      "total": "605.00"
+    },
+    {
+      "numero": "E-2026-020",
+      "sentido": "EMITIDA",
+      "nombre": "CLIENTE GAMMA S.L.",
+      "nif": "B00001099",
+      "fecha": "2026-07-01",
+      "vence": "2026-07-31",
+      "total": "968.00"
+    }
+  ],
+  "movimientos": [
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-01",
+      "concepto": "COMISION MANTENIMIENTO CUENTA",
+      "importe": "-12.00",
+      "expected": {
+        "resultado": "justificado",
+        "tipo": "COMISION",
+        "facturas": [],
+        "auto": null,
+        "nota": "comisión: sin factura de proveedor"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-02",
+      "concepto": "RECIBO SEGURO MUTUA EJEMPLO POLIZA 778",
+      "importe": "-85.40",
+      "expected": {
+        "resultado": "sin_factura",
+        "facturas": [],
+        "auto": false,
+        "nota": "domiciliación sin factura registrada"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-04",
+      "concepto": "RECIBO SEGURO MUTUA EJEMPLO POLIZA 778",
+      "importe": "-85.40",
+      "expected": {
+        "resultado": "duplicado",
+        "facturas": [],
+        "auto": false,
+        "nota": "el mismo recibo cargado dos veces"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-05",
+      "concepto": "RECIBO SOFTWARE GESTION DIGITAL",
+      "importe": "-363.00",
+      "expected": {
+        "resultado": "conciliado",
+        "facturas": [
+          "SW-0091"
+        ],
+        "auto": true,
+        "nota": "domiciliación: nombre + importe exacto + fecha del vencimiento"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-06",
+      "concepto": "PAGO TARJETA 4B ASESORIA",
+      "importe": "-302.50",
+      "expected": {
+        "resultado": "conciliado",
+        "facturas": [
+          "AS-0907"
+        ],
+        "auto": true,
+        "nota": "nombre + importe exacto + fecha"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-08",
+      "concepto": "COMPRA TARJETA MARKETPLACE ONLINE",
+      "importe": "-37.90",
+      "expected": {
+        "resultado": "sin_factura",
+        "facturas": [],
+        "auto": false,
+        "nota": "gasto con tarjeta sin factura"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-12",
+      "concepto": "RECIBO SUMINISTROS ELECTRICOS",
+      "importe": "-98.01",
+      "expected": {
+        "resultado": "propuesta",
+        "facturas": [
+          "SE-201",
+          "SE-202"
+        ],
+        "auto": false,
+        "nota": "dos facturas iguales del mismo proveedor: decide una persona"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-15",
+      "concepto": "TRANSFERENCIA DE CLIENTE BETA B00001081",
+      "importe": "605.00",
+      "expected": {
+        "resultado": "conciliado",
+        "facturas": [
+          "E-2026-032"
+        ],
+        "auto": true,
+        "nota": "cobro con el NIF del cliente"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-18",
+      "concepto": "TRANSFERENCIA PAPELERIA CENTRO F-2026-101",
+      "importe": "-145.20",
+      "expected": {
+        "resultado": "conciliado",
+        "facturas": [
+          "F-2026-101"
+        ],
+        "auto": true,
+        "nota": "nº de factura en el concepto"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-20",
+      "concepto": "TRANSFERENCIA MOBILIARIO OFICINA PLUS",
+      "importe": "-1210.00",
+      "expected": {
+        "resultado": "propuesta",
+        "facturas": [
+          "MO-33"
+        ],
+        "auto": false,
+        "nota": "nombre e importe, pero dos meses después del vencimiento"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-22",
+      "concepto": "TRANSFERENCIA PAPELERIA CENTRO F-2026-101",
+      "importe": "-145.20",
+      "expected": {
+        "resultado": "duplicado",
+        "facturas": [],
+        "auto": false,
+        "nota": "la misma factura pagada dos veces"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-24",
+      "concepto": "TRANSF A ES00 0000 0000 0000 0000 0042 TRANSPORTES RAPIDOS NORTE",
+      "importe": "-847.00",
+      "expected": {
+        "resultado": [
+          "conciliado",
+          "propuesta"
+        ],
+        "facturas": [
+          "TR-5521",
+          "TR-5530"
+        ],
+        "auto": null,
+        "nota": "un pago por dos facturas del mismo proveedor (IBAN + suma exacta): conciliarlo solo o proponerlo son correctos"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-26",
+      "concepto": "INGRESO EFECTIVO",
+      "importe": "200.00",
+      "expected": {
+        "resultado": "sin_factura",
+        "facturas": [],
+        "auto": false,
+        "nota": "ingreso sin factura"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-28",
+      "concepto": "TRANSFERENCIA DE CLIENTE ALFA S.L. E-2026-031",
+      "importe": "1815.00",
+      "expected": {
+        "resultado": "conciliado",
+        "facturas": [
+          "E-2026-031"
+        ],
+        "auto": true,
+        "nota": "cobro con nº de factura"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-29",
+      "concepto": "TRANSFERENCIA LIMPIEZAS BRILLO LB-778",
+      "importe": "-240.00",
+      "expected": {
+        "resultado": "importe_distinto",
+        "facturas": [
+          "LB-778"
+        ],
+        "auto": false,
+        "nota": "se reconoce la factura, faltan 2,00 €"
+      }
+    },
+    {
+      "cuenta": "corriente",
+      "fecha": "2026-09-30",
+      "concepto": "TRASPASO A CUENTA AHORRO",
+      "importe": "-500.00",
+      "expected": {
+        "resultado": "justificado",
+        "tipo": "TRASPASO",
+        "facturas": [],
+        "auto": null,
+        "nota": "traspaso entre cuentas propias"
+      }
+    },
+    {
+      "cuenta": "ahorro",
+      "fecha": "2026-09-30",
+      "concepto": "TRASPASO DESDE CUENTA CORRIENTE",
+      "importe": "500.00",
+      "expected": {
+        "resultado": "justificado",
+        "tipo": "TRASPASO",
+        "facturas": [],
+        "auto": null,
+        "nota": "la otra pata del traspaso, en el otro banco"
+      }
+    },
+    {
+      "cuenta": "ahorro",
+      "fecha": "2026-09-30",
+      "concepto": "LIQUIDACION INTERESES",
+      "importe": "0.42",
+      "expected": {
+        "resultado": "sin_factura",
+        "facturas": [],
+        "auto": false,
+        "nota": "intereses: ingreso sin factura"
+      }
+    }
+  ],
+  "facturas_sin_pago": [
+    "E-2026-020",
+    [
+      "SE-201",
+      "SE-202"
+    ]
+  ]
+}

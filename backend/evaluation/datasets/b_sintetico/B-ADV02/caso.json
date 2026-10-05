@@ -1,0 +1,49 @@
+{
+  "case_id": "B-ADV02",
+  "conjunto": "B",
+  "bloque": "adversarial",
+  "titulo": "«liquidación» dentro de «autoliquidación»",
+  "descripcion": "Requerimiento de verificación de datos que habla de la autoliquidación varias veces: no es una liquidación.",
+  "etiquetas": [
+    "adversarial"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "verificacion_autoliquidacion.pdf",
+      "tipo": "requerimiento",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "verificacion_autoliquidacion.pdf",
+      "expected": {
+        "type": "NOTIFICATION",
+        "route": "requerimiento",
+        "procedure": "VERIFICACION_DATOS",
+        "procedure_not": [
+          "LIQUIDACION",
+          "PROPUESTA_LIQUIDACION"
+        ],
+        "deadline": "2026-10-08",
+        "requires_human": true,
+        "tax_reference": {
+          "model": "111",
+          "year": 2026,
+          "quarter": 2
+        }
+      }
+    }
+  ],
+  "expected": {}
+}

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+from app import clock
 import base64
 import json
-import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -16,7 +15,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import Column, DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.exc import IntegrityError
 
+from app.config import settings as app_settings
 from app.database import Base, SessionLocal, engine
+from app.models import TenantMixin
 
 
 router = APIRouter(
@@ -27,16 +28,31 @@ router = APIRouter(
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 GRAPH_SCOPES = ["User.Read", "Mail.Read"]
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = PROJECT_ROOT / "data"
+# Misma carpeta de datos que la base de datos (configurable con DATA_DIR).
+DATA_DIR: Path = app_settings.data_dir
 TOKEN_CACHE_FILE = DATA_DIR / "outlook_token_cache.enc"
+
+# Ubicación usada por versiones anteriores (carpeta data/ en la raíz).
+_LEGACY_TOKEN_CACHE_FILE = (
+    Path(__file__).resolve().parents[2] / "data" / "outlook_token_cache.enc"
+)
+
+if (
+    _LEGACY_TOKEN_CACHE_FILE.exists()
+    and not TOKEN_CACHE_FILE.exists()
+    and _LEGACY_TOKEN_CACHE_FILE != TOKEN_CACHE_FILE
+):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    _LEGACY_TOKEN_CACHE_FILE.replace(TOKEN_CACHE_FILE)
 
 # Los flujos OAuth pendientes viven en memoria.
 # Para un despliegue con varios procesos se moverán a Redis o BD.
 _PENDING_AUTH_FLOWS: dict[str, dict[str, Any]] = {}
 
 
-class OutlookImport(Base):
+class OutlookImport(TenantMixin, Base):
+    """Adjuntos ya importados, por cliente (la tabla filtra y marca tenant_id como las demás)."""
+
     __tablename__ = "outlook_imports"
 
     id = Column(Integer, primary_key=True)
@@ -47,44 +63,31 @@ class OutlookImport(Base):
     imported_at = Column(
         DateTime,
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: clock.now(),
     )
 
     __table_args__ = (
         UniqueConstraint(
+            "tenant_id",
             "message_id",
             "attachment_id",
-            name="uq_outlook_message_attachment",
+            name="uq_outlook_tenant_message_attachment",
         ),
     )
 
 
-OutlookImport.__table__.create(
-    bind=engine,
-    checkfirst=True,
-)
+# La tabla la crean las migraciones (app/migrate.py).
 
 
 def _settings() -> dict[str, str]:
+    # Se leen de la configuración central para que funcionen tanto las
+    # variables de entorno como el archivo .env.
     return {
-        "client_id": os.getenv("OUTLOOK_CLIENT_ID", "").strip(),
-        "client_secret": os.getenv(
-            "OUTLOOK_CLIENT_SECRET",
-            "",
-        ).strip(),
-        "tenant_id": os.getenv(
-            "OUTLOOK_TENANT_ID",
-            "common",
-        ).strip(),
-        "redirect_uri": os.getenv(
-            "OUTLOOK_REDIRECT_URI",
-            "http://127.0.0.1:8000"
-            "/api/connectors/outlook/callback",
-        ).strip(),
-        "encryption_key": os.getenv(
-            "APP_ENCRYPTION_KEY",
-            "",
-        ).strip(),
+        "client_id": app_settings.outlook_client_id.strip(),
+        "client_secret": app_settings.outlook_client_secret.strip(),
+        "tenant_id": app_settings.outlook_tenant_id.strip(),
+        "redirect_uri": app_settings.outlook_redirect_uri.strip(),
+        "encryption_key": app_settings.app_encryption_key.strip(),
     }
 
 
@@ -372,8 +375,24 @@ async def _send_to_existing_upload(
     return payload
 
 
+MULTI_COMPANY_UNAVAILABLE = (
+    "Outlook no está disponible en multiempresa: la conexión (y su caché de tokens) es una sola para toda la "
+    "instalación, sin cliente, y los adjuntos acabarían en el cliente de quien pulse «Sincronizar». "
+    "Usa la importación de .eml o el buzón asignado (EMAIL_CLIENT_ID). Ver docs/correo_multiempresa.md."
+)
+
+
+def _require_single_company() -> None:
+    """Multiempresa: mejor sin Outlook que con el correo de un cliente dentro de otro."""
+    if app_settings.auth_required:
+        raise HTTPException(status_code=409, detail={"message": MULTI_COMPANY_UNAVAILABLE})
+
+
 @router.get("/status")
 def outlook_status() -> dict[str, Any]:
+    if app_settings.auth_required:
+        return {"configured": _configured(), "connected": False, "account": None, "available": False,
+                "message": MULTI_COMPANY_UNAVAILABLE}
     if not _configured():
         return {
             "configured": False,
@@ -412,6 +431,7 @@ def outlook_status() -> dict[str, Any]:
 
 @router.get("/login")
 def outlook_login() -> RedirectResponse:
+    _require_single_company()
     settings = _require_configuration()
 
     cache = _load_token_cache()
@@ -446,6 +466,7 @@ def outlook_login() -> RedirectResponse:
 
 @router.get("/callback")
 def outlook_callback(request: Request) -> RedirectResponse:
+    _require_single_company()
     state = request.query_params.get("state", "")
     flow = _PENDING_AUTH_FLOWS.pop(state, None)
 
@@ -502,6 +523,7 @@ def outlook_callback(request: Request) -> RedirectResponse:
 
 @router.post("/disconnect")
 def outlook_disconnect() -> dict[str, Any]:
+    _require_single_company()
     if TOKEN_CACHE_FILE.exists():
         TOKEN_CACHE_FILE.unlink()
 
@@ -518,6 +540,7 @@ async def sync_outlook(
     request: Request,
     limit: int = 25,
 ) -> dict[str, Any]:
+    _require_single_company()
     token, account = _get_access_token()
 
     limit = max(1, min(limit, 100))
@@ -528,6 +551,7 @@ async def sync_outlook(
     failures: list[dict[str, str]] = []
 
     db = SessionLocal()
+    db.info["tenant_id"] = getattr(request.state, "tenant_id", None)  # el cliente elegido, como en get_db
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as graph_client:

@@ -1,0 +1,17 @@
+TALLERES GARCIA S.L.
+Avenida Libertad 3, 20001 San Sebastián
+CIF: B20123457
+FACTURA Nº: TG-2026-0031
+Fecha: 14/09/2026
+Vencimiento: 14/10/2026
+
+Cliente: CONSTRUCCIONES ARANA S.A.
+NIF: A48123456
+Calle Mayor 5, Bilbao
+
+Concepto
+Reparación y mantenimiento de maquinaria de obra   1.200,00 €
+
+Base imponible 1.200,00 €
+IVA 21% 252,00 €
+Total factura 1.452,00 €

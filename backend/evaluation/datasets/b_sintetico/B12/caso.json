@@ -1,0 +1,38 @@
+{
+  "case_id": "B12",
+  "conjunto": "B",
+  "bloque": "normales",
+  "titulo": "Certificado sin acción",
+  "descripcion": "Certificado de estar al corriente: se archiva, no hay nada que hacer.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "certificado_corriente.pdf",
+      "tipo": "certificado",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "certificado_corriente.pdf",
+      "expected": {
+        "requires_human": false,
+        "deadline": null,
+        "not_invoice": true
+      }
+    }
+  ],
+  "expected": {}
+}

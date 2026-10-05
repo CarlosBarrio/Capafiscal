@@ -1,0 +1,47 @@
+{
+  "case_id": "B-ADV04",
+  "conjunto": "B",
+  "bloque": "adversarial",
+  "titulo": "Datos registrales en texto girado",
+  "descripcion": "La cabecera solo trae la marca; la razón social y el NIF están en un texto girado en el margen.",
+  "etiquetas": [
+    "adversarial"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "factura_texto_girado.pdf",
+      "tipo": "factura",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "factura_texto_girado.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_name": "Suministros Ficticios Duero S.L.",
+          "supplier_tax_id": "B00200022",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "SFD-2026-131",
+          "invoice_date": "2026-09-22",
+          "subtotal": "345.60",
+          "tax_total": "72.58",
+          "total": "418.18"
+        }
+      }
+    }
+  ],
+  "expected": {}
+}

@@ -1,0 +1,15 @@
+{
+  "id": "invoice_vat_001",
+  "descripcion": "Factura que parecía normal pero con un IVA distinto del habitual: el Detector la escala a factura sospechosa y se encadenan Memoria, Fiscal y Gestor.",
+  "entrada": {
+    "tipo": "invoice",
+    "historial": {"supplier": "GESTORIA LOPEZ S.L.", "tax_id": "B34567890", "totals": [150, 150, 150, 150, 150]},
+    "factura": {"number": "GL-0200", "total": 150, "vat_rate": 10, "days_ago": 20}
+  },
+  "ruta_esperada": "factura_sospechosa",
+  "ruta_inicial": "documento_normal",
+  "agentes_esperados": ["vigilante", "expedientes", "detector", "memoria", "fiscal", "gestor", "director"],
+  "resultado_esperado": {"expediente": true, "kind": "ANOMALY", "procedure": "FACTURA_SOSPECHOSA", "hallazgos": ["IVA_INUSUAL"], "riesgo": "medium"},
+  "evidencias_esperadas": ["GESTORIA LOPEZ S.L. · GL-0200"],
+  "accion_esperada": "Revisa el tipo de IVA"
+}

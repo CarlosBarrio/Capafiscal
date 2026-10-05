@@ -1,0 +1,48 @@
+{
+  "case_id": "B19",
+  "conjunto": "B",
+  "bloque": "facturas",
+  "titulo": "Factura con retención de IRPF",
+  "descripcion": "Profesional persona física: base, IVA 21 %, retención 15 % y total.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "honorarios_A-26-118.pdf",
+      "tipo": "factura",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "honorarios_A-26-118.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_name": "Laura Inventada Martín",
+          "supplier_tax_id": "00012345V",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "A-26-118",
+          "invoice_date": "2026-09-30",
+          "subtotal": "800.00",
+          "tax_total": "168.00",
+          "withholding_total": "120.00",
+          "total": "848.00"
+        }
+      }
+    }
+  ],
+  "expected": {}
+}

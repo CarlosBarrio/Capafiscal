@@ -1,0 +1,10 @@
+{
+  "id": "notification_001",
+  "descripcion": "Requerimiento de la AEAT sobre el 303 del 2T: se abre expediente, se preparan los libros, se piden los documentos que faltan y se redacta la contestación.",
+  "entrada": {"tipo": "notification", "texto": "requerimiento_303"},
+  "ruta_esperada": "requerimiento",
+  "agentes_esperados": ["vigilante", "expedientes", "fiscal", "memoria", "gestor", "perseguidor", "director"],
+  "resultado_esperado": {"expediente": true, "kind": "NOTIFICATION", "procedure": "COMPROBACION_LIMITADA", "status": "WAITING_HUMAN", "subject_type": "company"},
+  "evidencias_esperadas": ["Modelo 303", "Libro registro de facturas expedidas"],
+  "accion_esperada": "Revisar y aprobar el escrito de contestación"
+}

@@ -21,3 +21,4 @@ cryptography>=43.0
 
 openpyxl>=3.1
 reportlab>=4.2
+anthropic>=1.0  # opcional: agentes con Claude si hay ANTHROPIC_API_KEY

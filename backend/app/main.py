@@ -1,57 +1,78 @@
 from __future__ import annotations
 
+from app import clock
 import hashlib
+import logging
 import os
-import re
 import uuid
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
-from typing import Annotated
 from typing import Any
 
 from fastapi import Body
-from fastapi import Depends
 from fastapi import FastAPI
 from fastapi import File
-from fastapi import Header
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi import UploadFile
 from fastapi import status
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.inspection import inspect as sqlalchemy_inspect
-from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import SessionLocal
 from app.database import create_database_tables
-from app.database import get_db
+from app.deps import ActorHeader
+from app.deps import DatabaseDependency
+from app.deps import normalize_actor
 from app.invoice_service import add_audit_event
 from app.invoice_service import approve_invoice
 from app.invoice_service import get_document
 from app.invoice_service import get_invoice
 from app.invoice_service import process_document
 from app.invoice_service import reject_invoice
+from app.invoice_service import reopen_invoice
+from app.invoice_service import set_invoice_payment
 from app.invoice_service import update_invoice
 from app.models import AuditEvent
 from app.models import Document
 from app.models import Invoice
 from app.operations_service import assistant_answer
-from app.operations_service import build_agent_catalog
 from app.operations_service import build_monthly_impact
 from app.operations_service import build_today_dashboard
 from app.operations_service import connector_catalog
 from app.operations_service import list_open_risks
+from app.extractor import CATEGORY_ACCOUNTS
+from app.business_routes import router as business_router
 from app.outlook_connector import router as outlook_router
+from app.team_routes import router as team_router
+from app.ops_routes import router as ops_router
+from app.agent_routes import portal_router
+from app.agent_routes import router as agent_router
+from app.reports_service import apply_document_filters
+from app.reports_service import build_ledger_rows
+from app.reports_service import build_payments_overview
+from app.reports_service import build_supplier_list
+from app.reports_service import build_vat_report
+from app.reports_service import ISSUED
+from app.reports_service import normalize_direction
+from app.reports_service import ledger_to_csv
+from app.reports_service import ledger_to_xlsx
+from app.reports_service import period_label
+from app.reports_service import quarter_range
 from app.schemas import ActionResponse
-from app.schemas import AgentResponse
 from app.schemas import AssistantQueryRequest
 from app.schemas import AssistantQueryResponse
 from app.schemas import AuditEventResponse
@@ -59,7 +80,9 @@ from app.schemas import ConnectorResponse
 from app.schemas import DashboardTodayResponse
 from app.schemas import DocumentDetail
 from app.schemas import DocumentListItem
+from app.schemas import InvoicePaymentRequest
 from app.schemas import InvoiceRejectRequest
+from app.schemas import InvoiceReopenRequest
 from app.schemas import InvoiceResponse
 from app.schemas import InvoiceUpdate
 from app.schemas import MonthlyImpactResponse
@@ -80,24 +103,8 @@ STATIC_DIRECTORY = APP_DIRECTORY / "static"
 
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
-SAFE_ACTOR_PATTERN = re.compile(
-    r"[^a-zA-Z0-9@._\-\s]"
-)
-
-
 class InvoiceApprovalRequest(BaseModel):
     force: bool = False
-
-
-DatabaseDependency = Annotated[
-    Session,
-    Depends(get_db),
-]
-
-ActorHeader = Annotated[
-    str | None,
-    Header(alias="X-Actor"),
-]
 
 
 def orm_to_dict(
@@ -114,20 +121,6 @@ def orm_to_dict(
             for attribute in mapper.column_attrs
         }
     )
-
-
-def normalize_actor(
-    actor: str | None,
-) -> str:
-    if not actor:
-        return "usuario-local"
-
-    cleaned = SAFE_ACTOR_PATTERN.sub(
-        "",
-        actor,
-    ).strip()
-
-    return cleaned[:100] or "usuario-local"
 
 
 def clean_original_filename(
@@ -196,6 +189,27 @@ def validate_file_signature(
 
         return
 
+    # Word, OpenDocument, RTF, HTML y XML: el contenido debe ser lo que dice la extensión.
+    signatures = {
+        ".doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+        ".docx": (b"PK\x03\x04",),
+        ".odt": (b"PK\x03\x04",),
+        ".rtf": (b"{\\rtf",),
+    }
+    if extension in signatures or extension in {".htm", ".html", ".xml"}:
+        with file_path.open("rb") as file_handle:
+            sample = file_handle.read(8192)
+        if extension in signatures:
+            valid = sample.startswith(signatures[extension])
+        else:
+            valid = sample[:2] in (b"\xff\xfe", b"\xfe\xff") or b"\x00" not in sample
+        if not valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El archivo tiene extensión {extension}, pero su contenido no corresponde a ese formato.",
+            )
+        return
+
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=f"El tipo de archivo {extension} no está permitido.",
@@ -262,8 +276,44 @@ def get_missing_invoice_fields(
     return missing_fields
 
 
+def run_agents_for_document(database, document_id: int | None, *, force: bool = False) -> None:
+    """Ha llegado un documento: entra como evento y el orquestador decide qué agentes lo trabajan.
+
+    Notificación → su ruta (requerimiento, embargo…). Factura recibida →
+    Detector y, si hay algo raro, expediente de «factura sospechosa». El
+    evento queda registrado (idempotencia y estado) en ingested_events.
+    """
+    if not document_id:
+        return
+
+    from app.agents.intake import ingest
+    from app.agents.intake import with_retry
+
+    def work():
+        ingest(
+            database,
+            source="upload",
+            external_id=f"document:{document_id}",
+            kind="document",
+            payload={"document_id": document_id},
+            force=force,
+        )
+        database.commit()
+
+    try:
+        with_retry(database, work)
+    except Exception:
+        database.rollback()
+        logging.getLogger(__name__).exception("Los agentes no pudieron procesar el documento %s", document_id)
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    from app.observability import configure_logging
+    from app.production import check_on_startup
+
+    configure_logging()
+    check_on_startup()  # en producción, una configuración insegura impide arrancar
     settings.data_dir.mkdir(
         parents=True,
         exist_ok=True,
@@ -275,18 +325,41 @@ async def lifespan(application: FastAPI):
 
     create_database_tables()
 
-    database = SessionLocal()
+    from sqlalchemy import select as _select
 
-    try:
-        synchronize_all_review_tasks(database)
-        database.commit()
-    except Exception:
-        database.rollback()
-        raise
-    finally:
-        database.close()
+    from app.models import Client
+    from app.tenancy import set_tenant
+
+    if settings.auth_required:
+        with SessionLocal() as database:
+            tenants = list(database.scalars(_select(Client.id)).all())
+    else:
+        tenants = [None]
+    for tenant in tenants:
+        database = SessionLocal()
+        set_tenant(database, tenant)
+        try:
+            # Lo subido con reglas anteriores (albaranes, ofertas, pedidos, nóminas tomados por facturas o
+            # notificaciones) se pone en su sitio con el texto ya leído; después, las tareas de revisión.
+            from app.invoice_service import reclassify_stored_documents
+
+            reclassify_stored_documents(database)
+            synchronize_all_review_tasks(database)
+            database.commit()
+        except Exception:
+            database.rollback()
+            raise
+        finally:
+            database.close()
+
+    from app.automation_service import SCHEDULER
+
+    if settings.enable_scheduler:
+        SCHEDULER.start()
 
     yield
+
+    SCHEDULER.stop()
 
 
 app = FastAPI(
@@ -300,7 +373,111 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_conflict(request: Request, error: IntegrityError) -> JSONResponse:
+    """Dos peticiones que crean lo mismo a la vez (doble clic, dos personas): la base de datos impide el
+    duplicado y quien llega segundo recibe un 409 explicable, no un error 500."""
+    logging.getLogger(__name__).warning("Conflicto de integridad en %s %s: %s", request.method, request.url.path, error.orig)
+    return JSONResponse(status_code=409, content={"detail": "Otra persona (u otra pestaña) acaba de hacer este mismo cambio. Recarga para ver el estado actual."})
+
+
 app.include_router(outlook_router)
+app.include_router(business_router)
+app.include_router(team_router)
+app.include_router(ops_router)
+app.include_router(agent_router)
+app.include_router(portal_router)
+from app.auth_routes import router as auth_router  # noqa: E402
+
+app.include_router(auth_router)
+
+from app.intelligence.routes import router as intelligence_router  # noqa: E402
+
+app.include_router(intelligence_router)
+
+from app.close_routes import router as close_router  # noqa: E402
+
+app.include_router(close_router)
+
+from app.work_routes import router as work_router  # noqa: E402
+
+app.include_router(work_router)
+
+from app.accounting_routes import router as accounting_router  # noqa: E402
+
+app.include_router(accounting_router)
+
+from app.treasury_routes import router as treasury_router  # noqa: E402
+
+app.include_router(treasury_router)
+
+from app.bank_sync_routes import router as bank_sync_router  # noqa: E402
+
+app.include_router(bank_sync_router)
+
+
+@app.middleware("http")
+async def identify_request(request, call_next):
+    """Quién llama y para qué cliente. Sin AUTH_REQUIRED, empresa única (o X-Client-Id para pruebas).
+
+    También deja en request_context quién es (para la auditoría) y lo que declara la cabecera X-Actor,
+    que se guarda como «declarado» y nunca como identidad (ver deps.resolve_actor).
+    """
+    from app.deps import clean_actor
+    from app.request_context import reset_declared_actor
+    from app.request_context import set_declared_actor
+
+    token = set_declared_actor(clean_actor(request.headers.get("x-actor")))
+    try:
+        return await _identify(request, call_next)
+    finally:
+        reset_declared_actor(token)
+
+
+async def _identify(request, call_next):
+    from fastapi.concurrency import run_in_threadpool
+    from fastapi.responses import JSONResponse
+
+    from app.auth import is_public
+    from app.auth import resolve_request
+    from app.request_context import reset_user
+    from app.request_context import set_user
+
+    request.state.tenant_id = None
+    request.state.user = None
+    if not settings.auth_required:
+        header = request.headers.get("x-client-id")
+        request.state.tenant_id = int(header) if header and header.isdigit() else None
+        return await call_next(request)
+    if is_public(request.url.path) or request.method == "OPTIONS":
+        return await call_next(request)
+
+    from app.auth import CLIENT_COOKIE
+    from app.auth import CSRF_HEADER
+    from app.auth import SESSION_COOKIE
+
+    def resolve():
+        with SessionLocal() as database:
+            result = resolve_request(database, method=request.method, path=request.url.path,
+                                     authorization=request.headers.get("authorization"),
+                                     client_header=request.headers.get("x-client-id") or request.cookies.get(CLIENT_COOKIE),
+                                     cookie_token=request.cookies.get(SESSION_COOKIE), csrf=request.headers.get(CSRF_HEADER))
+            if "user" in result:
+                database.expunge(result["user"])
+            return result
+
+    result = await run_in_threadpool(resolve)
+    if "error" in result:
+        code, message = result["error"]
+        return JSONResponse(status_code=code, content={"detail": message})
+    request.state.user, request.state.tenant_id = result["user"], result["tenant_id"]
+    token = set_user(result["user"])  # la auditoría de esta petición sabe quién es (request_context)
+    try:
+        return await call_next(request)
+    finally:
+        reset_user(token)
 
 app.add_middleware(
     CORSMiddleware,
@@ -320,7 +497,9 @@ app.add_middleware(
     allow_methods=[
         "GET",
         "POST",
+        "PUT",
         "PATCH",
+        "DELETE",
         "OPTIONS",
     ],
     allow_headers=[
@@ -339,18 +518,12 @@ app.add_middleware(
     "/api/health",
     tags=["Sistema"],
 )
-def health_check() -> dict[str, Any]:
-    return {
-        "success": True,
-        "application": settings.app_name,
-        "environment": settings.app_environment,
-        "database": (
-            "sqlite"
-            if settings.database_url.startswith("sqlite")
-            else "external"
-        ),
-        "demo_connectors_enabled": settings.enable_demo_connectors,
-    }
+def health_check() -> JSONResponse:
+    """Para el monitor externo: pública, sin datos de negocio; 503 si algo falla."""
+    from app.observability import health
+
+    ok, checks = health()
+    return JSONResponse(status_code=200 if ok else 503, content={"success": ok, "application": settings.app_name, "checks": checks})
 
 
 # -------------------------------------------------------------------
@@ -382,15 +555,9 @@ def dashboard_monthly_impact(
     return build_monthly_impact(database)
 
 
-@app.get(
-    "/api/agents",
-    response_model=list[AgentResponse],
-    tags=["Centro operativo"],
-)
-def list_agents(
-    database: DatabaseDependency,
-) -> list[dict[str, Any]]:
-    return build_agent_catalog(database)
+# GET /api/agents lo sirve agent_routes.agents (equipo de agentes, rutas y actividad). Aquí había una segunda
+# declaración (catálogo antiguo, build_agent_catalog) que nunca respondía: los routers incluidos van antes. El
+# catálogo antiguo sigue en el panel de hoy (build_today_dashboard → «agents»).
 
 
 @app.get(
@@ -464,8 +631,247 @@ def query_assistant(
 
 
 # -------------------------------------------------------------------
+# Informes, proveedores, pagos y exportaciones
+# -------------------------------------------------------------------
+
+def resolve_period(
+    year: int | None,
+    quarter: int | None,
+) -> tuple[int, int | None]:
+    return (year or clock.today().year), quarter
+
+
+@app.get(
+    "/api/categories",
+    tags=["Informes"],
+)
+def list_categories() -> list[dict[str, str]]:
+    return [
+        {
+            "name": name,
+            "account": account,
+        }
+        for name, account in CATEGORY_ACCOUNTS.items()
+    ]
+
+
+@app.get(
+    "/api/reports/vat",
+    tags=["Informes"],
+)
+def vat_report(
+    database: DatabaseDependency,
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    quarter: int | None = Query(default=None, ge=1, le=4),
+) -> dict[str, Any]:
+    selected_year, selected_quarter = resolve_period(year, quarter)
+
+    return build_vat_report(
+        database,
+        year=selected_year,
+        quarter=selected_quarter,
+    )
+
+
+@app.get(
+    "/api/suppliers",
+    tags=["Informes"],
+)
+def list_suppliers(
+    database: DatabaseDependency,
+    search: str | None = Query(
+        default=None,
+        alias="q",
+        max_length=200,
+    ),
+    direction: str = Query(
+        default="RECEIVED",
+        pattern="^(RECEIVED|ISSUED|received|issued)$",
+    ),
+) -> list[dict[str, Any]]:
+    return build_supplier_list(
+        database,
+        search=search,
+        direction=normalize_direction(direction),
+    )
+
+
+@app.get(
+    "/api/payments",
+    tags=["Informes"],
+)
+def payments_overview(
+    database: DatabaseDependency,
+    direction: str = Query(
+        default="RECEIVED",
+        pattern="^(RECEIVED|ISSUED|received|issued)$",
+    ),
+) -> dict[str, Any]:
+    return build_payments_overview(
+        database,
+        direction=normalize_direction(direction),
+    )
+
+
+@app.get(
+    "/api/exports/ledger",
+    tags=["Informes"],
+)
+def export_ledger(
+    database: DatabaseDependency,
+    export_format: str = Query(
+        default="xlsx",
+        alias="format",
+        pattern="^(csv|xlsx)$",
+    ),
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    quarter: int | None = Query(default=None, ge=1, le=4),
+    include_pending: bool = Query(default=False),
+    book: str = Query(
+        default="received",
+        pattern="^(received|issued)$",
+    ),
+    actor_header: ActorHeader = None,
+) -> Response:
+    selected_year, selected_quarter = resolve_period(year, quarter)
+    date_from, date_to = quarter_range(selected_year, selected_quarter)
+    direction = normalize_direction(book)
+
+    rows = build_ledger_rows(
+        database,
+        date_from=date_from,
+        date_to=date_to,
+        include_pending=include_pending,
+        direction=direction,
+    )
+
+    label = period_label(selected_year, selected_quarter)
+    book_slug = "expedidas" if direction == ISSUED else "recibidas"
+    book_title = (
+        "Libro registro de facturas expedidas"
+        if direction == ISSUED
+        else "Libro registro de facturas recibidas"
+    )
+    file_stem = (
+        f"libro_facturas_{book_slug}_{selected_year}"
+        + (f"_{selected_quarter}T" if selected_quarter else "")
+    )
+
+    add_audit_event(
+        database,
+        action="ledger.exported",
+        entity_type="report",
+        entity_id=file_stem,
+        actor=normalize_actor(actor_header),
+        event_data={
+            "format": export_format,
+            "period": label,
+            "rows": len(rows),
+            "include_pending": include_pending,
+            "book": book,
+        },
+    )
+    database.commit()
+
+    if export_format == "csv":
+        return Response(
+            content=ledger_to_csv(rows, direction),
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{file_stem}.csv"'
+                ),
+            },
+        )
+
+    return Response(
+        content=ledger_to_xlsx(
+            rows,
+            title=(
+                f"{book_title} · {label}"
+                + (" (incluye pendientes)" if include_pending else "")
+            ),
+            direction=direction,
+        ),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{file_stem}.xlsx"'
+            ),
+        },
+    )
+
+
+# -------------------------------------------------------------------
 # Carga manual
 # -------------------------------------------------------------------
+
+# Un .zip con muchos documentos (facturas, albaranes, ofertas, pedidos, nóminas…). Límites para que un zip
+# malicioso no llene el disco: número de archivos y tamaño total descomprimido.
+ZIP_MAX_FILES = 500
+ZIP_MAX_TOTAL = 500 * 1024 * 1024
+
+
+@app.post(
+    "/api/upload-zip",
+    status_code=status.HTTP_201_CREATED,
+    tags=["Documentos"],
+)
+async def upload_zip(
+    database: DatabaseDependency,
+    uploaded_file: UploadFile = File(...),
+    actor_header: ActorHeader = None,
+) -> dict[str, Any]:
+    """Sube un .zip: cada documento de dentro pasa por la subida normal (mismas comprobaciones de formato, tamaño y
+    duplicados) y va a su sitio. Devuelve qué se cargó, de qué tipo, y qué no y por qué."""
+    import io
+    import zipfile
+
+    data = await uploaded_file.read(ZIP_MAX_TOTAL + 1)
+    await uploaded_file.close()
+    if len(data) > ZIP_MAX_TOTAL:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El zip es demasiado grande.")
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El archivo no es un zip válido.") from error
+
+    entries = [item for item in archive.infolist()
+               if not item.is_dir() and "__MACOSX" not in item.filename and not Path(item.filename).name.startswith(".")]
+    if len(entries) > ZIP_MAX_FILES or sum(item.file_size for item in entries) > ZIP_MAX_TOTAL:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"El zip tiene demasiados archivos o es demasiado grande (máximo {ZIP_MAX_FILES} archivos).")
+
+    loaded: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+    for item in entries:
+        name = Path(item.filename.replace("\\", "/")).name
+        if item.file_size > settings.max_upload_size:
+            skipped.append({"file": name, "reason": "demasiado grande"})
+            continue
+        try:
+            content = archive.read(item)
+            result = await upload_document(
+                database,
+                uploaded_file=UploadFile(file=io.BytesIO(content), filename=name),
+                actor_header=actor_header,
+            )
+        except HTTPException as error:
+            database.rollback()
+            skipped.append({"file": name, "reason": str(error.detail)})
+            continue
+        document = result.document
+        kind = (document.kind if document else None) or ("INVOICE" if document and document.invoice else "SIN_IDENTIFICAR")
+        loaded.append({"file": name, "document_id": document.id if document else None, "kind": kind, "duplicate": result.duplicate})
+
+    counts: dict[str, int] = {}
+    for item in loaded:
+        counts[item["kind"]] = counts.get(item["kind"], 0) + 1
+    return {"loaded": loaded, "skipped": skipped, "counts": counts}
+
 
 @app.post(
     "/api/upload",
@@ -782,6 +1188,8 @@ async def upload_document(
             document=failed_document,
         )
 
+    run_agents_for_document(database, document_id)
+
     processed_document = get_document(
         database,
         document_id,
@@ -834,11 +1242,52 @@ def list_documents(
     ),
     source: str | None = Query(default=None),
     is_demo: bool | None = Query(default=None),
+    search: str | None = Query(
+        default=None,
+        alias="q",
+        max_length=200,
+    ),
+    review_status: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    payment: str | None = Query(
+        default=None,
+        pattern="^(paid|unpaid|overdue)$",
+    ),
+    direction: str | None = Query(
+        default=None,
+        pattern="^(RECEIVED|ISSUED|received|issued)$",
+    ),
+    kind: str | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=500),
 ) -> list[Document]:
+    statement = select(Document)
+
+    statement = apply_document_filters(
+        statement,
+        search=search,
+        review_status=review_status,
+        category=category,
+        date_from=date_from,
+        date_to=date_to,
+        payment=payment,
+        direction=direction,
+    )
+
+    if kind:
+        normalized_kind = kind.strip().upper()
+
+        if normalized_kind == "INVOICE":
+            statement = statement.where(
+                (Document.kind.is_(None)) | (Document.kind == "INVOICE")
+            )
+        else:
+            statement = statement.where(Document.kind == normalized_kind)
+
     statement = (
-        select(Document)
+        statement
         .options(
             selectinload(Document.invoice).selectinload(
                 Invoice.tax_lines
@@ -867,7 +1316,7 @@ def list_documents(
             Document.is_demo.is_(is_demo)
         )
 
-    return list(database.scalars(statement).all())
+    return list(database.scalars(statement).unique().all())
 
 
 @app.get(
@@ -901,7 +1350,10 @@ def document_detail(
 def document_file(
     document_id: int,
     database: DatabaseDependency,
-) -> FileResponse:
+    as_text: bool = False,
+) -> Response:
+    """El archivo original. Con ``as_text`` (Word, RTF, HTML, XML), el texto leído en texto plano: el navegador
+    no muestra esos formatos y un HTML subido nunca se sirve como página."""
     document = get_document(
         database,
         document_id,
@@ -912,6 +1364,10 @@ def document_file(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Documento no encontrado.",
         )
+
+    if as_text:
+        text = document.extraction_runs[0].raw_text if document.extraction_runs else None
+        return Response(content=text or "No se pudo leer el texto de este documento.", media_type="text/plain; charset=utf-8")
 
     file_path = get_document_file_path(document)
 
@@ -933,6 +1389,143 @@ def document_file(
 
 
 @app.post(
+    "/api/documents/reprocess-pending",
+    tags=["Documentos"],
+)
+def reprocess_pending_documents(
+    database: DatabaseDependency,
+    actor_header: ActorHeader = None,
+) -> dict[str, Any]:
+    """
+    Vuelve a extraer todos los documentos no aprobados ni rechazados,
+    por ejemplo tras mejorar el extractor. Las facturas aprobadas no se
+    tocan.
+    """
+    actor = normalize_actor(actor_header)
+
+    document_ids = list(
+        database.scalars(
+            select(Document.id)
+            .where(Document.status.not_in({"APPROVED", "REJECTED", "EXPORTED"}))
+            .order_by(Document.id.asc())
+        ).all()
+    )
+
+    processed = 0
+    failed: list[dict[str, Any]] = []
+    missing_files = 0
+
+    for document_id in document_ids:
+        document = get_document(database, document_id)
+
+        if document is None:
+            continue
+
+        if document.invoice is not None and document.invoice.review_status in {
+            "APPROVED",
+            "REJECTED",
+        }:
+            continue
+
+        file_path = get_document_file_path(document)
+
+        if not file_path.is_file():
+            missing_files += 1
+            continue
+
+        try:
+            process_document(
+                database,
+                document=document,
+                file_path=file_path,
+                actor=actor,
+            )
+            processed += 1
+        except Exception as error:
+            database.rollback()
+            failed.append(
+                {
+                    "document_id": document_id,
+                    "error": str(error),
+                }
+            )
+
+    from app.invoice_service import reclassify_stored_documents
+
+    reclassify_stored_documents(database)
+    synchronize_all_review_tasks(database)
+    database.commit()
+
+    return {
+        "success": not failed,
+        "processed": processed,
+        "failed": failed,
+        "missing_files": missing_files,
+        "message": (
+            f"{processed} documento(s) reprocesado(s)"
+            + (f", {len(failed)} con error" if failed else "")
+            + (
+                f", {missing_files} sin archivo original"
+                if missing_files
+                else ""
+            )
+            + "."
+        ),
+    }
+
+
+class ClassifyRequest(BaseModel):
+    kind: str
+
+
+@app.post(
+    "/api/documents/{document_id}/classify",
+    response_model=ActionResponse,
+    tags=["Documentos"],
+)
+def classify_document(
+    document_id: int,
+    payload: ClassifyRequest,
+    database: DatabaseDependency,
+    actor_header: ActorHeader = None,
+) -> ActionResponse:
+    """Una persona dice qué es un documento que no es factura (albarán, presupuesto, pedido, proforma o nómina):
+    sale de la revisión de facturas y queda en su sitio. Una factura aprobada no se reclasifica."""
+    from app.invoice_service import CLASSIFIED
+    from app.invoice_service import OTHER_DOCUMENT_KINDS
+    from app.task_service import synchronize_document_task
+
+    kind = payload.kind.strip().upper()
+    if kind not in OTHER_DOCUMENT_KINDS.values():
+        raise HTTPException(status_code=422, detail=f"Tipo no válido. Tipos: {', '.join(sorted(OTHER_DOCUMENT_KINDS.values()))}.")
+    document = get_document(database, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado.")
+    if document.kind == "NOTIFICATION":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El documento es una notificación.")
+    if document.invoice is not None:
+        check_invoice_is_editable(document.invoice)
+        database.delete(document.invoice)
+        document.invoice = None
+
+    add_audit_event(
+        database,
+        action="document.classified_by_person",
+        entity_type="document",
+        entity_id=document.id,
+        actor=normalize_actor(actor_header),
+        event_data={"previous_kind": document.kind, "kind": kind},
+    )
+    document.kind = kind
+    document.status = CLASSIFIED
+    database.flush()
+    synchronize_document_task(database, document=document)
+    database.commit()
+
+    return ActionResponse(success=True, message="Documento clasificado.", document=get_document(database, document.id))
+
+
+@app.post(
     "/api/documents/{document_id}/reprocess",
     response_model=ActionResponse,
     tags=["Documentos"],
@@ -941,7 +1534,10 @@ def reprocess_document(
     document_id: int,
     database: DatabaseDependency,
     actor_header: ActorHeader = None,
+    as_invoice: bool = False,
 ) -> ActionResponse:
+    """Vuelve a leer el documento. Con ``as_invoice`` una persona dice que es una factura aunque su título diga
+    albarán, presupuesto, pedido o nómina: se lee como factura y pasa a revisión."""
     actor = normalize_actor(actor_header)
 
     document = get_document(
@@ -968,6 +1564,19 @@ def reprocess_document(
                 "para reprocesar."
             ),
         )
+
+    if as_invoice:
+        if document.kind == "NOTIFICATION":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El documento es una notificación.")
+        add_audit_event(
+            database,
+            action="document.marked_as_invoice",
+            entity_type="document",
+            entity_id=document.id,
+            actor=actor,
+            event_data={"previous_kind": document.kind},
+        )
+        document.kind = "INVOICE"
 
     add_audit_event(
         database,
@@ -1005,6 +1614,8 @@ def reprocess_document(
             message=f"El reprocesamiento falló. Error: {error}",
             document=failed_document,
         )
+
+    run_agents_for_document(database, document_id)
 
     processed_document = get_document(
         database,
@@ -1152,6 +1763,22 @@ def approve_invoice_endpoint(
             },
         )
 
+    if invoice.duplicate_status == "STRONG":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "STRONG_DUPLICATE",
+                "message": (
+                    "La factura coincide con otra por CIF y número. "
+                    "Resuelve el posible duplicado antes de aprobar."
+                ),
+                "duplicate_of_invoice_id": (
+                    invoice.duplicate_of_invoice_id
+                ),
+                "can_force_approval": False,
+            },
+        )
+
     missing_fields = get_missing_invoice_fields(invoice)
 
     if missing_fields and not force_approval:
@@ -1170,7 +1797,7 @@ def approve_invoice_endpoint(
 
     if missing_fields and force_approval:
         invoice.review_status = "APPROVED"
-        invoice.approved_at = datetime.now(timezone.utc)
+        invoice.approved_at = clock.now()
         invoice.rejected_at = None
         invoice.rejection_reason = None
 
@@ -1322,6 +1949,112 @@ def reject_invoice_endpoint(
         message="Factura rechazada correctamente.",
         document=complete_document,
         invoice=complete_document.invoice,
+    )
+
+
+@app.post(
+    "/api/invoices/{invoice_id}/reopen",
+    response_model=ActionResponse,
+    tags=["Facturas"],
+)
+def reopen_invoice_endpoint(
+    invoice_id: int,
+    payload: InvoiceReopenRequest,
+    database: DatabaseDependency,
+    actor_header: ActorHeader = None,
+) -> ActionResponse:
+    actor = normalize_actor(actor_header)
+
+    invoice = get_invoice(
+        database,
+        invoice_id,
+    )
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Factura no encontrada.",
+        )
+
+    try:
+        reopened_invoice = reopen_invoice(
+            database,
+            invoice=invoice,
+            reason=payload.reason.strip(),
+            actor=actor,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+
+    complete_document = get_document(
+        database,
+        reopened_invoice.document_id,
+    )
+
+    return ActionResponse(
+        success=True,
+        message="Factura reabierta para revisión.",
+        document=complete_document,
+        invoice=complete_document.invoice if complete_document else None,
+    )
+
+
+@app.post(
+    "/api/invoices/{invoice_id}/payment",
+    response_model=ActionResponse,
+    tags=["Facturas"],
+)
+def invoice_payment_endpoint(
+    invoice_id: int,
+    payload: InvoicePaymentRequest,
+    database: DatabaseDependency,
+    actor_header: ActorHeader = None,
+) -> ActionResponse:
+    actor = normalize_actor(actor_header)
+
+    invoice = get_invoice(
+        database,
+        invoice_id,
+    )
+
+    if invoice is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Factura no encontrada.",
+        )
+
+    try:
+        updated_invoice = set_invoice_payment(
+            database,
+            invoice=invoice,
+            paid=payload.paid,
+            paid_at=payload.paid_at,
+            payment_method=payload.payment_method,
+            actor=actor,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+
+    complete_document = get_document(
+        database,
+        updated_invoice.document_id,
+    )
+
+    return ActionResponse(
+        success=True,
+        message=(
+            "Factura marcada como pagada."
+            if payload.paid
+            else "Pago de la factura anulado."
+        ),
+        document=complete_document,
+        invoice=complete_document.invoice if complete_document else None,
     )
 
 
@@ -1642,3 +2375,51 @@ app.mount(
     StaticFiles(directory=str(STATIC_DIRECTORY)),
     name="static",
 )
+
+
+# Se registra la última: envuelve a todas, también a las respuestas 401/403 de identify_request.
+CONTENT_SECURITY_POLICY = "; ".join((
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  # atributos style del HTML generado
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "frame-src 'self'",
+    "frame-ancestors 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+))
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """
+    Cabeceras de seguridad:
+      CSP        solo se ejecuta código de /static (sin scripts ni manejadores en línea): una inyección de
+                 HTML no puede ejecutar nada. Se aplica a las páginas HTML; los PDF se muestran con el
+                 visor del navegador, que no debe verse afectado.
+      marcos     solo la propia aplicación puede incrustar sus páginas (la vista previa de documentos)
+      HSTS       con HTTPS (PUBLIC_BASE_URL=https://…), el navegador ya no vuelve a intentar HTTP
+      caché      las respuestas de la API (datos fiscales) no se guardan en cachés intermedias
+    """
+    from app.auth_routes import secure_cookies
+
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if response.headers.get("content-type", "").startswith("text/html"):
+        response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    if secure_cookies():
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")  # datos fiscales: que no queden en cachés intermedias
+    return response
+
+
+from app.observability import log_requests  # noqa: E402
+
+app.middleware("http")(log_requests)  # la última registrada envuelve a todas: registra también los errores

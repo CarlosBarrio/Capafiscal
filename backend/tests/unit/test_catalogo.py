@@ -1,0 +1,113 @@
+"""Catálogo sintético de casos (presupuestos, albaranes, IRPF, rectificativas, OCR imperfecto, importes complejos…).
+
+Si las reglas dejan de leer bien uno de estos casos, es una regresión. El único que depende del entorno es el
+escaneado sin texto: necesita Tesseract (la imagen Docker lo incluye) y se omite donde no está instalado.
+"""
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+import pytest
+
+from evaluation.core import load_dataset
+from evaluation.core import run
+
+CATALOG = Path(__file__).resolve().parents[2] / "evaluation" / "datasets" / "catalogo"
+NEEDS_OCR = "necesita Tesseract"
+
+
+@pytest.fixture(scope="module")
+def rules_report():
+    return run(load_dataset(CATALOG), ["reglas"])["engines"]["reglas"]
+
+
+def test_every_case_is_read_correctly_by_the_rules(rules_report):
+    failures = {row["id"]: {name: (row["expected"][name], row["got"][name]) for name, ok in row["checks"].items() if not ok}
+                for row in rules_report["rows"] if not row["perfect"]}
+    if shutil.which("tesseract") is None:
+        failures = {key: value for key, value in failures.items()
+                    if NEEDS_OCR not in next(row["tags"] for row in rules_report["rows"] if row["id"] == key)}
+    assert not failures, failures
+
+
+def test_quotes_delivery_notes_and_official_letters_are_not_invoices(rules_report):
+    rows = {row["id"]: row for row in rules_report["rows"]}
+    for case in ("ambiguo_presupuesto", "ambiguo_albaran", "notificacion_requerimiento", "notificacion_providencia",
+                 "administrativo_certificado", "administrativo_justificante"):
+        assert rows[case]["got"]["is_invoice"] is False, case
+
+
+def test_withholding_and_credit_notes_keep_their_sign(rules_report):
+    rows = {row["id"]: row for row in rules_report["rows"]}
+    assert rows["irpf_asesoria"]["got"]["withholding_total"] in ("52.50", 52.5) or float(rows["irpf_asesoria"]["got"]["withholding_total"]) == 52.5
+    assert float(rows["rectificativa_precio"]["got"]["total"]) < 0 and float(rows["rectificativa_devolucion"]["got"]["total"]) < 0
+
+
+def test_non_invoice_title_only_looks_at_the_first_title():
+    from app.extractor import non_invoice_title
+
+    assert non_invoice_title("PRESUPUESTO Nº P-1\nIVA 21 %\nTotal 10,00") == "presupuesto"
+    assert non_invoice_title("ALBARÁN DE ENTREGA Nº 5") == "albarán"
+    assert non_invoice_title("FACTURA PROFORMA 12") == "proforma"
+    # Una factura que cita un albarán, un presupuesto o un pedido sigue siendo factura.
+    assert non_invoice_title("FACTURA Nº 12\nSegún albarán 33 y presupuesto aceptado") is None
+    assert non_invoice_title("Pedido: 4500123\nNº factura 77") is None
+    assert non_invoice_title("Factura rectificativa R-1") is None
+
+
+def test_ocr_label_repair_only_touches_amount_labels():
+    from app.extraction_rules import repair_ocr_labels
+
+    repaired = repair_ocr_labels("Ba5e imponible 238,00\nlVA 21 % 4 9,98\nT0TAL FACTURA 287,98\n1 2,50 lápiz\nlVAN Pérez · VIVA")
+    assert repaired.splitlines() == ["Base imponible 238,00", "IVA 21 % 49,98", "TOTAL FACTURA 287,98", "1 2,50 lápiz", "lVAN Pérez · VIVA"]
+
+
+def test_company_names_are_not_rejected_for_containing_a_label_inside_a_word():
+    from app.extractor import looks_like_company_name
+
+    for name in ("ASESORÍA NÚMEROS CLAROS S.L.", "PACÍFICO SUMINISTROS S.L.", "UNIFORMES NORTE S.L.", "CALLEJA HERMANOS S.A."):
+        assert looks_like_company_name(name), name
+    for label in ("Número: 12", "Fecha factura", "www.ejemplo.com", "Calle Mayor 3"):
+        assert not looks_like_company_name(label), label
+
+
+def test_claude_is_scored_on_document_type_with_the_same_truth(tmp_path, monkeypatch):
+    """Claude devuelve is_invoice y document_type: se le evalúan contra la misma verdad que a las reglas."""
+    from app.agents import llm
+
+    def fake(**kwargs):
+        return {**{key: "" for key in llm.INVOICE_FIELDS}, "is_invoice": False, "document_type": "presupuesto"}, {"model": "simulado"}
+
+    monkeypatch.setattr(llm, "available", lambda: True)
+    monkeypatch.setattr(llm, "extract_invoice", fake)
+    dataset = load_dataset(CATALOG)
+    dataset.cases = [case for case in dataset.cases if case.id == "ambiguo_presupuesto"]
+    claude = run(dataset, ["claude"])["engines"]["claude"]
+    assert claude["rows"][0]["checks"] == {"is_invoice": True}  # este catálogo no etiqueta el tipo; el corpus, sí
+    assert claude["classification"]["tn"] == 1
+
+
+def test_rows_without_any_check_are_not_evaluated_and_leave_the_denominator(monkeypatch):
+    """all({}) es True: sin esta regla, un motor que no produjera el tipo de documento sacaría los 6 documentos
+    que no son factura como aciertos sin haberse evaluado nada. Reglas e híbrido sí los evalúan y no cambian.
+    (Hoy Claude sí devuelve el tipo; se simula un motor que no lo produce para que la regla siga protegida.)"""
+    import evaluation.core as core
+    from app.agents import llm
+    from evaluation.core import to_markdown
+
+    monkeypatch.setattr(core, "NOT_PRODUCED", {"claude": {"is_invoice", "document_type"}})
+    monkeypatch.setattr(llm, "available", lambda: True)
+    monkeypatch.setattr(llm, "extract_invoice", lambda **kwargs: ({key: "" for key in llm.INVOICE_FIELDS}, {"model": "simulado"}))
+    report = run(load_dataset(CATALOG), ["reglas", "claude", "hibrido"])
+    claude, rules, hybrid = (report["engines"][name] for name in ("claude", "reglas", "hibrido"))
+
+    no_checks = [row for row in claude["rows"] if not row["checks"]]
+    assert len(no_checks) == 6 and not any(row["perfect"] or row["evaluated"] for row in no_checks)
+    assert claude["evaluable"] + claude["not_evaluated"] == claude["docs"] == 22 and claude["not_evaluated"] == 6
+    assert claude["correct"] + claude["incorrect"] == claude["evaluable"] and claude["perfect"] == claude["correct"]
+    assert claude["accuracy"] == round(claude["correct"] / claude["evaluable"], 3)
+    for engine in (rules, hybrid):
+        assert engine["not_evaluated"] == 0 and engine["evaluable"] == 22 and all(row["evaluated"] for row in engine["rows"])
+    markdown = to_markdown(report)
+    assert "Casos no evaluables" in markdown and "% de acierto sobre evaluables" in markdown

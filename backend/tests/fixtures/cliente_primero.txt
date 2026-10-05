@@ -1,0 +1,11 @@
+Facturar a: HOSTELERIA LOPEZ S.L. NIF B12345674
+Calle Real 1, Valencia
+
+TOTALENERGIES CLIENTES S.A.U.
+CIF: A12345674
+Factura nº TE-99812   Fecha 12-08-2026
+Descripción
+Suministro gas natural julio 2026
+Base imponible 100,00
+IVA 21% 21,00
+Total 121,00 EUR

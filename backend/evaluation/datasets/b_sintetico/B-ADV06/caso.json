@@ -1,0 +1,48 @@
+{
+  "case_id": "B-ADV06",
+  "conjunto": "B",
+  "bloque": "adversarial",
+  "titulo": "NIF del proveedor parcialmente ilegible",
+  "descripcion": "Un carácter del NIF del emisor es ilegible. Lo correcto es no inventarlo: o se resuelve con otra fuente fiable o se marca.",
+  "etiquetas": [
+    "adversarial",
+    "ocr"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "factura_nif_ilegible.pdf",
+      "tipo": "factura",
+      "nota": ""
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "subida",
+      "archivo": "factura_nif_ilegible.pdf",
+      "expected": {
+        "type": "INVOICE",
+        "invoice": {
+          "direction": "RECEIVED",
+          "supplier_name": "Suministros Ficticios Duero S.L.",
+          "supplier_tax_id": "B00200022",
+          "customer_tax_id": "B00100016",
+          "invoice_number": "SFD-2026-140",
+          "invoice_date": "2026-09-24",
+          "subtotal": "312.00",
+          "tax_total": "65.52",
+          "total": "377.52"
+        }
+      }
+    }
+  ],
+  "expected": {}
+}

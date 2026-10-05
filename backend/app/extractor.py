@@ -25,7 +25,7 @@ except ImportError:
 
 
 EXTRACTOR_NAME = "capafiscal.generic_invoice"
-EXTRACTOR_VERSION = "2.1.0"
+EXTRACTOR_VERSION = "2.4.0"
 
 CENT = Decimal("0.01")
 AMOUNT_TOLERANCE = Decimal("0.03")
@@ -55,6 +55,7 @@ TAX_ID_PATTERN = re.compile(
     (?<![A-Z0-9])
     (?:ES[\s\-]?)?
     (?:
+        (?<!N\.I\.)(?<!C\.I\.)(?<!N\.I)(?<!C\.I)  # la «F» de «N.I.F. 12.345.678-Z» es de la etiqueta
         [ABCDEFGHJNPQRSUVW][\s.\-]*\d[\d\s.\-]{5,10}[0-9A-J]
         |
         \d{1,2}(?:[\s.\-]?\d{3}){2}[\s.\-]?[A-Z]
@@ -73,12 +74,19 @@ DATE_PATTERN = re.compile(
     r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"
     r"|"
     r"\d{4}[/-]\d{1,2}[/-]\d{1,2}"
+    r"|"
+    r"\d{1,2}[/-](?i:ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)[/-]\d{2,4}"
     r")\b"
 )
+SHORT_MONTHS = {"ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6, "jul": 7, "ago": 8, "sep": 9, "set": 9,
+                "oct": 10, "nov": 11, "dic": 12}
+
+PLAIN_VOWELS = str.maketrans("áéíóúÁÉÍÓÚ", "aeiouAEIOU")
 
 INVOICE_NUMBER_PATTERNS = (
     re.compile(
-        r"(?:factura|fra\.?)\s*"
+        # "FRA-2026-001": FRA es parte del número, no una etiqueta.
+        r"\b(?:factura|fra\.?)(?![-/_]?\d)\s*"
         r"(?:n[úu]mero|n[º°o.]|num\.?)?"
         r"\s*[:#\-]?\s*"
         r"([A-Z0-9][A-Z0-9 ./_-]{1,30})",
@@ -86,7 +94,7 @@ INVOICE_NUMBER_PATTERNS = (
     ),
     re.compile(
         r"(?:n[úu]mero|n[º°o.]|num\.?)\s*"
-        r"(?:de\s+)?(?:factura|fra\.?)?"
+        r"(?:de\s+)?(?:factura|fra\.?|fact?\.)?"
         r"\s*[:#\-]?\s*"
         r"([A-Z0-9][A-Z0-9 ./_-]{1,30})",
         re.IGNORECASE,
@@ -152,7 +160,44 @@ NAME_REJECT_WORDS = (
     "domicilio",
     "direccion",
     "codigo cliente",
+    "descripcion",
+    "concepto",
+    "importe",
+    "base imponible",
+    "subtotal",
+    "cantidad",
+    "precio",
+    "forma de pago",
+    "vencimiento",
+    "pagina",
 )
+# Cuándo una línea es una etiqueta y no un nombre, por su forma y no por una lista cada vez más larga:
+#   - una URL o un correo nunca es un nombre;
+#   - las frases de varias palabras («forma de pago», «registro mercantil») y una etiqueta seguida de «:» tampoco;
+#   - las palabras de etiqueta cuentan con sus derivados («fechas», «facturación», «números», «importes»), salvo
+#     que la línea lleve forma jurídica: «Asesoría Números Claros S.L.» o «Facturas y Servicios S.L.» son empresas.
+# Las palabras cortas («cif», «nif», «iban»…) solo cuentan enteras: «Pacífico» o «Uniformes» no son etiquetas.
+URL_OR_EMAIL = re.compile(r"://|\bwww\.|@")
+BARE_DOMAIN = re.compile(r"\b[a-z0-9-]+\.(?:es|com|net|org|eu|cat|info)\b")  # «empresa.es»; «Ejemplo.com S.L.» sí es nombre
+LEGAL_FORM = re.compile(
+    r"\b(?:s\.?\s?l\.?(?:\s?u\.?)?|s\.?\s?a\.?(?:\s?u\.?)?|s\.?\s?c\.?(?:\s?p\.?)?|s\.?\s?coop\.?|c\.?\s?b\.?"
+    r"|sociedad\s+(?:limitada|anonima|cooperativa)|slu|sau|slp)(?=\W|$)"
+)
+NAME_REJECT_PHRASES = tuple(word for word in NAME_REJECT_WORDS if " " in word or not word[-1].isalnum() or "-" in word)
+NAME_REJECT_STEMS = tuple(word for word in NAME_REJECT_WORDS if word not in NAME_REJECT_PHRASES)
+LABEL_WITH_COLON = re.compile(r"\b(?:" + "|".join(re.escape(word) for word in NAME_REJECT_STEMS) + r")\w*\s*:")
+LABEL_WORD = re.compile(
+    r"\b(?:" + "|".join(re.escape(word) + (r"\w*" if len(word) >= 5 else r"\b") for word in NAME_REJECT_STEMS) + r")"
+)
+
+
+def label_like(normalized: str) -> bool:
+    """La línea (ya normalizada) es una URL, un correo, una etiqueta o un campo, no el nombre de una empresa."""
+    if URL_OR_EMAIL.search(normalized) or (BARE_DOMAIN.search(normalized) and not LEGAL_FORM.search(normalized)):
+        return True
+    if any(phrase in normalized for phrase in NAME_REJECT_PHRASES) or LABEL_WITH_COLON.search(normalized):
+        return True
+    return bool(LABEL_WORD.search(normalized)) and not LEGAL_FORM.search(normalized)
 
 
 @dataclass
@@ -394,6 +439,11 @@ def parse_date_value(raw_value: str | None) -> date | None:
 
     value = raw_value.strip()
 
+    # «05-mar-26»: mes abreviado en castellano
+    short = re.fullmatch(r"(\d{1,2})[/-]([A-Za-z]{3})[/-](\d{2}|\d{4})", value)
+    if short and short.group(2).lower() in SHORT_MONTHS:
+        value = f"{short.group(1)}-{SHORT_MONTHS[short.group(2).lower()]}-{short.group(3)}"
+
     formats = (
         "%d/%m/%Y",
         "%d-%m-%Y",
@@ -466,10 +516,68 @@ def extract_page_with_ocr(
                 config="--psm 6",
             )
 
-        return clean_text(text)
+        return clean_text(repair_ocr_tax_ids(text))
 
     except Exception:
         return ""
+
+def repair_ocr_tax_ids(text: str) -> str:
+    """«BO0100016»: en un CIF leído por OCR, la O es un 0 y la I/l un 1 (con al menos cinco cifras de verdad)."""
+    def fix(match: re.Match[str]) -> str:
+        body = match.group(2)
+        if sum(character.isdigit() for character in body) < 5:
+            return match.group(0)
+        return match.group(1) + body[:7].translate(str.maketrans("OoIl", "0011")) + body[7]
+
+    return re.sub(r"(?<![A-Za-z0-9])([ABCDEFGHJNPQRSUVW])[\s.\-]?([0-9OoIl]{7}[0-9A-J])(?![A-Za-z0-9])", fix, text)
+
+
+def ocr_identity_lines(path: Path, page_number: int, legal_form: str) -> list[str]:
+    """Emisor que solo está en imágenes (logo, pie, margen vertical): OCR de la página y solo las líneas de identidad.
+
+    Se lee derecho y girado (el CIF del margen suele ir en vertical). Solo se devuelven líneas con
+    NIF/CIF, registro mercantil o forma jurídica: los importes siguen saliendo de la capa de texto.
+    """
+    if pytesseract is None or Image is None or fitz is None or path.suffix.lower() != ".pdf":
+        return []
+    identity = re.compile(r"(?i)registro\s+mercantil|\bc\.?\s?i\.?\s?f\b|\bn\.?\s?i\.?\s?f\b|" + legal_form + r"(?=\W|$)")
+    lines: list[str] = []
+    try:
+        with fitz.open(path) as document:
+            page = document[page_number - 1]
+            image = Image.open(io.BytesIO(page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False).tobytes("png")))
+            for rotation, psm in ((0, "6"), (270, "11"), (90, "11")):
+                text = pytesseract.image_to_string(image.rotate(rotation, expand=True), lang="spa+eng", config=f"--psm {psm}")
+                found: list[str] = []
+                for line in text.splitlines():
+                    line = re.sub(r"\s+", " ", line).strip()
+                    if len(line) < 6 or not identity.search(line):
+                        continue
+                    line = repair_ocr_tax_ids(line)
+                    if not TAX_ID_PATTERN.search(line):
+                        # «PREVENCIÓN DEMO, S.L. C/ Inventada 1…»: el nombre acaba en la forma jurídica
+                        named = re.match(r"(.*?" + legal_form + r")(?=\W|$)", line, re.IGNORECASE)
+                        line = named.group(1) if named else line
+                        # Restos del logo delante del nombre («P ÓN PREVENCIÓN DEMO…»): fragmentos de una o dos letras
+                        words = line.split(" ")
+                        while len(words) > 3 and len(words[0]) <= 2:
+                            words.pop(0)
+                        line = " ".join(words)
+                    found.append(line)
+                # Girada, la página solo vale si se lee un NIF (el texto del revés sale como ruido)
+                from app.extraction_rules import valid_tax_ids
+
+                if rotation and not valid_tax_ids("\n".join(found)):
+                    continue
+                lines.extend(line for line in found if line not in lines)
+    except Exception:
+        return []
+    return lines
+
+
+class UnreadableDocument(ValueError):
+    """El archivo no se puede abrir (PDF dañado o truncado): reintentar no sirve, hace falta otra copia."""
+
 
 def read_document(
     path: Path,
@@ -484,6 +592,14 @@ def read_document(
             )
         )
         return text, 1, not bool(text), [text]
+
+    from app.office_text import OFFICE_EXTENSIONS
+    from app.office_text import office_text
+
+    if suffix in OFFICE_EXTENSIONS:
+        # Word, RTF, HTML o XML: el texto basta para clasificarlo; no hay páginas que pasar por OCR.
+        text = clean_text(office_text(path))
+        return text, 1, False, [text]
 
     if suffix != ".pdf":
         return "", None, False, []
@@ -639,6 +755,20 @@ def clean_invoice_number(value: str | None) -> str | None:
         flags=re.IGNORECASE,
     )[0].strip(" .,:;-")
 
+    # Descarta palabras finales sin dígitos ("2026-001 MADRID").
+    tokens = candidate.split(" ")
+    last_digit_token = max(
+        (
+            index
+            for index, token in enumerate(tokens)
+            if re.search(r"\d", token)
+        ),
+        default=-1,
+    )
+
+    if last_digit_token >= 0:
+        candidate = " ".join(tokens[:last_digit_token + 1])
+
     if len(candidate) < 3 or len(candidate) > 30:
         return None
 
@@ -646,6 +776,13 @@ def clean_invoice_number(value: str | None) -> str | None:
         return None
 
     if re.fullmatch(r"\d{1,2}", candidate):
+        return None
+
+    if DATE_PATTERN.fullmatch(candidate):
+        return None
+
+    # «01/02/2026 B-00.900.100»: una fecha seguida de otra cosa no es un número de factura.
+    if DATE_PATTERN.match(candidate) and " " in candidate:
         return None
 
     return candidate.upper()
@@ -698,14 +835,87 @@ def select_primary_pages(page_texts: list[str]) -> tuple[str, list[int]]:
         )
 
         # Si la primera factura ya está completa y la siguiente página
-        # empieza otra factura, se trata como anexo.
-        if first_has_summary and looks_like_new_invoice:
+        # empieza otra factura, se trata como anexo. Una página «2 de 2»
+        # es la continuación de la misma factura, no otra.
+        from app.extraction_rules import is_continuation_page
+
+        if first_has_summary and looks_like_new_invoice and not is_continuation_page(page_text, page_index):
             break
 
         selected.append(page_text)
         selected_indexes.append(page_index)
 
     return clean_text("\n".join(selected)), selected_indexes
+
+
+def label_role_in_text(text: str) -> str | None:
+    """
+    Devuelve el rol ("customer" o "supplier") de la etiqueta más
+    cercana al final del texto, o None si no hay etiqueta.
+    """
+    normalized = normalize_search_text(text)
+    best_role: str | None = None
+    best_position = -1
+
+    for role, labels in (
+        ("customer", CUSTOMER_LABELS),
+        ("supplier", SUPPLIER_LABELS),
+    ):
+        for label in labels:
+            for match in re.finditer(
+                rf"\b{re.escape(label)}\b",
+                normalized,
+            ):
+                if match.start() > best_position:
+                    best_position = match.start()
+                    best_role = role
+
+    return best_role
+
+
+def tax_id_label_role(
+    lines: list[str],
+    line_index: int,
+    text_before_match: str,
+) -> str | None:
+    """
+    Decide a quién pertenece un NIF/CIF mirando solo el texto previo
+    de su propia línea y las líneas anteriores. Las líneas posteriores
+    no se usan: suelen pertenecer al bloque de la otra parte.
+    """
+    # «Razón social» es una etiqueta genérica: vale para las dos partes. Si
+    # más arriba, dentro del mismo bloque, hay una cabecera («Cliente»,
+    # «Emisor»…), manda la cabecera.
+    def generic(text: str) -> bool:
+        return normalize_search_text(text).strip(" :|-").startswith("razon social")
+
+    weak: str | None = None
+    same_line_role = label_role_in_text(text_before_match)
+
+    if same_line_role and not generic(text_before_match):
+        return same_line_role
+    weak = same_line_role
+
+    for offset in range(1, 5):
+        previous_index = line_index - offset
+
+        if previous_index < 0:
+            break
+
+        previous_line = lines[previous_index]
+
+        # Una línea anterior con su propio NIF cierra el bloque:
+        # su etiqueta pertenece a ese otro NIF.
+        if TAX_ID_PATTERN.search(previous_line):
+            break
+
+        role = label_role_in_text(previous_line)
+
+        if role and not generic(previous_line):
+            return role
+        weak = weak or role
+
+    return weak
 
 
 def find_tax_id_candidates(
@@ -732,21 +942,20 @@ def find_tax_id_candidates(
             start = max(0, line_index - 3)
             end = min(len(lines), line_index + 4)
             context = " | ".join(lines[start:end])
-            normalized_context = normalize_search_text(context)
 
             role = "unknown"
             confidence = 60
 
-            if any(
-                label in normalized_context
-                for label in CUSTOMER_LABELS
-            ):
+            label_role = tax_id_label_role(
+                lines,
+                line_index,
+                line[:match.start()],
+            )
+
+            if label_role == "customer":
                 role = "customer"
                 confidence = 85
-            elif any(
-                label in normalized_context
-                for label in SUPPLIER_LABELS
-            ):
+            elif label_role == "supplier":
                 role = "supplier"
                 confidence = 90
             elif line_index <= max(10, len(lines) // 4):
@@ -859,14 +1068,128 @@ def choose_tax_ids(
     return supplier, customer
 
 
+# Confianza del sentido cuando solo lo decide qué NIF aparece primero.
+DIRECTION_BY_POSITION = 80
+
+
+def detect_direction(
+    candidates: list[dict[str, Any]],
+    company_tax_id: Any,
+) -> tuple[str, int]:
+    """
+    Decide si la factura la emite la propia empresa (ISSUED) o la recibe
+    (RECEIVED) según dónde aparece su NIF. Sin NIF configurado se asume
+    recibida con confianza baja.
+    """
+    configured_ids = normalized_company_tax_ids(company_tax_id)
+
+    if not configured_ids or not candidates:
+        return "RECEIVED", 50
+
+    own = [
+        candidate
+        for candidate in candidates
+        if candidate["value"] in configured_ids
+    ]
+
+    if not own:
+        # Nuestro NIF no aparece: puede ser un ticket o factura simplificada.
+        return "RECEIVED", 60
+
+    if any(candidate["role"] == "supplier" for candidate in own):
+        return "ISSUED", 92
+
+    if any(candidate["role"] == "customer" for candidate in own):
+        return "RECEIVED", 95
+
+    first = min(candidates, key=lambda item: item["line_index"])
+
+    if first["value"] in configured_ids:
+        return "ISSUED", DIRECTION_BY_POSITION
+
+    return "RECEIVED", DIRECTION_BY_POSITION
+
+
+def choose_tax_ids_for_issued(
+    candidates: list[dict[str, Any]],
+    company_tax_id: Any,
+) -> tuple[ExtractedField, ExtractedField]:
+    configured_ids = normalized_company_tax_ids(company_tax_id)
+
+    own = [
+        candidate
+        for candidate in candidates
+        if candidate["value"] in configured_ids
+    ]
+    others = [
+        candidate
+        for candidate in candidates
+        if candidate["value"] not in configured_ids
+    ]
+
+    supplier = ExtractedField()
+
+    if own:
+        supplier = ExtractedField(
+            value=own[0]["value"],
+            confidence=99,
+            source="configured_company_tax_id",
+            evidence=own[0]["context"],
+        )
+
+    customer = ExtractedField()
+
+    if others:
+        def customer_score(candidate: dict[str, Any]) -> tuple[int, int]:
+            score = int(candidate["confidence"])
+
+            if candidate["role"] == "customer":
+                score += 25
+
+            if candidate["valid_checksum"]:
+                score += 5
+
+            return score, -int(candidate["line_index"])
+
+        selected = max(others, key=customer_score)
+        customer = ExtractedField(
+            value=selected["value"],
+            confidence=min(98, max(45, customer_score(selected)[0])),
+            source="ranked_customer_tax_id",
+            evidence=selected["context"],
+        )
+
+    return supplier, customer
+
+
+STREET_PREFIX = re.compile(
+    r"(?i)^\s*(?:c/|c\.|calle|avda?\.?|avenida|av\.|plaza|pza\.?|pl\.|paseo|p[º°]|ctra\.?|crta\.?|cra\.?|carretera|camino|ronda|traves[ií]a"
+    r"|pol\.?\s*ind|pol[ií]gono|urb\.?|urbanizaci[oó]n|glorieta|rambla|v[ií]a|apartado|apdo\.?|cl\.?)(?!\w)"
+)
+POSTAL_CODE = re.compile(r"\b(?:0[1-9]|[1-4]\d|5[0-2])\d{3}\b\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]")
+
+
+def looks_like_address(line: str) -> bool:
+    """«C/ Inventada 12, 47001 Valladolid» es un domicilio, no el nombre de una empresa."""
+    cleaned = line.strip(" :-|·,")
+    if any(suffix in normalize_search_text(cleaned) for suffix in LEGAL_SUFFIXES):
+        return False  # «Plaza Mayor S.L.» sí es una empresa
+    if STREET_PREFIX.match(cleaned) and any(character.isdigit() for character in cleaned):
+        return True
+    return bool(POSTAL_CODE.search(cleaned))
+
+
 def looks_like_company_name(line: str) -> bool:
-    cleaned = line.strip(" :-|")
+    cleaned = line.strip(" :-|·")
     normalized = normalize_search_text(cleaned)
 
     if len(cleaned) < 3 or len(cleaned) > 140:
         return False
 
-    if any(word in normalized for word in NAME_REJECT_WORDS):
+    if looks_like_address(cleaned):
+        return False
+
+    if label_like(normalized):
         return False
 
     if DATE_PATTERN.search(cleaned):
@@ -909,7 +1232,8 @@ def clean_company_name_candidate(
         r"|\bC\.?\s*I\.?\s*F\.?\s*[:.]"
         r"|\bN\.?\s*I\.?\s*F\.?\s*[:.]"
         r"|\binscrita?\b"
-        r"|\bregistro mercantil\b",
+        r"|\bregistro mercantil\b"
+        r"|\s+N[º°]\s*(?:de\s*)?factura\b",
         candidate,
         maxsplit=1,
     )[0]
@@ -920,9 +1244,35 @@ def clean_company_name_candidate(
         candidate,
     )
 
-    candidate = candidate.strip(
-        " \t:-|,.;"
+    # Títulos del documento que comparten línea con el emisor:
+    # "EMPRESA S.A.   FACTURA" o "FACTURA SIMPLIFICADA".
+    candidate = re.sub(
+        r"(?i)\b(?:factura(?:\s+simplificada|\s+rectificativa)?"
+        r"|invoice)\b\s*$",
+        "",
+        candidate.strip(),
     )
+
+    # Etiquetas iniciales: "Cliente: EMPRESA S.L." -> "EMPRESA S.L."
+    candidate = re.sub(
+        r"(?i)^\s*(?:emisor|proveedor|cliente|destinatario|receptor"
+        r"|raz[oó]n social|facturar a|datos del proveedor"
+        r"|datos de cliente)\s*[:.\-]\s*",
+        "",
+        candidate,
+    )
+
+    candidate = candidate.strip(
+        " \t:-|,;·"
+    )
+
+    # Conserva el punto final de abreviaturas societarias (S.A., S.L.U.)
+    # y elimina el resto de puntos finales.
+    candidate = re.sub(
+        r"(?<!\b[A-Za-z])\.+$",
+        "",
+        candidate,
+    ).strip()
 
     candidate = re.sub(
         r"\s+",
@@ -940,6 +1290,8 @@ def company_name_near_tax_id(
     if not tax_id:
         return ExtractedField()
 
+    from app import extraction_rules
+
     lines = get_lines(text)
     normalized_tax_id = normalize_tax_id(tax_id)
 
@@ -954,6 +1306,10 @@ def company_name_near_tax_id(
         if normalized_tax_id not in line_tax_ids:
             continue
 
+        # Dos columnas (emisor | cliente): «NIF: A… NIF: B…». La columna del NIF dice qué mitad es nuestra.
+        distinct_ids = list(dict.fromkeys(item for item in line_tax_ids if item))
+        column = distinct_ids.index(normalized_tax_id) if len(distinct_ids) == 2 else None
+
         # La propia línea es prioritaria porque existen formatos:
         # EMPRESA S.L. | C.I.F.: B12345678
         same_line_candidate = clean_company_name_candidate(
@@ -963,7 +1319,7 @@ def company_name_near_tax_id(
 
         if looks_like_company_name(
             same_line_candidate
-        ):
+        ) and not extraction_rules.not_a_name(same_line_candidate):
             score = 96
 
             normalized_candidate = normalize_search_text(
@@ -993,12 +1349,53 @@ def company_name_near_tax_id(
 
             candidate_line = lines[candidate_index]
 
+            # Una línea con otro NIF pertenece a la otra parte.
+            other_tax_ids = {
+                normalize_tax_id(match.group(0))
+                for match in TAX_ID_PATTERN.finditer(candidate_line)
+            } - {normalized_tax_id}
+
+            if other_tax_ids:
+                continue
+
+            # «CLIENTE S.L.» con su CIF justo debajo también es de la otra parte
+            if candidate_index + 1 < len(lines) and candidate_index + 1 != index and {
+                normalize_tax_id(match.group(0)) for match in TAX_ID_PATTERN.finditer(lines[candidate_index + 1])
+            } - {normalized_tax_id}:
+                continue
+
+            opposite_role = (
+                "customer"
+                if role == "supplier"
+                else "supplier"
+            )
+
+            if label_role_in_text(candidate_line) == opposite_role:
+                continue
+
             candidate = clean_company_name_candidate(
                 candidate_line,
                 None,
             )
 
-            if not looks_like_company_name(candidate):
+            if column is not None:
+                # «EMISOR S.A. CLIENTE S.L.P.»: se parte por la forma jurídica y se queda la mitad de su columna
+                halves = [part.strip(" ,;") for part in re.findall(r".+?" + extraction_rules.LEGAL_FORM + r"(?=\s|$)", candidate)]
+                if len(halves) == 2:
+                    candidate = halves[column]
+
+            if not looks_like_company_name(candidate) or extraction_rules.not_a_name(candidate):
+                continue
+
+            # Una fila con importes («SERVICIO MENSUAL 1 4,50») es una línea de detalle, no un nombre
+            if extraction_rules.AMOUNT_TOKEN.search(candidate):
+                continue
+
+            # «MADRID BURGOS»: solo nombres de ciudad (provincias de dos columnas) no es una empresa
+            if all(word in extraction_rules.CITY_WORDS for word in re.findall(r"[a-z]+", normalize_search_text(candidate))):
+                continue
+
+            if extraction_rules.profession_only(candidate):
                 continue
 
             normalized_candidate = normalize_search_text(
@@ -1070,6 +1467,33 @@ def company_name_near_tax_id(
     )
 
 
+def company_name_from_header(
+    text: str,
+) -> ExtractedField:
+    """
+    Respaldo: el emisor suele figurar en las primeras líneas.
+    Se devuelve con confianza moderada para forzar revisión.
+    """
+    for line in get_lines(text)[:5]:
+        if TAX_ID_PATTERN.search(line):
+            continue
+
+        if label_role_in_text(line) == "customer":
+            continue
+
+        candidate = clean_company_name_candidate(line, None)
+
+        if looks_like_company_name(candidate):
+            return ExtractedField(
+                value=candidate,
+                confidence=65,
+                source="supplier_name_header",
+                evidence=line[:300],
+            )
+
+    return ExtractedField()
+
+
 def find_invoice_number(
     text: str,
 ) -> ExtractedField:
@@ -1083,13 +1507,17 @@ def find_invoice_number(
     )
 
     for line_index, line in enumerate(lines):
+        # La lectura reconstruida del texto girado junta palabras de toda la columna: no da el número
+        if line.startswith("[texto girado]"):
+            continue
+
         normalized_line = normalize_search_text(line)
 
         has_invoice_label = (
-            "factura" in normalized_line
+            bool(re.search(r"\bfacturas?\b", normalized_line))  # «facturados» no es una etiqueta
             or bool(
                 re.search(
-                    r"\bfra\.?\b",
+                    r"\bfra\.?\b|\bn\s*[º°o.]\s*fact?\b\.?",
                     normalized_line,
                 )
             )
@@ -1098,11 +1526,20 @@ def find_invoice_number(
         if not has_invoice_label:
             continue
 
-        # Etiqueta y número en la misma línea.
+        # «TOTAL FACTURA», «Importe factura», «Base factura»: lo que sigue es un importe, no el número.
+        if re.search(r"total|importe|base|cuota|iva", normalized_line) and not re.search(r"\bn\s*[º°o.]|numero|num\.", normalized_line):
+            continue
+
+        # Etiqueta y número en la misma línea («Fáctura: 7-26»: la tilde no cambia la etiqueta).
+        plain_line = line.translate(PLAIN_VOWELS)
         for pattern in INVOICE_NUMBER_PATTERNS:
-            match = pattern.search(line)
+            match = pattern.search(plain_line)
 
             if not match:
+                continue
+
+            # «FECHA FACTURA: 01/02/2026»: la etiqueta es de la fecha, no del número.
+            if re.search(r"fecha\s*(?:de\s*(?:la\s*)?)?\W*$", normalize_search_text(plain_line[:match.start()])):
                 continue
 
             value = clean_invoice_number(
@@ -1117,6 +1554,17 @@ def find_invoice_number(
                         line,
                     )
                 )
+
+        # «Factura:» y el número partido en varias líneas cortas («A», «-01», «-26»)
+        if re.fullmatch(r"(?:n[º°o.]?\s*(?:de\s*)?)?factura\s*:?", normalized_line):
+            pieces = []
+            for piece in lines[line_index + 1:line_index + 6]:
+                if not re.fullmatch(r"[A-Z0-9/\-]{1,4}", piece.strip(), re.IGNORECASE):
+                    break
+                pieces.append(piece.strip())
+            joined = "".join(pieces)
+            if len(pieces) >= 2 and re.search(r"\d", joined) and not DATE_PATTERN.fullmatch(joined):
+                candidates.append((95, joined, f"{line} | {' '.join(pieces)}"))
 
         # Etiqueta en una línea y número debajo.
         for offset in range(1, 5):
@@ -1138,6 +1586,16 @@ def find_invoice_number(
             }:
                 continue
 
+            # «C.C.: 0005555», «Cliente 45», «Nº pedido 4500…»: es otro código, no el de la factura
+            if re.match(r"(?:c\.?\s?c\.?|cod(?:igo)?\.?|cliente|cuenta|tel(?:efono|f)?\.?|[cn]\.?\s?i\.?\s?f\.?)(?:\s|:|$)", normalized_candidate) or (
+                re.search(r"\b(?:pedido|albaran|presupuesto)\b", normalized_candidate) and "factura" not in normalized_candidate
+            ):
+                continue
+
+            # Un importe («550,55 €») no es un número de factura.
+            if re.fullmatch(r"[-+(]?\s*[\d.\s]+,\d{2}\s*(?:€|eur(?:os)?)?\)?", normalized_candidate):
+                continue
+
             compact_candidate = re.sub(
                 r"\s+",
                 "",
@@ -1146,7 +1604,7 @@ def find_invoice_number(
 
             if standalone_number_pattern.fullmatch(
                 compact_candidate
-            ):
+            ) and not is_valid_spanish_tax_id(normalize_tax_id(compact_candidate)):
                 value = clean_invoice_number(
                     compact_candidate
                 )
@@ -1181,6 +1639,10 @@ def find_invoice_number(
                 if DATE_PATTERN.fullmatch(value):
                     continue
 
+                # Un NIF suelto bajo «FACTURA» es de una de las partes
+                if is_valid_spanish_tax_id(normalize_tax_id(value)):
+                    continue
+
                 score = 90 - offset * 3
 
                 if "/" in value or "-" in value:
@@ -1197,9 +1659,11 @@ def find_invoice_number(
     if not candidates:
         return ExtractedField()
 
+    # A igual puntuación gana el candidato más completo
+    # ("FRA-2026-001" frente a "2026-001").
     score, value, evidence = max(
         candidates,
-        key=lambda item: item[0],
+        key=lambda item: (item[0], len(item[1])),
     )
 
     return ExtractedField(
@@ -1210,19 +1674,52 @@ def find_invoice_number(
     )
 
 
+OTHER_DOCUMENT_DATE = re.compile(r"albaran|\bpedido\b|presupuesto")
+
+
 def find_date_near_labels(
     text: str,
     labels: tuple[str, ...],
     source: str,
+    exclude_labels: tuple[str, ...] = (),
 ) -> ExtractedField:
     lines = get_lines(text)
     candidates: list[tuple[int, date, str]] = []
 
+    def is_excluded(normalized_value: str) -> bool:
+        return any(
+            label in normalized_value
+            for label in exclude_labels
+        )
+
     for line_index, line in enumerate(lines):
         normalized_line = normalize_search_text(line)
 
-        if not any(label in normalized_line for label in labels):
+        matched_labels = [
+            label
+            for label in labels
+            if label in normalized_line
+        ]
+
+        if not matched_labels:
             continue
+
+        # «NºALBARÁN: … FECHA: 02/03»: la fecha del albarán (o del pedido) que cita la factura no es la suya.
+        if OTHER_DOCUMENT_DATE.search(normalized_line) and "factura" not in normalized_line:
+            continue
+
+        # Una etiqueta genérica ("fecha") dentro de una línea con
+        # etiqueta excluida ("fecha de vencimiento") no cuenta.
+        if is_excluded(normalized_line) and not any(
+            len(label) > len("fecha") for label in matched_labels
+        ):
+            continue
+
+        specificity_bonus = (
+            2
+            if any(len(label) > len("fecha") for label in matched_labels)
+            else 0
+        )
 
         for offset in range(0, 5):
             candidate_index = line_index + offset
@@ -1232,16 +1729,21 @@ def find_date_near_labels(
 
             candidate_line = lines[candidate_index]
 
+            if offset > 0 and is_excluded(
+                normalize_search_text(candidate_line)
+            ):
+                break
+
+            if offset > 0 and OTHER_DOCUMENT_DATE.search(normalize_search_text(candidate_line)) and "factura" not in normalize_search_text(candidate_line):
+                continue
+
             for match in DATE_PATTERN.finditer(candidate_line):
                 parsed = parse_date_value(match.group(1))
 
                 if not parsed:
                     continue
 
-                score = 95 - offset * 5
-
-                if "vencimiento" in normalized_line:
-                    score += 2
+                score = 95 - offset * 5 + specificity_bonus
 
                 candidates.append(
                     (
@@ -1250,6 +1752,10 @@ def find_date_near_labels(
                         f"{line} | {candidate_line}",
                     )
                 )
+
+                # En la misma línea, la primera fecha tras la etiqueta
+                # es la buena.
+                break
 
     if not candidates:
         return ExtractedField()
@@ -1805,7 +2311,16 @@ def extract_concept(text: str) -> ExtractedField:
         if money_values(line) and len(line) < 30:
             continue
 
-        concept_lines.append(line)
+        # Quita importes al final de la línea de detalle.
+        line = re.sub(
+            r"(?:\s+[-+]?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})?\s*(?:€|EUR)?)+$",
+            "",
+            line,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        if line:
+            concept_lines.append(line)
 
     concept = " ".join(concept_lines)
     concept = re.sub(r"\s+", " ", concept).strip()
@@ -1821,88 +2336,221 @@ def extract_concept(text: str) -> ExtractedField:
     )
 
 
-def classify_invoice(
+# Categorías de gasto con su cuenta del Plan General Contable (grupo 6).
+# El orden importa solo para desempatar puntuaciones iguales.
+EXPENSE_CATEGORIES: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        "Combustible",
+        "628",
+        (
+            "gasoleo", "gasolina", "euro-super", "combustible",
+            "carburante", "diesel", "adblue", "litros",
+        ),
+        ("repsol", "cepsa", "galp", "moeve", "bp oil", "shell", "petronor"),
+    ),
+    (
+        "Suministros",
+        "628",
+        (
+            "suministro electrico", "energia electrica", "electricidad",
+            "potencia contratada", "kwh", "gas natural", "suministro de agua",
+            "consumo de agua", "termino de energia",
+        ),
+        ("endesa", "iberdrola", "naturgy", "holaluz", "canal de isabel",
+         "aqualia", "totalenergies"),
+    ),
+    (
+        "Telecomunicaciones",
+        "629",
+        (
+            "telefonia", "telefono movil", "fibra", "internet", "linea movil",
+            "datos moviles", "centralita",
+        ),
+        ("vodafone", "movistar", "telefonica", "orange", "masmovil",
+         "digi spain", "yoigo", "jazztel"),
+    ),
+    (
+        "Arrendamientos",
+        "621",
+        ("alquiler", "arrendamiento", "renting", "leasing operativo"),
+        (),
+    ),
+    (
+        "Servicios profesionales",
+        "623",
+        (
+            "honorarios", "asesoria", "gestoria", "abogado", "notaria",
+            "notario", "auditoria", "consultoria", "arquitecto",
+            "direccion de obra", "ingenieria", "estudio geotecnico",
+        ),
+        (),
+    ),
+    (
+        "Seguros",
+        "625",
+        ("poliza", "prima de seguro", "seguro de", "aseguradora"),
+        ("mapfre", "allianz", "axa ", "zurich", "mutua madrilena",
+         "generali", "sanitas", "adeslas"),
+    ),
+    (
+        "Publicidad y marketing",
+        "627",
+        ("publicidad", "marketing", "anuncio", "campana", "google ads",
+         "redes sociales"),
+        (),
+    ),
+    (
+        "Reparaciones y mantenimiento",
+        "622",
+        ("reparacion", "mantenimiento", "averia", "revision tecnica",
+         "limpieza de mantenimiento", "servicio de limpieza"),
+        (),
+    ),
+    (
+        "Software e informática",
+        "629",
+        (
+            "licencia", "suscripcion", "software", "hosting", "dominio",
+            "ordenador", "servidor", "informatica", "openvpn", "cloud",
+        ),
+        ("microsoft", "google cloud", "amazon web services", "adobe",
+         "holded", "ionos"),
+    ),
+    (
+        "Transportes y mensajería",
+        "624",
+        ("transporte", "mensajeria", "envio", "paqueteria", "porte"),
+        ("seur", "mrw", "correos", "nacex", "dhl", "ups ", "gls"),
+    ),
+    (
+        "Viajes y dietas",
+        "629",
+        ("hotel", "alojamiento", "billete", "vuelo", "restaurante",
+         "dietas", "taxi"),
+        ("renfe", "iberia", "vueling", "ryanair", "booking"),
+    ),
+    (
+        "Prevención de riesgos laborales",
+        "629",
+        ("prevencion de riesgos", "vigilancia de la salud",
+         "reconocimiento medico"),
+        (),
+    ),
+    (
+        "Servicios bancarios",
+        "626",
+        ("comision", "comisiones bancarias", "mantenimiento de cuenta"),
+        (),
+    ),
+    (
+        "Compras y aprovisionamientos",
+        "600",
+        ("mercaderia", "mercancia", "compra de", "precio unitario",
+         "unidades", "producto"),
+        ("makro", "mercadona", "leroy merlin", "bricomart"),
+    ),
+)
+
+DEFAULT_CATEGORY = "Otros gastos"
+DEFAULT_ACCOUNT = "629"
+
+# Categorías de ingreso (facturas emitidas), grupo 7 del PGC.
+INCOME_SERVICES = "Prestación de servicios"
+INCOME_GOODS = "Ventas de mercaderías"
+INCOME_CATEGORIES: dict[str, str] = {
+    INCOME_SERVICES: "705",
+    INCOME_GOODS: "700",
+}
+
+CATEGORY_ACCOUNTS: dict[str, str] = {
+    name: account
+    for name, account, _keywords, _suppliers in EXPENSE_CATEGORIES
+}
+CATEGORY_ACCOUNTS[DEFAULT_CATEGORY] = DEFAULT_ACCOUNT
+CATEGORY_ACCOUNTS.update(INCOME_CATEGORIES)
+
+
+def classify_income(
     text: str,
     concept: str | None,
 ) -> ExtractedField:
-    normalized = normalize_search_text(
-        f"{text}\n{concept or ''}"
-    )
+    normalized = normalize_search_text(f"{concept or ''}\n{text}")
 
-    categories = (
-        (
-            "Combustible",
-            (
-                "gasoleo",
-                "gasolina",
-                "euro-super",
-                "combustible",
-            ),
-        ),
-        (
-            "Servicios profesionales",
-            (
-                "honorarios",
-                "arquitecto",
-                "direccion de obra",
-                "proyecto",
-                "ingenieria",
-                "estudio geotecnico",
-            ),
-        ),
-        (
-            "Informática",
-            (
-                "ordenador",
-                "surface",
-                "openvpn",
-                "servidor",
-                "informatica",
-                "dispositivo",
-            ),
-        ),
-        (
-            "Limpieza",
-            (
-                "limpieza de mantenimiento",
-                "servicio de limpieza",
-            ),
-        ),
-        (
-            "Prevención de riesgos laborales",
-            (
-                "prevencion",
-                "vigilancia de la salud",
-            ),
-        ),
-        (
-            "Suministros y compras",
-            (
-                "producto",
-                "unidades",
-                "precio unitario",
-            ),
-        ),
+    goods_keywords = (
+        "mercaderia", "mercancia", "unidades", "producto", "articulo",
+        "precio unitario", "cantidad",
     )
+    hits = [keyword for keyword in goods_keywords if keyword in normalized]
 
-    for category, keywords in categories:
-        if any(keyword in normalized for keyword in keywords):
-            return ExtractedField(
-                value=category,
-                confidence=75,
-                source="keyword_category",
-                evidence=", ".join(
-                    keyword
-                    for keyword in keywords
-                    if keyword in normalized
-                ),
-            )
+    if hits:
+        return ExtractedField(
+            value=INCOME_GOODS,
+            confidence=70,
+            source="keyword_income_category",
+            evidence=", ".join(hits),
+        )
 
     return ExtractedField(
-        value="Otros gastos",
-        confidence=40,
-        source="default_category",
+        value=INCOME_SERVICES,
+        confidence=65,
+        source="default_income_category",
         evidence=None,
+    )
+
+
+def category_account(category: str | None) -> str:
+    return CATEGORY_ACCOUNTS.get(category or "", DEFAULT_ACCOUNT)
+
+
+def classify_invoice(
+    text: str,
+    concept: str | None,
+    supplier_name: str | None = None,
+) -> ExtractedField:
+    normalized_text = normalize_search_text(text)
+    normalized_concept = normalize_search_text(concept or "")
+    normalized_supplier = normalize_search_text(supplier_name or "")
+
+    best: tuple[int, str, list[str]] | None = None
+
+    for category, _account, keywords, suppliers in EXPENSE_CATEGORIES:
+        score = 0
+        evidence: list[str] = []
+
+        for keyword in keywords:
+            if keyword in normalized_concept:
+                score += 3
+                evidence.append(keyword)
+            elif keyword in normalized_text:
+                score += 1
+                evidence.append(keyword)
+
+        for supplier in suppliers:
+            if supplier in normalized_supplier:
+                score += 4
+                evidence.append(supplier.strip())
+            elif supplier in normalized_text:
+                score += 2
+                evidence.append(supplier.strip())
+
+        if score and (best is None or score > best[0]):
+            best = (score, category, evidence)
+
+    if best is None:
+        return ExtractedField(
+            value=DEFAULT_CATEGORY,
+            confidence=40,
+            source="default_category",
+            evidence=None,
+        )
+
+    score, category, evidence = best
+
+    return ExtractedField(
+        value=category,
+        confidence=min(92, 60 + score * 5),
+        source="keyword_category",
+        evidence=", ".join(evidence),
     )
 
 
@@ -1999,7 +2647,153 @@ def detect_invoice_likelihood(
 
     score = min(score, 100)
 
+    # Un presupuesto, un albarán, una proforma o un pedido llevan IVA y total, pero no son facturas:
+    # si la cabecera lleva ese título y nada la identifica como factura, no se registra como gasto.
+    kind = non_invoice_title(text)
+    if kind:
+        signals.append(f"not_invoice:{kind}")
+        return False, min(score, 30), signals
+
     return score >= 45, score, signals
+
+
+# Títulos de documentos que llevan IVA y total pero no son facturas. Se reconocen por la FORMA de la línea:
+# la palabra encabeza la línea y la siguen, como mucho, unas pocas palabras, su número, una fecha o un paréntesis
+# («ALBARÁN Nº AE-55120», «PRESUPUESTO DE REFORMA Nº 7», «PRESUPUESTO Nº P-1 (no es una factura)»). No son
+# títulos: un campo («Albarán: 4471»), una cabecera de tabla («Albarán  Fecha  Importe») ni una referencia que no
+# encabeza la línea («Ref. presupuesto 88»). El título de factura (más abajo) es más estricto a propósito.
+TITLE_TAIL = (
+    r"(?:\s+(?:n\.?[o°º]\.?|num(?:ero)?\.?|#)\s*:?)?"                 # «Nº», «Núm.», «#»
+    r"(?:\s*(?=[\w/.\-]*\d)[\w/.\-]+)?"                                # el número, con al menos una cifra
+    r"(?:\s+(?:de\s+)?(?:fecha\s*:?\s*)?\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})?"  # una fecha
+    r"(?:\s*\([^)]*\))?\s*$"                                           # «(no es una factura)»
+)
+# Un título de no-factura admite algunas palabras más («PRESUPUESTO DE REFORMA Nº 7», «ALBARÁN DE SALIDA Nº 123»,
+# «PRESUPUESTO Nº 88 ACEPTADO»), pero SOLO si lleva la marca de número («Nº», «Núm.», «#») con su identificador:
+# sin ella, «Albarán pendiente de firmar» o «Pedido urgente» son frases, no títulos. Y nunca palabras de columna:
+# «Albarán  Fecha  Importe» es una cabecera de tabla.
+COLUMN_WORDS = (r"fecha|importe|cantidad|cant|descripcion|concepto|precio|total|unidades|uds|ud|referencia|ref|base|iva|dto"
+                r"|descuento|cliente|proveedor|codigo|articulo|factura|subtotal|neto|bruto|euros")
+TITLE_WORD = rf"(?!(?:{COLUMN_WORDS})\b)[a-z]+"
+NUMBERED_TITLE_TAIL = (
+    rf"(?:\s+{TITLE_WORD}){{0,3}}"                                   # «de reforma», «de salida»
+    r"\s+(?:n\.?[o°º]\.?|num(?:ero)?\.?|#)\s*:?"                    # la marca de número es obligatoria
+    r"\s*(?=[\w/.\-]*\d)[\w/.\-]+"                                  # y su identificador, con al menos una cifra
+    rf"(?:\s+{TITLE_WORD}){{0,2}}"                                   # «aceptado»
+    r"(?:\s+(?:de\s+)?(?:fecha\s*:?\s*)?\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})?"
+    r"(?:\s*\([^)]*\))?\s*$"
+)
+# «OFERTA DE HONORARIOS 12/24»: sin la marca de número, unas pocas palabras y un identificador con separador
+# («12/24», «P-7») también hacen título. Una fecha completa no es un identificador: «Pedido realizado el 01/09/2026»
+# es una frase.
+SEPARATED_TITLE_TAIL = (
+    rf"(?:\s+{TITLE_WORD}){{0,3}}"
+    r"\s+(?!\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}\b)(?=[\w.\-]*\d)[\w.\-]*\d[\w.\-]*[/\-][\w/.\-]*"
+    r"(?:\s*\([^)]*\))?\s*$"
+)
+NON_INVOICE_HEADS = (
+    ("proforma", r"(?:factura\s+)?pro\s*-?\s*forma"),
+    ("presupuesto", r"presupuesto|oferta(?:\s+comercial)?|cotizacion"),
+    ("albarán", r"albaran(?:\s+(?:de\s+entrega|valorado))?|nota\s+de\s+entrega"),
+    ("pedido", r"(?:(?:nota|orden|hoja)\s+de\s+)?pedido|orden\s+de\s+compra"),
+)
+NON_INVOICE_TITLES = tuple(
+    (kind, re.compile(rf"^\s*(?:{head})(?:{NUMBERED_TITLE_TAIL}|{TITLE_TAIL}|{SEPARATED_TITLE_TAIL})"))
+    for kind, head in NON_INVOICE_HEADS
+)
+# El número propio del documento como campo, en cualquier punto de la línea (las columnas se juntan al leer el
+# PDF): «Albarán: 26-14», «Nº albarán AE-5», «… S.L. Pedido nº 4500012345». Con «:» o con la marca de número, y
+# siempre con un identificador que lleva cifras: «Albarán  Fecha  Importe» o «Ref. presupuesto 88» no lo son.
+# Es una pista más débil que un título: solo cuenta si el documento no habla de facturar en ninguna parte. Las facturas
+# reales citan «Nº de pedido: …» o «Albarán: …» junto a un «Factura: 24-07» o un «Factura de venta …» que no tiene la
+# forma estricta de título; un albarán o un pedido que dice «factura» se queda en lo que diga su título.
+INVOICING_WORDS = re.compile(r"\bfactur|\bfra\.?\b")
+# Lo que solo dice un pedido (orden de compra): sus condiciones de compra, cómo se acepta o qué hay que citar al
+# facturarlo. Una factura no da instrucciones para facturarse a sí misma.
+PURCHASE_ORDER_SIGNS = re.compile(
+    r"condiciones (?:generales )?de compra|purchase conditions|terms (?:and conditions )?of purchase"
+    r"|acepta(?:cion|r) (?:del |de este |este |el )?pedido"
+    r"|(?:citese|indique|indicar\w*|reflej\w+)[^\n]{0,40}(?:pedido|order)[^\n]{0,60}(?:factura|\bfra\b|albaran|invoice)"
+)
+# Una oferta en forma de carta no lleva título: habla de ofertar o presupuestar varias veces.
+OFFER_WORDS = re.compile(r"\bofert\w*|\bpresupuest\w*")
+NUMBER_MARK = r"(?:n\.?\s?[o°º]\.?|num(?:ero)?\.?)"
+FIELD_ID = r"(?=[\w/.\-]*\d)[\w/.\-]+"
+NON_INVOICE_FIELDS = tuple(
+    (kind, re.compile(
+        rf"(?:^|\s)(?:{head})\s*(?::|{NUMBER_MARK}\s*:?)\s*{FIELD_ID}"
+        rf"|(?:^|\s){NUMBER_MARK}\s*(?:de(?:l)?\s+)?(?:{head})\s*:?\s+{FIELD_ID}"
+    ))
+    for kind, head in NON_INVOICE_HEADS if kind != "proforma"
+)
+INVOICE_TITLE = re.compile(
+    r"^\s*(?:albaran\s*-\s*)?factura(?:\s*-\s*albaran|\s+(?:simplificada|rectificativa|completa|original|duplicado|copia"
+    rf"|recapitulativa|de\s+(?:venta|servicios|compra|abono)))*{TITLE_TAIL}"
+)
+# «Nº de factura: F-12», «Número factura 77», «Factura nº 12»: el documento se identifica como factura.
+INVOICE_NUMBER_FIELD = re.compile(r"\b(?:n\.?[o°º]\.?|num(?:ero)?\.?)\s*(?:de\s+)?factura\b|\bfactura\s+n\.?[o°º]")
+SPACED_LETTERS = re.compile(r"\b(?:[a-z] ){3,}[a-z]\b")
+
+
+def title_text(line: str) -> str:
+    """Minúsculas, sin tildes y con las letras espaciadas juntas («F A C T U R A» → «factura»)."""
+    folded = "".join(char for char in unicodedata.normalize("NFKD", line.lower()) if not unicodedata.combining(char))
+    return SPACED_LETTERS.sub(lambda match: match.group(0).replace(" ", ""), folded)
+
+
+# La nómina se reconoce por la estructura del recibo oficial de salarios (Orden ESS/2098/2014), no por la palabra
+# «nómina» (la gestoría que factura «confección de nóminas» emite una factura). El encabezado de las bases de
+# cotización es obligatorio y sobrevive a un escaneo malo; si no está, hacen falta tres apartados del recibo.
+PAYSLIP_HEADING = re.compile(r"determinacion de (?:las )?bases de cotizacion")
+PAYSLIP_PARTS = (
+    r"liquido(?: total)? a percibir",
+    r"total devengado|total devengo|\bdevengos\b",
+    r"total a deducir|total dedu|\bdeducciones\b",
+    r"bases? de cotizacion",
+    r"aportacion(?:es)? del trabajador|apor\.?\s*trab",
+)
+
+
+def non_invoice_kind(signals: list[str]) -> str | None:
+    """«albaran», «presupuesto», «pedido», «proforma» o «nomina» según la señal not_invoice (sin tildes)."""
+    kind = next((signal.split(":", 1)[1] for signal in signals if signal.startswith("not_invoice:")), None)
+    return unicodedata.normalize("NFKD", kind).encode("ascii", "ignore").decode() if kind else None
+
+
+def is_payslip(text: str) -> bool:
+    normalized = normalize_search_text(text or "")
+    if PAYSLIP_HEADING.search(normalized):
+        return True
+    return sum(1 for part in PAYSLIP_PARTS if re.search(part, normalized)) >= 3
+
+
+def non_invoice_title(text: str, head_lines: int = 25) -> str | None:
+    """«proforma», «presupuesto», «albarán», «pedido» o «nómina» si el documento lo dice y nada lo identifica como factura.
+
+    Identifica como factura un título de factura («FACTURA Nº 12», «F A C T U R A», «Factura simplificada») o el
+    campo de su número («Nº de factura: F-12»), esté donde esté en la cabecera: una factura que lleva
+    «Albarán: 4471» o «Pedido nº 45» encima de su título sigue siendo factura. Si no, lo que aparece primero
+    dice qué es: un título, o el número propio del documento si el documento no habla de facturar
+    («Pedido nº 45» arriba manda entonces sobre un «según oferta 23-45» más abajo)."""
+    lines = [title_text(line) for line in (text or "").splitlines() if line.strip()][:head_lines]
+    if any(INVOICE_TITLE.match(line) or INVOICE_NUMBER_FIELD.search(line) for line in lines):
+        return None
+    whole = title_text(text or "")
+    if PURCHASE_ORDER_SIGNS.search(whole):
+        return "pedido"
+    fields = not INVOICING_WORDS.search(whole)
+    for line in lines:
+        for kind, pattern in NON_INVOICE_TITLES:
+            if pattern.match(line):
+                return kind
+        for kind, pattern in NON_INVOICE_FIELDS if fields else ():
+            if pattern.search(line):
+                return kind
+    if is_payslip(text):
+        return "nómina"
+    if len(OFFER_WORDS.findall(whole)) >= 3:
+        return "presupuesto"
+    return None
 
 
 def calculate_overall_confidence(
@@ -2053,6 +2847,10 @@ def extract_invoice(
         page_texts,
     ) = read_document(path)
 
+    if path.suffix.lower() == ".pdf" and not page_count:
+        # Ni PyMuPDF ni pdfplumber lo abren (o no tiene páginas): no es un escaneado, está dañado.
+        raise UnreadableDocument("El PDF está dañado o incompleto y no se puede abrir. Pide al emisor una copia nueva.")
+
     if requires_ocr:
         return {
             "extractor_name": EXTRACTOR_NAME,
@@ -2078,17 +2876,55 @@ def extract_invoice(
         page_texts
     )
 
-    tax_id_candidates = find_tax_id_candidates(
-        primary_text
-    )
+    from app import extraction_rules
 
-    (
-        supplier_tax_id,
-        customer_tax_id,
-    ) = choose_tax_ids(
+    primary_text = extraction_rules.restore_rotated_text(primary_text)
+    repaired_text = extraction_rules.repair_ocr_labels(primary_text)
+    real_world_signals: list[str] = ["ocr_labels_repaired"] if repaired_text != primary_text else []
+    primary_text = repaired_text
+
+    def tax_ids_of(text: str) -> list[dict[str, Any]]:
+        found = find_tax_id_candidates(text)
+        for candidate in found:
+            repaired = extraction_rules.repair_tax_id(candidate["value"])
+            if repaired != candidate["value"] and is_valid_spanish_tax_id(repaired):
+                candidate["value"] = repaired
+                candidate["valid_checksum"] = True
+                real_world_signals.append("tax_id_repaired")
+        return found
+
+    tax_id_candidates = tax_ids_of(primary_text)
+
+    # En el texto solo está nuestro NIF: el emisor puede estar solo en imágenes. Se busca con OCR.
+    own_ids = normalized_company_tax_ids(company_tax_id)
+    if own_ids and not any(candidate["value"] not in own_ids for candidate in tax_id_candidates):
+        image_lines = ocr_identity_lines(path, primary_pages[0] if primary_pages else 1, extraction_rules.LEGAL_FORM)
+        if any(value not in own_ids for value in extraction_rules.valid_tax_ids("\n".join(image_lines))):
+            primary_text = primary_text + "\n" + "\n".join(f"[imagen] {line}" for line in image_lines)
+            tax_id_candidates = tax_ids_of(primary_text)
+            real_world_signals.append("issuer_from_image_ocr")
+
+    direction, direction_confidence = detect_direction(
         tax_id_candidates,
         company_tax_id,
     )
+
+    if direction == "ISSUED":
+        (
+            supplier_tax_id,
+            customer_tax_id,
+        ) = choose_tax_ids_for_issued(
+            tax_id_candidates,
+            company_tax_id,
+        )
+    else:
+        (
+            supplier_tax_id,
+            customer_tax_id,
+        ) = choose_tax_ids(
+            tax_id_candidates,
+            company_tax_id,
+        )
 
     supplier_name = company_name_near_tax_id(
         primary_text,
@@ -2096,13 +2932,24 @@ def extract_invoice(
         "supplier",
     )
 
+    if supplier_name.value is None and supplier_tax_id.value:
+        supplier_name = company_name_from_header(primary_text)
+
     customer_name = company_name_near_tax_id(
         primary_text,
         customer_tax_id.value,
         "customer",
     )
 
-    if customer_tax_id.value and company_name:
+    if direction == "ISSUED":
+        if company_name:
+            supplier_name = ExtractedField(
+                value=company_name,
+                confidence=99,
+                source="configured_company_name",
+                evidence=supplier_name.evidence,
+            )
+    elif customer_tax_id.value and company_name:
         customer_name = ExtractedField(
             value=company_name,
             confidence=99,
@@ -2110,9 +2957,81 @@ def extract_invoice(
             evidence=customer_name.evidence,
         )
 
+    # El emisor según el pie legal (Registro Mercantil, protección de datos).
+    company_ids = normalized_company_tax_ids(company_tax_id)
+    issuer = extraction_rules.issuer_from_legal_footer(primary_text, company_ids, company_name)
+    if issuer is not None:
+        own_in_text = any(candidate["value"] in company_ids for candidate in tax_id_candidates)
+        if issuer.tax_id and supplier_tax_id.value != issuer.tax_id and (own_in_text or not supplier_tax_id.value):
+            supplier_tax_id = ExtractedField(value=issuer.tax_id, confidence=90, source="legal_footer", evidence=issuer.source)
+            if own_in_text:
+                customer_tax_id = ExtractedField(value=sorted(company_ids & {c["value"] for c in tax_id_candidates})[0], confidence=90, source="company_tax_id", evidence="configured")
+                if company_name:
+                    customer_name = ExtractedField(value=company_name, confidence=99, source="configured_company_name")
+            if direction == "ISSUED":
+                direction, direction_confidence = "RECEIVED", 88
+                real_world_signals.append("direction_from_legal_footer")
+            if issuer.name:
+                supplier_name = ExtractedField(value=issuer.name, confidence=85, source="legal_footer", evidence=issuer.source)
+            elif supplier_name.source == "configured_company_name" or extraction_rules.weak_name(supplier_name.value, company_name):
+                # El nombre que había era el nuestro (se creyó emitida): se busca junto al CIF del emisor; si no, vacío
+                supplier_name = company_name_near_tax_id(primary_text, issuer.tax_id, "supplier")
+        elif direction != "ISSUED" and issuer.name and (
+            extraction_rules.weak_name(supplier_name.value, company_name)
+            or (issuer.tax_id == supplier_tax_id.value and len(issuer.name) > len(supplier_name.value)
+                and extraction_rules.name_overlap(supplier_name.value, issuer.name) >= 0.5)
+        ):
+            supplier_name = ExtractedField(value=issuer.name, confidence=80, source="legal_footer", evidence=issuer.source)
+            real_world_signals.append("supplier_name_from_legal_footer")
+
+    # Lo que la factura dice expresamente («Emisor:», «Destinatario:», «Cliente / Nombre») manda sobre la cercanía al
+    # NIF, que a menudo cae en una línea del domicilio. Solo la otra parte: la nuestra ya es la configurada.
+    other_role = "customer" if direction == "ISSUED" else "supplier"
+    labelled = extraction_rules.labelled_party(primary_text, other_role)
+    if labelled and not (company_name and extraction_rules.name_overlap(labelled, company_name) >= 0.6):
+        labelled_field = ExtractedField(value=labelled, confidence=90, source=f"{other_role}_name_label", evidence=labelled)
+        if other_role == "customer":
+            customer_name = labelled_field
+        else:
+            supplier_name = labelled_field
+    elif direction != "ISSUED" and (
+        not supplier_name.value
+        or (supplier_name.confidence < 85 and not any(suffix in normalize_search_text(supplier_name.value) for suffix in LEGAL_SUFFIXES))
+    ):
+        # Sin etiqueta y sin un nombre claro junto al NIF: la empresa de la cabecera que no es la nuestra, o el
+        # profesional que firma en la primera línea
+        fallback = extraction_rules.other_company_in_header(primary_text, company_name)
+        if not fallback and not supplier_name.value:
+            fallback = extraction_rules.first_line_person(primary_text, company_name)
+        if fallback:
+            supplier_name = ExtractedField(value=fallback, confidence=70, source="supplier_name_header", evidence=fallback)
+            real_world_signals.append("supplier_name_from_header")
+
+    if direction == "ISSUED":
+        customer_name.value = extraction_rules.without_own_company(customer_name.value, company_name)
+    else:
+        supplier_name.value = extraction_rules.without_own_company(supplier_name.value, company_name)
+
+    # Solo nuestro NIF y ningún cliente: no es una emitida nuestra si la pagamos por domiciliación
+    # («recibo domiciliado»): el emisor está en imágenes que no se han podido leer. Mejor vacío que nosotros.
+    if direction == "ISSUED" and not customer_tax_id.value and re.search(r"domiciliad|domiciliaci", normalize_search_text(primary_text)):
+        direction, direction_confidence = "RECEIVED", 70
+        customer_tax_id = ExtractedField(value=supplier_tax_id.value, confidence=90, source="company_tax_id", evidence="configured")
+        customer_name = ExtractedField(value=company_name, confidence=99, source="configured_company_name") if company_name else customer_name
+        supplier_tax_id, supplier_name = ExtractedField(), ExtractedField()
+        real_world_signals.append("direction_from_direct_debit")
+
     invoice_number = find_invoice_number(
         primary_text
     )
+    if extraction_rules.suspicious_number(invoice_number.value):
+        better = extraction_rules.labeled_number(primary_text) or extraction_rules.number_from_header_row(primary_text)
+        if better:
+            invoice_number = ExtractedField(value=clean_invoice_number(better) or better, confidence=80, source="table_header_row", evidence=better)
+            real_world_signals.append("invoice_number_from_table")
+    with_series = extraction_rules.number_with_series(primary_text, invoice_number.value)
+    if with_series:
+        invoice_number = ExtractedField(value=with_series, confidence=invoice_number.confidence, source="invoice_number_with_series", evidence=with_series)
 
     invoice_date = find_date_near_labels(
         primary_text,
@@ -2125,7 +3044,20 @@ def extract_invoice(
             "fecha",
         ),
         source="invoice_date_label",
+        exclude_labels=(
+            "vencimiento",
+            "fecha de pago",
+            "fecha limite",
+            "fecha de entrega",
+            "fecha de alta",
+            "periodo",
+        ),
     )
+
+    if invoice_date.value is None:
+        textual = extraction_rules.textual_dates(primary_text)
+        if textual:
+            invoice_date = ExtractedField(value=date_to_string(textual[0]), confidence=80, source="textual_date")
 
     if invoice_date.value is None:
         invoice_date = find_fallback_invoice_date(
@@ -2141,6 +3073,10 @@ def extract_invoice(
         ),
         source="due_date_label",
     )
+    if due_date.value is None:
+        header_due = extraction_rules.due_date_from_header_row(primary_text)
+        if header_due:
+            due_date = ExtractedField(value=date_to_string(header_due), confidence=75, source="due_date_table")
 
     subtotal = find_labeled_amount(
         primary_text,
@@ -2194,11 +3130,44 @@ def extract_invoice(
         primary_text,
     )
 
+    # Rectificativas y abonos: el signo va aparte; la coherencia fiscal se comprueba con los valores absolutos.
+    negative = extraction_rules.negative_total(primary_text)
+
+    def magnitude(field: ExtractedField) -> str | None:
+        return decimal_to_string(abs(Decimal(field.value))) if field.value not in (None, "") else None
+
+    # Importes que no cuadran fiscalmente: el solver busca base × IVA = cuota y base + cuota − retención = total.
+    vat_misread = extraction_rules.declared_vat_without_tax(primary_text, tax_total.value)
+    if vat_misread or not extraction_rules.plausible_amounts(magnitude(subtotal), magnitude(tax_total), magnitude(total), withholding_total.value, surcharge_total.value):
+        solved = extraction_rules.solve_amounts(primary_text)
+        # Si los importes ya cuadraban y solo faltaba la cuota, el solver debe respetar el total leído
+        if solved and vat_misread and total.value not in (None, "") and abs(solved["total"] - abs(Decimal(total.value))) > Decimal("0.02"):
+            solved = None
+        if solved:
+            subtotal = ExtractedField(value=decimal_to_string(solved["subtotal"]), confidence=85, source="vat_solver", evidence=f"IVA {solved['tax_rate']} %")
+            tax_total = ExtractedField(value=decimal_to_string(solved["tax_total"]), confidence=85, source="vat_solver", evidence=f"IVA {solved['tax_rate']} %")
+            total = ExtractedField(value=decimal_to_string(solved["total"]), confidence=85, source="vat_solver", evidence="base + cuota − retención")
+            withholding_total = ExtractedField(value=decimal_to_string(solved["withholding_total"]) if solved["withholding_total"] else None, confidence=80 if solved["withholding_total"] else 0, source="vat_solver")
+            real_world_signals.append("amounts_from_vat_solver")
+
+    if negative:
+        for field in (subtotal, tax_total, total):
+            if field.value not in (None, "") and Decimal(field.value) > 0:
+                field.value = decimal_to_string(-Decimal(field.value))
+        real_world_signals.append("credit_note")
+
     concept = extract_concept(primary_text)
-    category = classify_invoice(
-        primary_text,
-        concept.value,
-    )
+    if direction == "ISSUED":
+        category = classify_income(
+            primary_text,
+            concept.value,
+        )
+    else:
+        category = classify_invoice(
+            primary_text,
+            concept.value,
+            supplier_name.value,
+        )
     currency = detect_currency(primary_text)
 
     tax_lines = extract_tax_lines(
@@ -2236,22 +3205,31 @@ def extract_invoice(
 
     if len(primary_pages) < len(page_texts):
         signals.append("attachments_excluded")
+    signals.extend(real_world_signals)
 
     overall_confidence = calculate_overall_confidence(
         fields,
         invoice_likelihood,
     )
 
+    # «Emitida» solo porque nuestro NIF aparece antes que el otro (ni etiqueta de emisor/cliente ni pie legal):
+    # es la única pista y, si falla, el IVA cae del lado equivocado. Una persona lo confirma: la confianza queda
+    # por debajo de la aprobación automática y el motivo queda en las señales.
+    if direction == "ISSUED" and direction_confidence <= DIRECTION_BY_POSITION:
+        from app.config import settings
+
+        signals.append("direction_by_position")
+        overall_confidence = min(overall_confidence, settings.minimum_auto_confidence - 1)
+
     return {
         "extractor_name": EXTRACTOR_NAME,
         "extractor_version": EXTRACTOR_VERSION,
-        "document_type": (
-            "invoice"
-            if is_invoice
-            else "unknown"
-        ),
+        # «invoice», el tipo de no-factura que dice el propio documento («albaran», «nomina»…) o «unknown»
+        "document_type": "invoice" if is_invoice else non_invoice_kind(signals) or "unknown",
         "is_invoice": is_invoice,
         "invoice_likelihood": invoice_likelihood,
+        "direction": direction,
+        "direction_confidence": direction_confidence,
         "requires_ocr": False,
         "page_count": page_count,
         "processed_pages": primary_pages,
@@ -2375,52 +3353,6 @@ def is_aeat(text: str, filename: str) -> bool:
         keyword in haystack
         for keyword in keywords
     )
-
-
-def is_laboral(text: str, filename: str) -> bool:
-    haystack = normalize_search_text(
-        f"{text} {filename}"
-    )
-
-    keywords = (
-        "nomina",
-        "liquido a percibir",
-        "contrato de trabajo",
-        "alta en seguridad social",
-        "modelo 145",
-        "comunicacion de datos al pagador",
-    )
-
-    return any(
-        keyword in haystack
-        for keyword in keywords
-    )
-
-
-def detect_laboral_subtype(
-    text: str,
-    filename: str,
-) -> str:
-    haystack = normalize_search_text(
-        f"{text} {filename}"
-    )
-
-    if "contrato" in haystack:
-        return "Contrato de trabajo"
-
-    if (
-        "modelo 145" in haystack
-        or "comunicacion de datos al pagador" in haystack
-    ):
-        return "Modelo 145 (IRPF)"
-
-    if (
-        "alta" in haystack
-        and "seguridad social" in haystack
-    ):
-        return "Alta en Seguridad Social"
-
-    return "Nómina del mes"
 
 
 def detect_aeat_type(

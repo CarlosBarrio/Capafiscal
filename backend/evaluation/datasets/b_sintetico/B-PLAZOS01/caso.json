@@ -1,0 +1,100 @@
+{
+  "case_id": "B-PLAZOS01",
+  "conjunto": "B",
+  "bloque": "apoyo",
+  "titulo": "Plazos 303, 130, 111 y 115 del 3T",
+  "descripcion": "Eventos estructurados de calendario, no PDF. El 130 no aplica a una sociedad.",
+  "etiquetas": [
+    "limpio"
+  ],
+  "marca": "SIMULACIÓN — NO OFICIAL",
+  "documents": [
+    {
+      "archivo": "plazo_303_2026_3T.json",
+      "tipo": "evento_plazo",
+      "nota": "Evento estructurado, no PDF"
+    },
+    {
+      "archivo": "plazo_111_2026_3T.json",
+      "tipo": "evento_plazo",
+      "nota": "Evento estructurado, no PDF"
+    },
+    {
+      "archivo": "plazo_115_2026_3T.json",
+      "tipo": "evento_plazo",
+      "nota": "Evento estructurado, no PDF"
+    },
+    {
+      "archivo": "plazo_130_2026_3T.json",
+      "tipo": "evento_plazo",
+      "nota": "Evento estructurado, no PDF"
+    }
+  ],
+  "contexto": {
+    "empresa": {
+      "name": "Talleres Ejemplo del Arlanza S.L.",
+      "tax_id": "B00100016",
+      "email": "admin@talleres-ejemplo.test",
+      "address": "Pol. Ind. Ficticio, parcela 7, 09001 Burgos"
+    }
+  },
+  "entradas": [
+    {
+      "tipo": "plazo",
+      "archivo": "plazo_303_2026_3T.json",
+      "expected": {
+        "route": "plazo",
+        "requires_human": true,
+        "deadline": "2026-10-20",
+        "tax_reference": {
+          "model": "303",
+          "year": 2026,
+          "quarter": 3
+        },
+        "expected_agents": [
+          "fiscal",
+          "director"
+        ]
+      }
+    },
+    {
+      "tipo": "plazo",
+      "archivo": "plazo_111_2026_3T.json",
+      "expected": {
+        "route": "plazo",
+        "requires_human": true,
+        "deadline": "2026-10-20",
+        "tax_reference": {
+          "model": "111",
+          "year": 2026,
+          "quarter": 3
+        }
+      }
+    },
+    {
+      "tipo": "plazo",
+      "archivo": "plazo_115_2026_3T.json",
+      "expected": {
+        "route": "plazo",
+        "requires_human": true,
+        "deadline": "2026-10-20",
+        "tax_reference": {
+          "model": "115",
+          "year": 2026,
+          "quarter": 3
+        }
+      }
+    },
+    {
+      "tipo": "plazo",
+      "archivo": "plazo_130_2026_3T.json",
+      "expected": {
+        "fiscal_applies": false,
+        "insight_contains": [
+          "sociedad"
+        ]
+      }
+    }
+  ],
+  "expected": {}
+}

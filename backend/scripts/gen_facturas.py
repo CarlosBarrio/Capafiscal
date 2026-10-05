@@ -1,15 +1,13 @@
 """
 Genera PDFs de prueba realistas para CapaFiscal.
-Uso:  python scripts/gen_facturas.py
+Uso:  python scripts/gen_facturas.py [carpeta_salida]
 Requiere: pip install reportlab
 """
+import sys
 from pathlib import Path
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
-
-OUT = Path("facturas_prueba")
-OUT.mkdir(exist_ok=True)
 
 
 def factura(path, emisor, cif, direccion, num, fecha, concepto, base, iva_pct, iva_imp, total):
@@ -20,7 +18,7 @@ def factura(path, emisor, cif, direccion, num, fecha, concepto, base, iva_pct, i
     c.setFont("Helvetica", 9); y -= 6*mm
     c.drawString(25*mm, y, direccion); y -= 5*mm
     c.drawString(25*mm, y, f"CIF: {cif}")
-    c.setFont("Helvetica-Bold", 13); c.drawString(140*mm, h-40*mm, "FACTURA")
+    c.setFont("Helvetica-Bold", 13); c.drawString(140*mm, h-28*mm, "FACTURA")
     c.setFont("Helvetica", 9)
     c.drawString(140*mm, h-46*mm, f"Nº: {num}")
     c.drawString(140*mm, h-51*mm, f"Fecha: {fecha}")
@@ -39,7 +37,7 @@ def factura(path, emisor, cif, direccion, num, fecha, concepto, base, iva_pct, i
     c.drawString(120*mm, y, f"IVA ({iva_pct}%):"); c.drawString(160*mm, y, f"{iva_imp:.2f} €".replace(".", ",")); y -= 6*mm
     c.setFont("Helvetica-Bold", 11)
     c.drawString(120*mm, y, "TOTAL:"); c.drawString(160*mm, y, f"{total:.2f} €".replace(".", ","))
-    c.showPage(); c.save(); print("OK", path)
+    c.showPage(); c.save()
 
 
 def requerimiento_aeat(path):
@@ -51,10 +49,12 @@ def requerimiento_aeat(path):
     c.drawString(25*mm, y, "Requerimiento de documentacion"); y -= 6*mm
     c.drawString(25*mm, y, "Nº: REQ-2026-0088123   Fecha: 28/07/2026"); y -= 6*mm
     c.drawString(25*mm, y, "Expediente sujeto a plazo de respuesta.")
-    c.showPage(); c.save(); print("OK", path)
+    c.showPage(); c.save()
 
 
-if __name__ == "__main__":
+def generate_all(out: Path) -> list[Path]:
+    out.mkdir(parents=True, exist_ok=True)
+    OUT = out
     factura(OUT/"factura_repsol_2026.pdf", "REPSOL COMERCIAL S.A.", "A28047223",
             "C/ Mendez Alvaro 44, 28045 Madrid", "FRA-2026-00912", "15/07/2026",
             "Carburante Diesel e+ - 850 litros", 396.28, 21, 83.22, 479.50)
@@ -73,4 +73,11 @@ if __name__ == "__main__":
             "Suministro electrico", 100.00, 21, 21.00, 200.00)
     # Requerimiento AEAT (dispara plazo)
     requerimiento_aeat(OUT/"requerimiento_aeat_2026.pdf")
-    print("\nListo. PDFs en:", OUT.resolve())
+    return sorted(OUT.glob("*.pdf"))
+
+
+if __name__ == "__main__":
+    output = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("facturas_prueba")
+    for pdf in generate_all(output):
+        print("OK", pdf)
+    print("\nListo. PDFs en:", output.resolve())
